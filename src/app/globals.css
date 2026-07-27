@@ -80,3 +80,141 @@ body {
 .meo-eye.is-excited {
   animation-duration: 1.4s;
 }
+
+.eclipse {
+  position: relative;
+  padding-bottom: 8px;
+}
+
+.eclipse::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  transform: translateX(-50%);
+  width: min(900px, 96vw);
+  height: 220px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: radial-gradient(
+    60% 100% at 50% 100%,
+    rgba(255, 92, 22, 0.55),
+    rgba(255, 92, 22, 0.12) 55%,
+    transparent 75%
+  );
+  filter: blur(22px);
+  pointer-events: none;
+  animation: heartbeat 2.4s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+.eclipse::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  transform: translateX(-50%);
+  width: min(860px, 92vw);
+  height: 130px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  border-top: 2px solid rgba(255, 146, 80, 0.9);
+  box-shadow: 0 -8px 40px rgba(255, 110, 40, 0.55);
+  pointer-events: none;
+  animation: beatline 2.4s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.75;
+  }
+  12% {
+    transform: translateX(-50%) scale(1.06);
+    opacity: 1;
+  }
+  24% {
+    transform: translateX(-50%) scale(0.99);
+    opacity: 0.82;
+  }
+  36% {
+    transform: translateX(-50%) scale(1.1);
+    opacity: 1;
+  }
+  52% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.78;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.75;
+  }
+}
+
+@keyframes beatline {
+  0% {
+    box-shadow: 0 -8px 40px rgba(255, 110, 40, 0.45);
+    border-top-color: rgba(255, 146, 80, 0.75);
+  }
+  12% {
+    box-shadow: 0 -14px 64px rgba(255, 110, 40, 0.85);
+    border-top-color: rgba(255, 170, 110, 1);
+  }
+  24% {
+    box-shadow: 0 -9px 44px rgba(255, 110, 40, 0.5);
+  }
+  36% {
+    box-shadow: 0 -16px 72px rgba(255, 120, 50, 0.95);
+    border-top-color: rgba(255, 180, 120, 1);
+  }
+  52% {
+    box-shadow: 0 -8px 40px rgba(255, 110, 40, 0.45);
+    border-top-color: rgba(255, 146, 80, 0.75);
+  }
+  100% {
+    box-shadow: 0 -8px 40px rgba(255, 110, 40, 0.45);
+    border-top-color: rgba(255, 146, 80, 0.75);
+  }
+}
+
+.ekg-path {
+  stroke: #ff8a3c;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: ekg-draw 2.4s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 110, 40, 0.9));
+}
+
+@keyframes ekg-draw {
+  0% {
+    stroke-dashoffset: 340;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  55% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  75% {
+    stroke-dashoffset: -340;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: -340;
+    opacity: 0;
+  }
+}
+
+.marquee-track {
+  animation: marquee-scroll 26s linear infinite;
+}
+
+@keyframes marquee-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}

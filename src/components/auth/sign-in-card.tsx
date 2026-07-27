@@ -26,7 +26,7 @@ export function SignInCard() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/app";
 
-  const [mode, setMode] = useState<Mode>("in");
+  const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "up" ? "up" : "in");
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
