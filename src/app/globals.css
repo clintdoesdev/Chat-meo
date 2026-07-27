@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-dm-sans), sans-serif;
+
+  --color-bg: #0a0a0a;
+  --color-card: #141414;
+  --color-card-2: #1b1b1b;
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-line-2: rgba(255, 255, 255, 0.12);
+  --color-orange: #ff5c16;
+  --color-orange-2: #ff8a3c;
+  --color-text: #f5f5f5;
+  --color-muted: #8f8f8f;
+  --color-ok: #4ed88e;
+  --color-bad: #ff5757;
+
+  --radius-card: 18px;
+  --radius-card-sm: 16px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(255, 92, 22, 0.4);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-orange-2);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
+}
+
+.bg-grad-orange {
+  background: linear-gradient(180deg, #ff7a2f, #ff5c16);
+}

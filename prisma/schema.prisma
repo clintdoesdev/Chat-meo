@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  SCALE
+}
+
+enum BotStatus {
+  DRAFT
+  LIVE
+}
+
+enum ConversationStatus {
+  OPEN
+  RESOLVED
+  HANDOFF
+}
+
+enum MessageRole {
+  BOT
+  USER
+  AGENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String?
+  image        String?
+  plan         Plan     @default(STARTER)
+  createdAt    DateTime @default(now())
+
+  bots Bot[]
+
+  @@map("users")
+}
+
+model Bot {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  slug         String    @unique
+  status       BotStatus @default(DRAFT)
+  primaryColor String    @default("#FF5C16")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flows         Flow[]
+  conversations Conversation[]
+  apiKeys       BotApiKey[]
+
+  @@index([userId])
+  @@map("bots")
+}
+
+model Flow {
+  id        String   @id @default(cuid())
+  botId     String
+  name      String
+  graph     Json
+  isActive  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@map("flows")
+}
+
+model Conversation {
+  id        String             @id @default(cuid())
+  botId     String
+  visitorId String
+  status    ConversationStatus @default(OPEN)
+  createdAt DateTime           @default(now())
+
+  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([botId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String      @db.Text
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model BotApiKey {
+  id             String   @id @default(cuid())
+  botId          String
+  publicKey      String   @unique
+  allowedDomains String[]
+  createdAt      DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@map("bot_api_keys")
+}
