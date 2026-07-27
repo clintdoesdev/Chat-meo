@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowRight,
+  ArrowUpRight,
   Filter,
   Sparkles,
   Target,
@@ -179,9 +180,24 @@ export default function LandingPage() {
           >
             chatmeo
           </p>
-          <p className="pb-8 text-center text-[12px] text-muted">
-            © 2026 Chatmeo. All rights reserved.
-          </p>
+          <div className="flex flex-col items-center gap-1.5 pb-8 text-center text-[12px] text-muted">
+            <p>
+              created by <span className="font-bold text-text">CLINTDOESDEV.</span>
+            </p>
+            <p>
+              want to work with him?{" "}
+              <a
+                href="https://clintdoesdev.site/"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-fx
+                className="inline-flex items-center gap-1 font-semibold text-orange-2 transition-colors hover:brightness-110"
+              >
+                check out his portfolio
+                <ArrowUpRight size={12} />
+              </a>
+            </p>
+          </div>
         </footer>
       </div>
     </div>
