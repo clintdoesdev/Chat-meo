@@ -157,7 +157,7 @@ export function SignInCard() {
               id="email"
               name="email"
               type="email"
-              placeholder="you@novapixel.studio"
+              placeholder="you@example.com"
               autoComplete="email"
               required
               className="w-full rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-3 text-sm text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none focus:ring-4 focus:ring-orange/10"

@@ -63,7 +63,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
         if (dbUser) {
           token.id = dbUser.id;
-          token.plan = dbUser.plan;
         }
       }
       return token;
@@ -71,7 +70,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.plan = token.plan as string;
       }
       return session;
     },

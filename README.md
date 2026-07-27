@@ -1,6 +1,6 @@
 # Chatmeo
 
-Visual chatbot-builder SaaS by Nova Pixel Studios.
+Visual chatbot-builder SaaS.
 
 ## Stack
 

@@ -13,7 +13,7 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "Chatmeo — Intelligent Chatbots. Powered by Meo.",
   description:
-    "Chatmeo is a visual chatbot builder from Nova Pixel Studios. Design flows, drop in AI, and ship bots your visitors actually want to talk to.",
+    "Chatmeo is a visual chatbot builder. Design flows, drop in AI, and ship bots your visitors actually want to talk to.",
 };
 
 export default function RootLayout({

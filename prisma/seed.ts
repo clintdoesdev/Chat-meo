@@ -15,28 +15,27 @@ async function main() {
       name: "Clinton A.",
       email: "demo@chatmeo.app",
       passwordHash,
-      plan: "GROWTH",
     },
   });
 
   await prisma.bot.upsert({
-    where: { slug: "nova-support" },
+    where: { slug: "website-assistant" },
     update: {},
     create: {
       userId: user.id,
-      name: "Nova Support",
-      slug: "nova-support",
+      name: "Website Assistant",
+      slug: "website-assistant",
       status: "LIVE",
     },
   });
 
   await prisma.bot.upsert({
-    where: { slug: "unimart-helper" },
+    where: { slug: "support-bot" },
     update: {},
     create: {
       userId: user.id,
-      name: "UniMart Helper",
-      slug: "unimart-helper",
+      name: "Support Bot",
+      slug: "support-bot",
       status: "DRAFT",
     },
   });

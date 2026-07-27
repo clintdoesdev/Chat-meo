@@ -1,7 +1,6 @@
 import {
   Activity,
   ArrowRight,
-  Check,
   Filter,
   Sparkles,
   Target,
@@ -46,46 +45,6 @@ const FEATURES = [
     title: "Real-time analytics",
     description: "Conversations, resolution rate, and drop-off — live, per bot, per day.",
     wide: true,
-  },
-];
-
-const PLANS = [
-  {
-    name: "Starter",
-    price: "0",
-    highlight: false,
-    features: [
-      "1 bot, unlimited flows",
-      "200 messages / month",
-      "Website widget embed",
-      "Community support",
-    ],
-    cta: { label: "Start building", href: "/signin?mode=up" },
-  },
-  {
-    name: "Growth",
-    price: "15k",
-    highlight: true,
-    features: [
-      "5 bots, unlimited flows",
-      "10,000 messages / month",
-      "AI nodes + webhooks",
-      "Remove branding",
-      "Lead export (CSV)",
-    ],
-    cta: { label: "Go Growth", href: "/signin?mode=up" },
-  },
-  {
-    name: "Scale",
-    price: "45k",
-    highlight: false,
-    features: [
-      "Unlimited bots",
-      "60,000 messages / month",
-      "Priority AI throughput",
-      "Team seats",
-    ],
-    cta: { label: "Talk to us", href: "mailto:hello@chatmeo.app?subject=Scale%20plan" },
   },
 ];
 
@@ -180,63 +139,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="pricing" className="scroll-mt-20 py-[84px] pt-5">
-          <Reveal className="mx-auto mb-11 max-w-[560px] text-center">
-            <h2 className="text-[clamp(26px,3.4vw,38px)] font-bold leading-[1.12] tracking-[-0.02em]">
-              Pricing plans for success
-            </h2>
-            <p className="mt-3 text-sm text-muted">
-              Every plan includes the full Flow Studio. You only pay for
-              scale — cancel anytime.
-            </p>
-          </Reveal>
-
-          <div className="grid grid-cols-1 items-stretch gap-3.5 min-[860px]:grid-cols-3">
-            {PLANS.map((plan, index) => (
-              <Reveal key={plan.name} delayMs={index * 80}>
-                <div
-                  className={`relative flex h-full flex-col rounded-[18px] border p-[26px] transition hover:-translate-y-[3px] ${
-                    plan.highlight
-                      ? "border-orange-2/55 bg-[linear-gradient(180deg,rgba(255,92,22,.16),rgba(255,92,22,.05))] shadow-[0_30px_70px_-30px_rgba(255,92,22,.4)]"
-                      : "border-line bg-card"
-                  }`}
-                >
-                  {plan.highlight && (
-                    <span className="absolute right-5 top-5 rounded-full bg-grad-orange px-[11px] py-[5px] text-[10.5px] font-bold text-white">
-                      Popular
-                    </span>
-                  )}
-                  <div className="text-[13px] font-semibold text-muted">{plan.name}</div>
-                  <div className="mb-1 mt-2.5 text-[38px] font-bold tracking-[-0.03em]">
-                    <span className="mr-1 tracking-normal">₦</span>
-                    {plan.price}
-                    <span className="text-[13px] font-medium text-muted"> /month</span>
-                  </div>
-                  <ul className="my-5 flex flex-1 flex-col gap-2.5">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-[13px] text-[#BDBDBD]">
-                        <Check size={13} className="mt-0.5 flex-shrink-0 text-orange-2" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href={plan.cta.href}
-                    data-fx
-                    className={
-                      plan.highlight
-                        ? "inline-flex items-center justify-center rounded-full bg-grad-orange py-[11px] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"
-                        : "inline-flex items-center justify-center rounded-full border border-line-2 bg-card-2 py-[11px] text-sm font-semibold transition hover:border-orange-2/50"
-                    }
-                  >
-                    {plan.cta.label}
-                  </Link>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </section>
-
         <footer className="mt-14 border-t border-line pt-16">
           <div className="flex flex-wrap justify-between gap-10 pb-12">
             <div>
@@ -245,7 +147,7 @@ export default function LandingPage() {
                 <span className="mt-1 h-[7px] w-[7px] self-start rounded-full bg-orange" />
               </Link>
               <p className="mt-2.5 max-w-[30ch] text-[13px] text-muted">
-                Bots that feel alive. Built by Nova Pixel Studios.
+                Bots that feel alive.
               </p>
             </div>
             <div>
@@ -258,9 +160,6 @@ export default function LandingPage() {
                 </Link>
                 <Link href="#features" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
                   Features
-                </Link>
-                <Link href="#pricing" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
-                  Pricing
                 </Link>
                 <Link href="/signin" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
                   Sign in
@@ -281,7 +180,7 @@ export default function LandingPage() {
             chatmeo
           </p>
           <p className="pb-8 text-center text-[12px] text-muted">
-            © 2026 Nova Pixel Studios. All rights reserved.
+            © 2026 Chatmeo. All rights reserved.
           </p>
         </footer>
       </div>

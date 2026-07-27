@@ -11,9 +11,9 @@ type StatCardProps = {
 
 export function StatCard({ label, value, trend, spark }: StatCardProps) {
   return (
-    <div className="rounded-2xl border border-line bg-card px-[18px] pb-3 pt-4">
+    <div className="rounded-2xl border border-line bg-card p-5">
       <div className="text-xs text-muted">{label}</div>
-      <div className="mb-0.5 mt-1 flex items-baseline gap-2 text-2xl font-bold tracking-tight">
+      <div className="mb-1.5 mt-2.5 flex items-baseline gap-2 text-2xl font-bold tracking-tight">
         {value}
         {trend && (
           <em
@@ -26,7 +26,7 @@ export function StatCard({ label, value, trend, spark }: StatCardProps) {
           </em>
         )}
       </div>
-      <Sparkline values={spark} className="mt-1 h-[30px] w-full" />
+      <Sparkline values={spark} className="mt-3 h-[30px] w-full" />
     </div>
   );
 }

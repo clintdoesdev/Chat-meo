@@ -95,11 +95,13 @@ body {
   inset: -15% -10% -5% -10%;
   background-image: repeating-linear-gradient(
     91deg,
-    rgba(255, 156, 90, 0.4) 0px,
-    rgba(255, 92, 22, 0.2) 2px,
-    transparent 5px,
-    transparent 15px
+    transparent 0px,
+    rgba(255, 92, 22, 0.08) 14px,
+    rgba(255, 166, 100, 0.65) 42px,
+    rgba(255, 92, 22, 0.08) 70px,
+    transparent 96px
   );
+  filter: blur(9px);
   mask-image: radial-gradient(
     85% 90% at 50% 100%,
     #000 0%,
@@ -121,11 +123,13 @@ body {
 .hero-refraction .streaks.alt {
   background-image: repeating-linear-gradient(
     89deg,
-    rgba(255, 87, 87, 0.22) 0px,
-    rgba(255, 197, 120, 0.14) 3px,
-    transparent 6px,
-    transparent 21px
+    transparent 0px,
+    rgba(255, 87, 87, 0.06) 18px,
+    rgba(255, 197, 120, 0.4) 55px,
+    rgba(255, 87, 87, 0.06) 92px,
+    transparent 142px
   );
+  filter: blur(11px);
   mix-blend-mode: screen;
   transform: translateY(calc(var(--refraction-shift, 0px) * 0.7));
   animation: refraction-drift 30s ease-in-out infinite reverse;

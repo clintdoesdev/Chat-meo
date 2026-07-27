@@ -47,7 +47,7 @@ export default async function OverviewPage() {
       <div className="mb-[22px]">
         <h1 className="text-[22px] font-bold tracking-tight">Overview</h1>
         <p className="mt-0.5 text-[12.5px] text-muted">
-          {session.user.plan} plan · {bots.length} {bots.length === 1 ? "bot" : "bots"}
+          {bots.length} {bots.length === 1 ? "bot" : "bots"}
         </p>
       </div>
 

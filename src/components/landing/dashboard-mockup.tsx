@@ -8,9 +8,9 @@ const STATS = [
 ];
 
 const BOTS = [
-  { name: "Nova Support", detail: "novapixel.studio", status: "Live" as const },
-  { name: "Vireon Leads", detail: "vireonwebsite.com.ng", status: "Live" as const },
-  { name: "UniMart Helper", detail: "not published yet", status: "Draft" as const },
+  { name: "Website Assistant", detail: "yourbrand.com", status: "Live" as const },
+  { name: "Sales Concierge", detail: "shopfront.io", status: "Live" as const },
+  { name: "Onboarding Guide", detail: "not published yet", status: "Draft" as const },
 ];
 
 /** Illustrative, static preview — not wired to real data. The real dashboard lives at /app. */
@@ -26,7 +26,7 @@ export function DashboardMockup() {
       <div className="p-4 text-left min-[600px]:p-[18px]">
         <div className="mb-3.5 flex items-center gap-2.5">
           <MeoMark size={22} />
-          <span className="text-[13px] font-semibold">Nova Support · Overview</span>
+          <span className="text-[13px] font-semibold">Website Assistant · Overview</span>
         </div>
 
         <div className="mb-3 grid grid-cols-3 gap-2.5">
