@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { MeoMark } from "@/components/meo-mark";
+import { googleSignInAction } from "@/lib/actions/auth";
 import { registerUser } from "@/lib/actions/register";
 
 type Mode = "in" | "up";
@@ -21,6 +22,14 @@ const COPY: Record<Mode, { title: string; subtitle: string; cta: string }> = {
   },
 };
 
+function authErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  if (code === "AccessDenied") {
+    return "That sign-in was denied. Please try again.";
+  }
+  return "Something went wrong signing in — please try again.";
+}
+
 export function SignInCard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -29,7 +38,9 @@ export function SignInCard() {
   const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "up" ? "up" : "in");
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    authErrorMessage(searchParams.get("error")),
+  );
 
   const copy = COPY[mode];
 
@@ -227,31 +238,33 @@ export function SignInCard() {
           <span className="h-px flex-1 bg-line" />
         </div>
 
-        <button
-          type="button"
-          onClick={() => signIn("google", { callbackUrl })}
-          className="flex w-full items-center justify-center gap-2 rounded-full border border-line-2 bg-card-2 py-[10px] text-[13px] font-semibold text-text transition hover:border-orange-2/50"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24">
-            <path
-              fill="#EA4335"
-              d="M12 5.4c1.8 0 3 .8 3.7 1.4l2.7-2.6C16.8 2.6 14.6 1.6 12 1.6 8 1.6 4.6 3.9 3 7.2l3.1 2.4C7 7.2 9.3 5.4 12 5.4z"
-            />
-            <path
-              fill="#4285F4"
-              d="M22.4 12.2c0-.8-.1-1.4-.2-2H12v4h5.9c-.2 1.3-1 3.2-2.9 4.5l3 2.3c2.1-2 3.4-4.9 3.4-8.8z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M6.1 14.4A6.6 6.6 0 015.8 12c0-.8.1-1.6.3-2.4L3 7.2A11 11 0 001.9 12c0 1.7.4 3.4 1.1 4.8l3.1-2.4z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 22.4c2.6 0 4.8-.9 6.4-2.4l-3-2.3c-.8.6-1.9 1-3.4 1-2.7 0-5-1.8-5.9-4.3L3 16.8c1.6 3.3 5 5.6 9 5.6z"
-            />
-          </svg>
-          Continue with Google
-        </button>
+        <form action={googleSignInAction}>
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
+          <button
+            type="submit"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-line-2 bg-card-2 py-[10px] text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24">
+              <path
+                fill="#EA4335"
+                d="M12 5.4c1.8 0 3 .8 3.7 1.4l2.7-2.6C16.8 2.6 14.6 1.6 12 1.6 8 1.6 4.6 3.9 3 7.2l3.1 2.4C7 7.2 9.3 5.4 12 5.4z"
+              />
+              <path
+                fill="#4285F4"
+                d="M22.4 12.2c0-.8-.1-1.4-.2-2H12v4h5.9c-.2 1.3-1 3.2-2.9 4.5l3 2.3c2.1-2 3.4-4.9 3.4-8.8z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M6.1 14.4A6.6 6.6 0 015.8 12c0-.8.1-1.6.3-2.4L3 7.2A11 11 0 001.9 12c0 1.7.4 3.4 1.1 4.8l3.1-2.4z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 22.4c2.6 0 4.8-.9 6.4-2.4l-3-2.3c-.8.6-1.9 1-3.4 1-2.7 0-5-1.8-5.9-4.3L3 16.8c1.6 3.3 5 5.6 9 5.6z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+        </form>
 
         <p className="mt-5 text-center text-[13px] text-muted">
           {mode === "in" ? (

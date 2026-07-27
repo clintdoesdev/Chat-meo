@@ -5,6 +5,7 @@ export default {
   providers: [Google],
   pages: {
     signIn: "/signin",
+    error: "/signin",
   },
   trustHost: true,
   callbacks: {
