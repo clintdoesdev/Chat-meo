@@ -28,6 +28,7 @@ export function TopBar({ name, email }: TopBarProps) {
             <button
               type="button"
               aria-label="Notifications"
+              data-fx-skip
               className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-line-2 text-muted transition-colors hover:text-text hover:border-orange-2/50"
             >
               <Bell size={16} />

@@ -17,6 +17,7 @@ export function DeleteBotForm({ botId, botName }: { botId: string; botName: stri
       <button
         type="submit"
         aria-label={`Delete ${botName}`}
+        data-fx-skip
         className="flex-shrink-0 rounded-full p-2 text-muted transition-colors hover:bg-card-2 hover:text-bad"
       >
         <Trash2 size={15} />

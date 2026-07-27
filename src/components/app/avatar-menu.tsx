@@ -39,6 +39,7 @@ export function AvatarMenu({ name, email }: AvatarMenuProps) {
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-label="Account menu"
+        data-fx-skip
         className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-grad-orange text-[13px] font-bold text-white"
       >
         {initialsFor(name, email)}

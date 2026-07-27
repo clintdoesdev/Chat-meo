@@ -109,6 +109,7 @@ export function SignInCard() {
               setMode("in");
               setError(null);
             }}
+            data-fx-skip
             className={`flex-1 rounded-full py-[9px] text-[13.5px] font-semibold transition-colors ${
               mode === "in" ? "bg-card-2 text-text" : "text-muted"
             }`}
@@ -121,6 +122,7 @@ export function SignInCard() {
               setMode("up");
               setError(null);
             }}
+            data-fx-skip
             className={`flex-1 rounded-full py-[9px] text-[13.5px] font-semibold transition-colors ${
               mode === "up" ? "bg-card-2 text-text" : "text-muted"
             }`}
@@ -181,6 +183,7 @@ export function SignInCard() {
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
+                data-fx-skip
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -273,6 +276,7 @@ export function SignInCard() {
               <button
                 type="button"
                 onClick={() => setMode("up")}
+                data-fx-skip
                 className="font-semibold text-orange-2"
               >
                 Create a free account
@@ -284,6 +288,7 @@ export function SignInCard() {
               <button
                 type="button"
                 onClick={() => setMode("in")}
+                data-fx-skip
                 className="font-semibold text-orange-2"
               >
                 Sign in

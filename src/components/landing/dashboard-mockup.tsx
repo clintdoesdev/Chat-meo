@@ -16,7 +16,7 @@ const BOTS = [
 /** Illustrative, static preview — not wired to real data. The real dashboard lives at /app. */
 export function DashboardMockup() {
   return (
-    <div className="relative z-[2] mx-auto mt-11 max-w-[880px] overflow-hidden rounded-[18px] border border-line-2 bg-[#101010] shadow-[0_60px_120px_-40px_rgba(0,0,0,.9)]">
+    <div className="glass-card relative z-[2] mx-auto mt-11 max-w-[880px] overflow-hidden rounded-[18px]">
       <div className="flex gap-1.5 border-b border-line px-3.5 py-2.5">
         <i className="h-[9px] w-[9px] rounded-full bg-[#3A3A3A]" />
         <i className="h-[9px] w-[9px] rounded-full bg-[#2A2A2A]" />

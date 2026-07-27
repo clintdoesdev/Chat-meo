@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { ChannelMarquee } from "@/components/landing/channel-marquee";
 import { DashboardMockup } from "@/components/landing/dashboard-mockup";
+import { HeroRefraction } from "@/components/landing/hero-refraction";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { Reveal } from "@/components/reveal";
 import { SplitTag } from "@/components/split-tag";
@@ -93,8 +94,10 @@ export default function LandingPage() {
     <div>
       <LandingNav />
 
-      <div className="mx-auto max-w-[1120px] px-[22px]">
-        <section className="pt-[74px] text-center">
+      <section className="relative overflow-hidden">
+        <HeroRefraction />
+
+        <div className="relative z-[1] mx-auto max-w-[1120px] px-[22px] pt-[74px] text-center">
           <Reveal className="flex justify-center">
             <SplitTag segment="New" label="Visual Flow Studio, now in beta" />
           </Reveal>
@@ -113,35 +116,30 @@ export default function LandingPage() {
           <Reveal delayMs={240} className="flex flex-wrap justify-center gap-3">
             <Link
               href="/signin?mode=up"
+              data-fx
               className="inline-flex items-center gap-2 rounded-full bg-grad-orange px-[22px] py-[11px] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"
             >
               Get started free
             </Link>
             <Link
               href="#features"
+              data-fx
               className="inline-flex items-center gap-2 rounded-full border border-line-2 bg-card-2 px-[22px] py-[11px] text-sm font-semibold transition hover:border-orange-2/50"
             >
               See how it works
               <ArrowRight size={14} />
             </Link>
           </Reveal>
-        </section>
 
-        <div className="eclipse mt-16">
-          <svg
-            className="pointer-events-none absolute left-1/2 top-[-26px] z-[1] w-[min(340px,70vw)] -translate-x-1/2"
-            viewBox="0 0 340 60"
-            aria-hidden="true"
-          >
-            <path
-              className="ekg-path"
-              d="M0 30 H90 L104 30 L112 12 L122 48 L132 22 L140 30 H170 L184 30 L192 8 L202 52 L212 20 L220 30 H340"
-            />
-          </svg>
-          <Reveal delayMs={320}>
-            <DashboardMockup />
-          </Reveal>
+          <div className="mt-16">
+            <Reveal delayMs={320}>
+              <DashboardMockup />
+            </Reveal>
+          </div>
         </div>
+      </section>
+
+      <div className="mx-auto max-w-[1120px] px-[22px]">
 
         <section className="pb-2.5 pt-16 text-center">
           <Reveal>
@@ -224,6 +222,7 @@ export default function LandingPage() {
                   </ul>
                   <Link
                     href={plan.cta.href}
+                    data-fx
                     className={
                       plan.highlight
                         ? "inline-flex items-center justify-center rounded-full bg-grad-orange py-[11px] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"

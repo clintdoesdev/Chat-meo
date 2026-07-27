@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
+import { ClickFeedback } from "@/components/click-feedback";
 import { SharedDefs } from "@/components/shared-defs";
 import "./globals.css";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
       <body className="min-h-full bg-bg text-text antialiased">
         <SharedDefs />
         {children}
+        <ClickFeedback />
       </body>
     </html>
   );

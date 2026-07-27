@@ -38,12 +38,14 @@ export function LandingNav() {
         <div className="flex items-center gap-2.5">
           <Link
             href="/signin"
+            data-fx
             className="hidden rounded-full border border-line-2 bg-card-2 px-[18px] py-[9px] text-[13px] font-semibold transition hover:border-orange-2/50 min-[760px]:inline-flex"
           >
             Sign in
           </Link>
           <Link
             href="/signin?mode=up"
+            data-fx
             className="hidden items-center gap-2 rounded-full bg-grad-orange px-[18px] py-[9px] text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110 min-[760px]:inline-flex"
           >
             Get started free
@@ -52,6 +54,7 @@ export function LandingNav() {
             type="button"
             aria-label={open ? "Close menu" : "Open menu"}
             onClick={() => setOpen((value) => !value)}
+            data-fx-skip
             className="flex h-10 w-10 items-center justify-center rounded-full border border-line-2 min-[760px]:hidden"
           >
             {open ? <X size={18} /> : <Menu size={18} />}
@@ -75,6 +78,7 @@ export function LandingNav() {
             <Link
               href="/signin"
               onClick={() => setOpen(false)}
+              data-fx
               className="mt-1 rounded-full border border-line-2 bg-card-2 px-4 py-2.5 text-center text-[13px] font-semibold"
             >
               Sign in
@@ -82,6 +86,7 @@ export function LandingNav() {
             <Link
               href="/signin?mode=up"
               onClick={() => setOpen(false)}
+              data-fx
               className="rounded-full bg-grad-orange px-4 py-2.5 text-center text-[13px] font-semibold text-white"
             >
               Get started free
