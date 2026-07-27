@@ -59,3 +59,24 @@ body {
 .bg-grad-orange {
   background: linear-gradient(180deg, #ff7a2f, #ff5c16);
 }
+
+@keyframes meo-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  94%,
+  96% {
+    transform: scaleY(0.08);
+  }
+}
+
+.meo-eye {
+  transform-origin: center;
+  animation: meo-blink 4.6s infinite;
+}
+
+.meo-eye.is-excited {
+  animation-duration: 1.4s;
+}

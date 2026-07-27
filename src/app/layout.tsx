@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
+import { MeoDefs } from "@/components/meo-defs";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${dmSans.variable} h-full`}>
       <body className="min-h-full bg-bg text-text antialiased">
+        <MeoDefs />
         {children}
       </body>
     </html>
