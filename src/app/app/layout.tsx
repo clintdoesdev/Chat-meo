@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import { TopBar } from "@/components/app/top-bar";
 
 export default async function AppLayout({
@@ -8,7 +9,14 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/signin");
+  if (!session?.user?.id) redirect("/signin");
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { emailVerified: true },
+  });
+  if (!dbUser) redirect("/signin");
+  if (!dbUser.emailVerified) redirect("/verify-email");
 
   return (
     <div className="min-h-screen">

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -8,6 +9,7 @@ import { googleSignInAction } from "@/lib/actions/auth";
 import { registerUser } from "@/lib/actions/register";
 
 type Mode = "in" | "up";
+type Step = "form" | "twoFactor";
 
 const COPY: Record<Mode, { title: string; subtitle: string; cta: string }> = {
   in: {
@@ -36,10 +38,14 @@ export function SignInCard() {
   const callbackUrl = searchParams.get("callbackUrl") || "/app";
 
   const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "up" ? "up" : "in");
+  const [step, setStep] = useState<Step>("form");
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(
     authErrorMessage(searchParams.get("error")),
+  );
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(
+    null,
   );
 
   const copy = COPY[mode];
@@ -55,12 +61,7 @@ export function SignInCard() {
     const password = String(formData.get("password") ?? "");
 
     if (mode === "up") {
-      const result = await registerUser({ name, email, password });
-      if (result.error) {
-        setError(result.error);
-        setPending(false);
-        return;
-      }
+      await registerUser({ name, email, password });
     }
 
     const result = await signIn("credentials", {
@@ -71,12 +72,52 @@ export function SignInCard() {
 
     setPending(false);
 
+    if (result?.code === "TwoFactorRequired") {
+      setCredentials({ email, password });
+      setStep("twoFactor");
+      return;
+    }
+
     if (result?.error) {
       setError(
         mode === "up"
-          ? "Account created, but sign-in failed. Try signing in."
+          ? "If that email is new, check your inbox to verify your account — otherwise sign in below."
           : "That email and password don't match.",
       );
+      return;
+    }
+
+    router.push(callbackUrl);
+    router.refresh();
+  }
+
+  async function handleTwoFactorSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!credentials) return;
+    setError(null);
+    setPending(true);
+
+    const formData = new FormData(event.currentTarget);
+    const code = String(formData.get("code") ?? "");
+
+    const result = await signIn("credentials", {
+      email: credentials.email,
+      password: credentials.password,
+      code,
+      redirect: false,
+    });
+
+    setPending(false);
+
+    if (result?.code === "InvalidTwoFactorCode") {
+      setError("That code isn't right or has expired.");
+      return;
+    }
+
+    if (result?.error) {
+      setError("Something went wrong — please try signing in again.");
+      setStep("form");
+      setCredentials(null);
       return;
     }
 
@@ -102,6 +143,58 @@ export function SignInCard() {
           <p className="mt-1.5 text-[13px] text-muted">{copy.subtitle}</p>
         </div>
 
+        {step === "twoFactor" ? (
+          <form onSubmit={handleTwoFactorSubmit} className="flex flex-col gap-[13px]">
+            <p className="text-[13px] text-muted">
+              Enter the 6-digit code we emailed to {credentials?.email}.
+            </p>
+            <div>
+              <label htmlFor="code" className="mb-1.5 block text-xs font-semibold text-muted">
+                Verification code
+              </label>
+              <input
+                id="code"
+                name="code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                autoFocus
+                placeholder="123456"
+                className="w-full rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-3 text-center text-lg tracking-[.3em] text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none focus:ring-4 focus:ring-orange/10"
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className="text-[12.5px] text-bad">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={pending}
+              className="mt-1 w-full rounded-full bg-grad-orange py-[11px] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110 disabled:opacity-60"
+            >
+              {pending ? "Verifying…" : "Verify"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep("form");
+                setCredentials(null);
+                setError(null);
+              }}
+              data-fx-skip
+              className="text-center text-[12.5px] text-muted"
+            >
+              Back to sign in
+            </button>
+          </form>
+        ) : (
+          <>
         <div className="mb-[22px] flex rounded-full border border-line bg-bg p-1">
           <button
             type="button"
@@ -216,7 +309,9 @@ export function SignInCard() {
                 </span>
                 Remember me
               </label>
-              <span className="text-muted/70">Forgot password?</span>
+              <Link href="/forgot-password" className="text-orange-2">
+                Forgot password?
+              </Link>
             </div>
           )}
 
@@ -296,6 +391,8 @@ export function SignInCard() {
             </>
           )}
         </p>
+          </>
+        )}
       </div>
     </div>
   );

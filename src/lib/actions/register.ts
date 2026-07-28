@@ -2,8 +2,14 @@
 
 import bcryptjs from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { sendAccountConflictEmail, sendVerificationEmail } from "@/lib/email/send";
+import { issueVerificationCode } from "@/lib/otp";
 
 type RegisterResult = { error: string } | { error: null };
+
+// Always returns the same generic success shape regardless of whether the email
+// was new or already taken, so the response can't be used to enumerate accounts.
+const GENERIC_SUCCESS: RegisterResult = { error: null };
 
 export async function registerUser(input: {
   name: string;
@@ -22,12 +28,22 @@ export async function registerUser(input: {
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
+
   if (existing) {
-    return { error: "An account with that email already exists." };
+    // Don't reveal that an account exists — notify the real owner instead.
+    await sendAccountConflictEmail(email);
+    return GENERIC_SUCCESS;
   }
 
   const passwordHash = await bcryptjs.hash(password, 10);
-  await prisma.user.create({ data: { name, email, passwordHash } });
+  const user = await prisma.user.create({
+    data: { name, email, passwordHash },
+  });
 
-  return { error: null };
+  const code = await issueVerificationCode(user.id, "EMAIL_VERIFY");
+  if (code) {
+    await sendVerificationEmail(email, code);
+  }
+
+  return GENERIC_SUCCESS;
 }

@@ -24,17 +24,44 @@ enum MessageRole {
   AGENT
 }
 
-model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String?
-  image        String?
-  createdAt    DateTime @default(now())
+enum VerificationPurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  TWO_FACTOR
+}
 
-  bots Bot[]
+model User {
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  passwordHash        String?
+  image               String?
+  emailVerified       DateTime?
+  twoFactorEnabled    Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+
+  bots              Bot[]
+  verificationCodes VerificationCode[]
 
   @@map("users")
+}
+
+model VerificationCode {
+  id         String              @id @default(cuid())
+  userId     String
+  purpose    VerificationPurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int                 @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("verification_codes")
 }
 
 model Bot {
