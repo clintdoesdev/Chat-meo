@@ -2,6 +2,7 @@ import { getEmailFrom, getResendClient } from "@/lib/email/resend";
 import {
   accountConflictTemplate,
   emailVerificationTemplate,
+  newSignInTemplate,
   passwordResetTemplate,
   securityAlertTemplate,
   supportReplyTemplate,
@@ -41,6 +42,13 @@ export function sendTwoFactorCodeEmail(to: string, code: string) {
 
 export function sendAccountConflictEmail(to: string) {
   return dispatch(to, accountConflictTemplate());
+}
+
+export function sendNewSignInEmail(
+  to: string,
+  details: { time: string; device: string; ip: string; method: string },
+) {
+  return dispatch(to, newSignInTemplate(details));
 }
 
 /** Reusable sender for security/account notices (password changed, 2FA toggled, etc). */

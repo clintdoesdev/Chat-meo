@@ -109,6 +109,35 @@ export function accountConflictTemplate(): { subject: string; html: string } {
   };
 }
 
+export function newSignInTemplate(details: {
+  time: string;
+  device: string;
+  ip: string;
+  method: string;
+}): { subject: string; html: string } {
+  const row = (label: string, value: string) =>
+    `<tr>
+       <td style="padding:6px 0;color:${MUTED};width:88px;">${escapeHtml(label)}</td>
+       <td style="padding:6px 0;color:${INK};font-weight:600;">${escapeHtml(value)}</td>
+     </tr>`;
+
+  return {
+    subject: "New sign-in to your Chatmeo account",
+    html: shell(
+      "New sign-in to your Chatmeo account",
+      `<p style="margin:0 0 4px 0;font-weight:600;font-size:16px;">New sign-in detected</p>
+       <p style="margin:0 0 14px 0;color:${MUTED};">Your Chatmeo account was just signed into.</p>
+       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;font-size:13px;border-top:1px solid ${BORDER};border-bottom:1px solid ${BORDER};margin:6px 0 16px 0;">
+         ${row("Time", details.time)}
+         ${row("Method", details.method)}
+         ${row("Device", details.device)}
+         ${row("IP address", details.ip)}
+       </table>
+       <p style="margin:0;color:${MUTED};">If this was you, no action is needed. If you don't recognize this sign-in, reset your password immediately.</p>`,
+    ),
+  };
+}
+
 export function securityAlertTemplate(title: string, message: string): { subject: string; html: string } {
   const safeTitle = escapeHtml(title);
   return {

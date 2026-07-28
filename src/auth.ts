@@ -3,9 +3,10 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import authConfig from "@/auth.config";
 import { InvalidTwoFactorCodeError, TwoFactorRequiredError } from "@/lib/auth-errors";
-import { sendTwoFactorCodeEmail } from "@/lib/email/send";
+import { sendNewSignInEmail, sendTwoFactorCodeEmail } from "@/lib/email/send";
 import { issueVerificationCode, verifyCode } from "@/lib/otp";
 import { prisma } from "@/lib/prisma";
+import { getClientInfo } from "@/lib/request-info";
 
 // A precomputed bcrypt hash with no known plaintext. Comparing against this when a
 // user doesn't exist (or has no password) keeps authorize()'s timing indistinguishable
@@ -103,6 +104,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         });
       }
+
+      if (user.email) {
+        const { ip, device } = await getClientInfo();
+        await sendNewSignInEmail(user.email, {
+          time: new Date().toUTCString(),
+          device,
+          ip,
+          method: account?.provider === "google" ? "Google" : "Password",
+        });
+      }
+
       return true;
     },
     async jwt({ token, user }) {
