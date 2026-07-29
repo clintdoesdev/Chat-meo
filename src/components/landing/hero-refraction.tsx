@@ -28,6 +28,7 @@ export function HeroRefraction() {
   return (
     <div className="hero-refraction" aria-hidden="true">
       <div className="glow" />
+      <div className="glow-soft" />
       <div className="streaks" />
       <div className="streaks alt" />
     </div>

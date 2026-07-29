@@ -62,12 +62,12 @@ body {
 
 @keyframes meo-blink {
   0%,
-  92%,
+  94%,
   100% {
     transform: scaleY(1);
   }
-  94%,
-  96% {
+  96%,
+  98% {
     transform: scaleY(0.08);
   }
 }
@@ -79,6 +79,132 @@ body {
 
 .meo-eye.is-excited {
   animation-duration: 1.4s;
+}
+
+/* ---------- loading screen heartbeat ---------- */
+
+@keyframes meo-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.1);
+  }
+  28% {
+    transform: scale(0.97);
+  }
+  42% {
+    transform: scale(1.07);
+  }
+  60% {
+    transform: scale(1);
+  }
+}
+
+@keyframes meo-heartbeat-glow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  28% {
+    opacity: 0.65;
+    transform: scale(1.02);
+  }
+  42% {
+    opacity: 0.9;
+    transform: scale(1.12);
+  }
+  60% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+
+.meo-heartbeat {
+  animation: meo-heartbeat 1.8s ease-in-out infinite;
+}
+
+.meo-heartbeat-glow {
+  animation: meo-heartbeat-glow 1.8s ease-in-out infinite;
+}
+
+/* ---------- gentle idle float, used on decorative hero icons ---------- */
+
+@keyframes float1 {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-10deg);
+  }
+  50% {
+    transform: translateY(-22px) rotate(-4deg);
+  }
+}
+
+@keyframes float2 {
+  0%,
+  100% {
+    transform: translateY(0) rotate(9deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(14deg);
+  }
+}
+
+@keyframes float3 {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-14deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(-6deg);
+  }
+}
+
+.float-1 {
+  animation: float1 6.5s ease-in-out infinite;
+}
+
+.float-2 {
+  animation: float2 7.5s ease-in-out infinite;
+}
+
+.float-3 {
+  animation: float3 5.8s ease-in-out infinite;
+}
+
+/* ---------- button sheen sweep ---------- */
+
+@keyframes sheen-sweep {
+  0% {
+    transform: translateX(-130%) rotate(8deg);
+  }
+  55%,
+  100% {
+    transform: translateX(160%) rotate(8deg);
+  }
+}
+
+.btn-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-sheen::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  left: 0;
+  width: 40%;
+  height: 180%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: sheen-sweep 4.5s ease-in-out infinite;
+  pointer-events: none;
 }
 
 /* ---------- hero light refraction ---------- */
@@ -138,17 +264,34 @@ body {
 .hero-refraction .glow {
   position: absolute;
   left: 50%;
-  bottom: -14%;
-  width: min(920px, 92vw);
-  height: 460px;
-  transform: translate(-50%, calc(var(--refraction-shift, 0px) * 0.15));
+  top: 0;
+  width: 160%;
+  height: 100%;
+  transform: translateX(-50%);
   background: radial-gradient(
-    closest-side,
-    rgba(255, 92, 22, 0.5),
-    rgba(255, 138, 60, 0.16) 55%,
-    transparent 78%
+    85% 120% at 50% 118%,
+    rgba(255, 138, 60, 0.55) 0%,
+    rgba(255, 92, 22, 0.38) 32%,
+    rgba(140, 45, 8, 0.22) 55%,
+    transparent 76%
   );
-  filter: blur(46px);
+}
+
+.hero-refraction .glow-soft {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 120%;
+  height: 100%;
+  transform: translateX(-50%);
+  mix-blend-mode: screen;
+  filter: blur(30px);
+  background: radial-gradient(
+    45% 55% at 50% 108%,
+    rgba(255, 197, 120, 0.5) 0%,
+    rgba(255, 138, 60, 0.18) 45%,
+    transparent 70%
+  );
 }
 
 @keyframes refraction-drift {

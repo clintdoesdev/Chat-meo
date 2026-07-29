@@ -1,23 +1,11 @@
-import { Globe, Hash, Mail, MessageCircle, Send, Webhook } from "lucide-react";
-
-const CHANNELS = [
-  { label: "Website widget", Icon: Globe },
-  { label: "WhatsApp", Icon: MessageCircle },
-  { label: "Telegram", Icon: Send },
-  { label: "Slack", Icon: Hash },
-  { label: "Webhooks", Icon: Webhook },
-  { label: "Email", Icon: Mail },
-];
+const CHANNELS = ["Website widget", "WhatsApp", "Telegram", "Slack", "Webhooks", "Email"];
 
 function ChannelRow() {
   return (
     <>
-      {CHANNELS.map(({ label, Icon }) => (
-        <span
-          key={label}
-          className="flex items-center gap-2.5 text-[16px] font-bold tracking-[.02em] text-[#5E5E5E]"
-        >
-          <Icon size={18} className="opacity-85" />
+      {CHANNELS.map((label) => (
+        <span key={label} className="flex items-center gap-2.5 whitespace-nowrap text-[16px] font-bold text-muted">
+          <span className="inline-block h-2 w-2 rotate-45 rounded-[2px] bg-orange-2/60" />
           {label}
         </span>
       ))}

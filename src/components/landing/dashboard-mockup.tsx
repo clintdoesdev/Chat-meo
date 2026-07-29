@@ -16,17 +16,16 @@ const BOTS = [
 /** Illustrative, static preview — not wired to real data. The real dashboard lives at /app. */
 export function DashboardMockup() {
   return (
-    <div className="glass-card relative z-[2] mx-auto mt-11 max-w-[880px] overflow-hidden rounded-[18px]">
-      <div className="flex gap-1.5 border-b border-line px-3.5 py-2.5">
-        <i className="h-[9px] w-[9px] rounded-full bg-[#3A3A3A]" />
-        <i className="h-[9px] w-[9px] rounded-full bg-[#2A2A2A]" />
-        <i className="h-[9px] w-[9px] rounded-full bg-[#2A2A2A]" />
-      </div>
-
-      <div className="p-4 text-left min-[600px]:p-[18px]">
-        <div className="mb-3.5 flex items-center gap-2.5">
-          <MeoMark size={22} />
-          <span className="text-[13px] font-semibold">Website Assistant · Overview</span>
+    <div className="glass-card relative z-[2] mx-auto mt-11 max-w-[880px] overflow-hidden rounded-[21px]">
+      <div className="p-4 text-left min-[600px]:p-[22px]">
+        <div className="mb-3.5 flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <MeoMark size={22} />
+            <span className="text-[15px] font-bold">Overview</span>
+          </div>
+          <span className="rounded-full border border-line-2 bg-card-2 px-3 py-1 text-[11.5px] font-medium text-muted">
+            Last 30 days
+          </span>
         </div>
 
         <div className="mb-3 grid grid-cols-3 gap-2 min-[480px]:gap-2.5">

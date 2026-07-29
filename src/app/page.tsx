@@ -1,53 +1,13 @@
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  Filter,
-  Sparkles,
-  Target,
-  Workflow,
-} from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { ChannelMarquee } from "@/components/landing/channel-marquee";
 import { DashboardMockup } from "@/components/landing/dashboard-mockup";
+import { FeatureGrid } from "@/components/landing/feature-grid";
+import { HeroPaperPlane3D, HeroSparkle3D } from "@/components/landing/hero-3d-icons";
 import { HeroRefraction } from "@/components/landing/hero-refraction";
 import { LandingNav } from "@/components/landing/landing-nav";
+import { MeoMark } from "@/components/meo-mark";
 import { Reveal } from "@/components/reveal";
-import { SplitTag } from "@/components/split-tag";
-
-const FEATURES = [
-  {
-    Icon: Workflow,
-    title: "Visual Flow Studio",
-    description:
-      "Drag nodes, wire branches, and ship the exact conversation you designed. What you see is what runs.",
-    wide: true,
-  },
-  {
-    Icon: Sparkles,
-    title: "AI-powered replies",
-    description: "Drop an AI node into any flow and let Meo handle the messy human parts.",
-    wide: false,
-  },
-  {
-    Icon: Target,
-    title: "Lead capture",
-    description: "Turn conversations into pipeline with built-in forms and CRM webhooks.",
-    wide: false,
-  },
-  {
-    Icon: Filter,
-    title: "Conversion funnel",
-    description: "See exactly where visitors drop off and which node needs work.",
-    wide: false,
-  },
-  {
-    Icon: Activity,
-    title: "Real-time analytics",
-    description: "Conversations, resolution rate, and drop-off — live, per bot, per day.",
-    wide: true,
-  },
-];
 
 export default function LandingPage() {
   return (
@@ -57,15 +17,38 @@ export default function LandingPage() {
       <section className="relative overflow-hidden">
         <HeroRefraction />
 
-        <div className="relative z-[1] mx-auto max-w-[1120px] px-[22px] pt-[74px] text-center">
+        <div className="relative z-[1] mx-auto max-w-[1060px] px-[22px] pt-[88px] text-center">
+          <div className="float-3 pointer-events-none absolute right-[6%] top-[420px] z-10 hidden md:block">
+            <HeroSparkle3D size={84} />
+          </div>
+
           <Reveal className="flex justify-center">
-            <SplitTag segment="New" label="Visual Flow Studio, now in beta" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-line-2 bg-card/60 px-4 py-[7px] text-[13px] text-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange shadow-[0_0_8px_rgba(255,92,22,.8)]" />
+              New — Visual Flow Studio, now in beta
+              <Link href="#features" data-fx className="font-semibold text-orange-2">
+                Read more →
+              </Link>
+            </div>
           </Reveal>
+
           <Reveal delayMs={80}>
-            <h1 className="mx-auto mt-[26px] max-w-[15ch] text-[clamp(36px,5.4vw,58px)] font-bold leading-[1.08] tracking-[-0.025em]">
-              Intelligent Chatbots. Powered by Meo.
-            </h1>
+            <div className="relative mx-auto mt-[26px] inline-block">
+              <div className="float-1 pointer-events-none absolute -left-[120px] top-[64px] z-10 hidden md:block">
+                <MeoMark size={170} excited />
+              </div>
+              <div className="pointer-events-none absolute -right-[76px] top-0 z-10 hidden md:block">
+                <HeroPaperPlane3D size={150} />
+              </div>
+
+              <h1 className="relative text-[clamp(36px,5.4vw,58px)] font-extrabold leading-[1.08] tracking-[-0.025em]">
+                Intelligent Chatbots.
+                <br />
+                Powered by Meo.
+              </h1>
+            </div>
           </Reveal>
+
           <Reveal delayMs={160}>
             <p className="mx-auto mb-7 mt-4 max-w-[44ch] text-[14.5px] text-muted">
               Design conversations visually, drop in AI where it counts, and
@@ -77,17 +60,16 @@ export default function LandingPage() {
             <Link
               href="/signin?mode=up"
               data-fx
-              className="inline-flex items-center gap-2 rounded-full bg-grad-orange px-[22px] py-[11px] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"
+              className="btn-sheen inline-flex items-center gap-2 rounded-[10px] bg-[linear-gradient(135deg,#FF8A3C,#FF5C16)] px-5 py-3 text-sm font-bold text-[#1A0B00] shadow-[0_0_24px_rgba(255,92,22,.35)] transition hover:brightness-110"
             >
               Get started free
             </Link>
             <Link
               href="#features"
               data-fx
-              className="inline-flex items-center gap-2 rounded-full border border-line-2 bg-card-2 px-[22px] py-[11px] text-sm font-semibold transition hover:border-orange-2/50"
+              className="inline-flex items-center gap-2 rounded-[12px] border border-line-2 bg-card/70 px-5 py-3 text-sm font-medium transition hover:border-orange-2/50"
             >
               See how it works
-              <ArrowRight size={14} />
             </Link>
           </Reveal>
 
@@ -103,7 +85,7 @@ export default function LandingPage() {
 
         <section className="pb-2.5 pt-16 text-center">
           <Reveal>
-            <p className="mb-6 text-[13px] text-muted">
+            <p className="mb-6 text-[11px] font-semibold uppercase tracking-[.14em] text-muted">
               Works wherever your customers already are
             </p>
           </Reveal>
@@ -114,7 +96,7 @@ export default function LandingPage() {
 
         <section id="features" className="scroll-mt-20 py-[84px]">
           <Reveal className="mx-auto mb-11 max-w-[560px] text-center">
-            <h2 className="text-[clamp(26px,3.4vw,38px)] font-bold leading-[1.12] tracking-[-0.02em]">
+            <h2 className="text-[clamp(26px,3.4vw,38px)] font-extrabold leading-[1.12] tracking-[-0.02em]">
               Everything you need to ship a bot
             </h2>
             <p className="mt-3 text-sm text-muted">
@@ -123,21 +105,7 @@ export default function LandingPage() {
             </p>
           </Reveal>
 
-          <div className="grid grid-cols-1 gap-3.5 min-[640px]:grid-cols-2 min-[1020px]:grid-cols-3">
-            {FEATURES.map((feature, index) => (
-              <Reveal
-                key={feature.title}
-                delayMs={index * 80}
-                className={feature.wide ? "min-[1020px]:col-span-2" : ""}
-              >
-                <div className="flex h-full flex-col gap-2 rounded-[18px] border border-line bg-card p-5 transition hover:-translate-y-[3px] hover:border-orange-2/40">
-                  <feature.Icon size={18} className="text-orange-2" />
-                  <h3 className="text-base font-semibold">{feature.title}</h3>
-                  <p className="text-[13px] text-muted">{feature.description}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+          <FeatureGrid />
         </section>
 
         <footer className="mt-14 border-t border-line pt-16">
