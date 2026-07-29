@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChannelMarquee } from "@/components/landing/channel-marquee";
 import { DashboardMockup } from "@/components/landing/dashboard-mockup";
 import { FeatureGrid } from "@/components/landing/feature-grid";
-import { HeroPaperPlane3D, HeroSparkle3D } from "@/components/landing/hero-3d-icons";
+import { HeroBolt3D, HeroMascot3D } from "@/components/landing/hero-3d-icons";
 import { HeroRefraction } from "@/components/landing/hero-refraction";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { MeoMark } from "@/components/meo-mark";
@@ -19,7 +19,7 @@ export default function LandingPage() {
 
         <div className="relative z-[1] mx-auto max-w-[1060px] px-[22px] pt-[88px] text-center">
           <div className="float-3 pointer-events-none absolute right-[6%] top-[420px] z-10 hidden md:block">
-            <HeroSparkle3D size={84} />
+            <HeroBolt3D size={84} />
           </div>
 
           <Reveal className="flex justify-center">
@@ -37,8 +37,8 @@ export default function LandingPage() {
               <div className="float-1 pointer-events-none absolute -left-[120px] top-[64px] z-10 hidden md:block">
                 <MeoMark size={170} excited />
               </div>
-              <div className="pointer-events-none absolute -right-[76px] top-0 z-10 hidden md:block">
-                <HeroPaperPlane3D size={150} />
+              <div className="pointer-events-none absolute -right-[150px] top-[-30px] z-10 hidden md:block">
+                <HeroMascot3D size={120} />
               </div>
 
               <h1 className="relative text-[clamp(36px,5.4vw,58px)] font-extrabold leading-[1.08] tracking-[-0.025em]">

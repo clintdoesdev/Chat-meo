@@ -17,8 +17,8 @@ function use3DIcon(loader: () => Promise<{ default: ComponentType<{ size: number
   return Comp;
 }
 
-export function HeroPaperPlane3D({ size = 150 }: { size?: number }) {
-  const Icon = use3DIcon(() => import("@/components/three/paper-plane-icon"));
+export function HeroMascot3D({ size = 150 }: { size?: number }) {
+  const Icon = use3DIcon(() => import("@/components/three/mascot-3d-icon"));
   return (
     <div style={{ width: size, height: size }} aria-hidden="true">
       {Icon && <Icon size={size} />}
@@ -26,8 +26,8 @@ export function HeroPaperPlane3D({ size = 150 }: { size?: number }) {
   );
 }
 
-export function HeroSparkle3D({ size = 84 }: { size?: number }) {
-  const Icon = use3DIcon(() => import("@/components/three/sparkle-icon"));
+export function HeroBolt3D({ size = 84 }: { size?: number }) {
+  const Icon = use3DIcon(() => import("@/components/three/bolt-3d-icon"));
   return (
     <div style={{ width: size, height: size }} aria-hidden="true">
       {Icon && <Icon size={size} />}
