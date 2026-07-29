@@ -30,17 +30,24 @@ enum VerificationPurpose {
   TWO_FACTOR
 }
 
+enum TwoFactorMethod {
+  EMAIL
+  TOTP
+}
+
 model User {
-  id                  String    @id @default(cuid())
+  id                  String           @id @default(cuid())
   name                String
-  email               String    @unique
+  email               String           @unique
   passwordHash        String?
   image               String?
   emailVerified       DateTime?
-  twoFactorEnabled    Boolean   @default(false)
-  failedLoginAttempts Int       @default(0)
+  twoFactorEnabled    Boolean          @default(false)
+  twoFactorMethod     TwoFactorMethod?
+  totpSecret          String?
+  failedLoginAttempts Int              @default(0)
   lockedUntil         DateTime?
-  createdAt           DateTime  @default(now())
+  createdAt           DateTime         @default(now())
 
   bots              Bot[]
   verificationCodes VerificationCode[]

@@ -29,9 +29,9 @@ export function DashboardMockup() {
           <span className="text-[13px] font-semibold">Website Assistant · Overview</span>
         </div>
 
-        <div className="mb-3 grid grid-cols-3 gap-2.5">
+        <div className="mb-3 grid grid-cols-3 gap-2 min-[480px]:gap-2.5">
           {STATS.map((stat) => (
-            <StatCard key={stat.label} {...stat} />
+            <StatCard key={stat.label} {...stat} compact />
           ))}
         </div>
 

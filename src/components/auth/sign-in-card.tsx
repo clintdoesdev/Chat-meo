@@ -47,6 +47,7 @@ export function SignInCard() {
   const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(
     null,
   );
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"email" | "totp" | null>(null);
 
   const copy = COPY[mode];
 
@@ -72,8 +73,9 @@ export function SignInCard() {
 
     setPending(false);
 
-    if (result?.code === "TwoFactorRequired") {
+    if (result?.code === "TwoFactorRequiredEmail" || result?.code === "TwoFactorRequiredTotp") {
       setCredentials({ email, password });
+      setTwoFactorMethod(result.code === "TwoFactorRequiredTotp" ? "totp" : "email");
       setStep("twoFactor");
       return;
     }
@@ -118,6 +120,7 @@ export function SignInCard() {
       setError("Something went wrong — please try signing in again.");
       setStep("form");
       setCredentials(null);
+      setTwoFactorMethod(null);
       return;
     }
 
@@ -146,11 +149,13 @@ export function SignInCard() {
         {step === "twoFactor" ? (
           <form onSubmit={handleTwoFactorSubmit} className="flex flex-col gap-[13px]">
             <p className="text-[13px] text-muted">
-              Enter the 6-digit code we emailed to {credentials?.email}.
+              {twoFactorMethod === "totp"
+                ? "Enter the 6-digit code from your authenticator app."
+                : `Enter the 6-digit code we emailed to ${credentials?.email}.`}
             </p>
             <div>
               <label htmlFor="code" className="mb-1.5 block text-xs font-semibold text-muted">
-                Verification code
+                {twoFactorMethod === "totp" ? "Authenticator code" : "Verification code"}
               </label>
               <input
                 id="code"
@@ -185,6 +190,7 @@ export function SignInCard() {
               onClick={() => {
                 setStep("form");
                 setCredentials(null);
+                setTwoFactorMethod(null);
                 setError(null);
               }}
               data-fx-skip

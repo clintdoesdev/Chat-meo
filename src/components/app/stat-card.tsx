@@ -7,17 +7,24 @@ type StatCardProps = {
   value: string;
   trend: Trend | null;
   spark: number[];
+  compact?: boolean;
 };
 
-export function StatCard({ label, value, trend, spark }: StatCardProps) {
+export function StatCard({ label, value, trend, spark, compact = false }: StatCardProps) {
   return (
-    <div className="rounded-2xl border border-line bg-card p-5">
-      <div className="text-xs text-muted">{label}</div>
-      <div className="mb-1.5 mt-2.5 flex items-baseline gap-2 text-2xl font-bold tracking-tight">
-        {value}
+    <div
+      className={`min-w-0 rounded-[18px] border border-line bg-card ${compact ? "p-3.5" : "p-5"}`}
+    >
+      <div className="text-xs leading-snug text-muted">{label}</div>
+      <div
+        className={`mb-1.5 mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-bold tracking-tight ${
+          compact ? "text-lg" : "text-2xl"
+        }`}
+      >
+        <span className="whitespace-nowrap">{value}</span>
         {trend && (
           <em
-            className={`flex items-center gap-0.5 not-italic text-[11px] font-semibold ${
+            className={`flex shrink-0 items-center gap-0.5 whitespace-nowrap not-italic text-[11px] font-semibold ${
               trend.direction === "up" ? "text-ok" : "text-bad"
             }`}
           >

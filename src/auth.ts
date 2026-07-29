@@ -2,11 +2,17 @@ import bcryptjs from "bcryptjs";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import authConfig from "@/auth.config";
-import { InvalidTwoFactorCodeError, TwoFactorRequiredError } from "@/lib/auth-errors";
+import {
+  InvalidTwoFactorCodeError,
+  TwoFactorRequiredEmailError,
+  TwoFactorRequiredTotpError,
+} from "@/lib/auth-errors";
 import { sendNewSignInEmail, sendTwoFactorCodeEmail } from "@/lib/email/send";
 import { issueVerificationCode, verifyCode } from "@/lib/otp";
 import { prisma } from "@/lib/prisma";
 import { getClientInfo } from "@/lib/request-info";
+import { decryptSecret } from "@/lib/secret-crypto";
+import { verifyTotpCode } from "@/lib/totp";
 
 // A precomputed bcrypt hash with no known plaintext. Comparing against this when a
 // user doesn't exist (or has no password) keeps authorize()'s timing indistinguishable
@@ -53,26 +59,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { failedLoginAttempts: 0, lockedUntil: null },
-          });
-        }
+        // Password is correct — lockout resets only once the whole sign-in (including
+        // any required 2FA code) succeeds, so a wrong 2FA guess still counts toward it.
+        if (user.twoFactorEnabled && user.twoFactorMethod === "TOTP" && user.totpSecret) {
+          if (typeof code !== "string" || code.length === 0) {
+            throw new TwoFactorRequiredTotpError();
+          }
 
-        if (user.twoFactorEnabled) {
+          const valid = verifyTotpCode(decryptSecret(user.totpSecret), code);
+          if (!valid) {
+            await registerFailedAttempt(user.id, user.failedLoginAttempts);
+            throw new InvalidTwoFactorCodeError();
+          }
+        } else if (user.twoFactorEnabled) {
           if (typeof code !== "string" || code.length === 0) {
             const freshCode = await issueVerificationCode(user.id, "TWO_FACTOR");
             if (freshCode) {
               await sendTwoFactorCodeEmail(user.email, freshCode);
             }
-            throw new TwoFactorRequiredError();
+            throw new TwoFactorRequiredEmailError();
           }
 
           const result = await verifyCode(user.id, "TWO_FACTOR", code);
           if (result !== "ok") {
+            await registerFailedAttempt(user.id, user.failedLoginAttempts);
             throw new InvalidTwoFactorCodeError();
           }
+        }
+
+        if (user.failedLoginAttempts > 0) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts: 0, lockedUntil: null },
+          });
         }
 
         return {
