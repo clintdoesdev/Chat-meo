@@ -178,6 +178,42 @@ body {
   animation: float3 5.8s ease-in-out infinite;
 }
 
+/* ---------- slow breathing glow behind glass 3D icons ---------- */
+
+@keyframes glass-icon-breathe {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.15);
+  }
+}
+
+.glass-icon-glow-wrap {
+  position: relative;
+}
+
+.glass-icon-glow {
+  position: absolute;
+  inset: -25%;
+  z-index: -1;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255, 122, 47, 0.55), rgba(255, 92, 22, 0) 70%);
+  filter: blur(20px);
+  animation: glass-icon-breathe 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-icon-glow {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 /* ---------- button sheen sweep ---------- */
 
 @keyframes sheen-sweep {
