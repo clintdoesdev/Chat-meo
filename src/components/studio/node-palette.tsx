@@ -1,6 +1,30 @@
+import { usePaletteDragHandle, type PaletteDragCallbacks } from "@/components/studio/use-palette-drag-handle";
 import { PALETTE_KINDS } from "@/lib/flow-types";
 
-export function NodePalette() {
+function PaletteChip({
+  meta,
+  callbacks,
+}: {
+  meta: (typeof PALETTE_KINDS)[number];
+  callbacks: PaletteDragCallbacks;
+}) {
+  const handlers = usePaletteDragHandle(meta.kind, callbacks);
+
+  return (
+    <div
+      {...handlers}
+      className="flex shrink-0 cursor-grab touch-pan-x items-center gap-2.5 whitespace-nowrap rounded-[13px]
+        border border-line bg-card px-3 py-2.5 text-[13px] font-medium transition select-none
+        hover:-translate-x-0 hover:border-orange-2/50 active:cursor-grabbing
+        min-[1020px]:mb-2 min-[1020px]:touch-auto min-[1020px]:whitespace-normal min-[1020px]:hover:-translate-x-0.5"
+    >
+      <i className="h-2 w-2 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
+      {meta.label}
+    </div>
+  );
+}
+
+export function NodePalette({ dragCallbacks }: { dragCallbacks: PaletteDragCallbacks }) {
   return (
     <aside
       className="flex shrink-0 gap-2 overflow-x-auto border-b border-line bg-[#111] p-3
@@ -14,21 +38,7 @@ export function NodePalette() {
         Nodes
       </div>
       {PALETTE_KINDS.map((meta) => (
-        <div
-          key={meta.kind}
-          draggable
-          onDragStart={(event) => {
-            event.dataTransfer.setData("application/chatmeo-node-kind", meta.kind);
-            event.dataTransfer.effectAllowed = "move";
-          }}
-          className="flex shrink-0 cursor-grab items-center gap-2.5 whitespace-nowrap rounded-[13px]
-            border border-line bg-card px-3 py-2.5 text-[13px] font-medium transition
-            hover:-translate-x-0 hover:border-orange-2/50 active:cursor-grabbing
-            min-[1020px]:mb-2 min-[1020px]:whitespace-normal min-[1020px]:hover:-translate-x-0.5"
-        >
-          <i className="h-2 w-2 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
-          {meta.label}
-        </div>
+        <PaletteChip key={meta.kind} meta={meta} callbacks={dragCallbacks} />
       ))}
     </aside>
   );

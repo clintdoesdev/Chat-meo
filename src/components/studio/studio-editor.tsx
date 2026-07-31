@@ -15,6 +15,7 @@ import { ChevronLeft, Play } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MeoMark } from "@/components/meo-mark";
+import { DragGhost } from "@/components/studio/drag-ghost";
 import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
 import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
 import { FlowNodeView } from "@/components/studio/flow-node";
@@ -22,6 +23,7 @@ import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
 import { TestDrawer } from "@/components/studio/test-drawer";
 import { Toast } from "@/components/studio/toast";
+import type { PaletteDragPoint } from "@/components/studio/use-palette-drag-handle";
 import { ValidationBanner } from "@/components/studio/validation-banner";
 import { ZoomPill } from "@/components/studio/zoom-pill";
 import { publishFlow, saveFlow } from "@/lib/actions/flow";
@@ -161,19 +163,12 @@ function StudioCanvas({
     [setNodes],
   );
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }, []);
-
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-      const kind = event.dataTransfer.getData("application/chatmeo-node-kind") as FlowNodeKind;
+  const createNodeAt = useCallback(
+    (kind: FlowNodeKind, screenPoint: PaletteDragPoint) => {
       const meta = NODE_KIND_META[kind];
       if (!meta) return;
 
-      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const position = screenToFlowPosition(screenPoint);
       idCounter.current += 1;
       const id = `${kind}-${Date.now()}-${idCounter.current}`;
 
@@ -188,6 +183,31 @@ function StudioCanvas({
       setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat({ ...newNode, selected: true }));
     },
     [screenToFlowPosition, setNodes],
+  );
+
+  const [paletteDrag, setPaletteDrag] = useState<{ kind: FlowNodeKind; x: number; y: number } | null>(null);
+
+  const handlePaletteDragStart = useCallback((kind: FlowNodeKind, point: PaletteDragPoint) => {
+    setPaletteDrag({ kind, x: point.x, y: point.y });
+  }, []);
+
+  const handlePaletteDragMove = useCallback((point: PaletteDragPoint) => {
+    setPaletteDrag((prev) => (prev ? { ...prev, x: point.x, y: point.y } : prev));
+  }, []);
+
+  const handlePaletteDragEnd = useCallback(
+    (point: PaletteDragPoint) => {
+      setPaletteDrag((prev) => {
+        if (prev) {
+          const rect = canvasRef.current?.getBoundingClientRect();
+          if (rect && point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom) {
+            createNodeAt(prev.kind, point);
+          }
+        }
+        return null;
+      });
+    },
+    [createNodeAt],
   );
 
   // Autosave: debounce 1200ms after the graph actually changes.
@@ -321,14 +341,15 @@ function StudioCanvas({
       <div
         className="flex h-[calc(100vh-260px)] min-h-[520px] flex-col overflow-hidden rounded-[18px] border border-line-2 min-[1020px]:h-[calc(100vh-200px)] min-[1020px]:flex-row"
       >
-        <NodePalette />
+        <NodePalette
+          dragCallbacks={{
+            onDragStart: handlePaletteDragStart,
+            onDragMove: handlePaletteDragMove,
+            onDragEnd: handlePaletteDragEnd,
+          }}
+        />
 
-        <div
-          ref={canvasRef}
-          className="studio-flow-canvas relative min-h-[380px] flex-1 bg-[#0C0C0C]"
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
+        <div ref={canvasRef} className="studio-flow-canvas relative min-h-[380px] flex-1 bg-[#0C0C0C]">
           <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
             <defs>
               <linearGradient id="studio-edge-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -366,6 +387,7 @@ function StudioCanvas({
 
       <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} />
       {toastMessage && <Toast message={toastMessage} />}
+      {paletteDrag && <DragGhost kind={paletteDrag.kind} x={paletteDrag.x} y={paletteDrag.y} />}
     </div>
   );
 }
