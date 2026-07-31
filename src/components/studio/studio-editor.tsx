@@ -21,9 +21,10 @@ import { FlowNodeView } from "@/components/studio/flow-node";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
 import { TestDrawer } from "@/components/studio/test-drawer";
+import { Toast } from "@/components/studio/toast";
 import { ValidationBanner } from "@/components/studio/validation-banner";
 import { ZoomPill } from "@/components/studio/zoom-pill";
-import { publishBot, saveFlow } from "@/lib/actions/flow";
+import { publishFlow, saveFlow } from "@/lib/actions/flow";
 import {
   NODE_KIND_META,
   type FlowEdge,
@@ -254,9 +255,18 @@ function StudioCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleUndo]);
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
+
   async function handlePublish() {
-    const result = await publishBot(bot.id);
-    if (!result.error) setStatus("LIVE");
+    const result = await publishFlow(bot.id);
+    if (!result.error) {
+      setStatus("LIVE");
+      setToastMessage("Flow published");
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToastMessage(null), 3000);
+    }
   }
 
   return (
@@ -355,6 +365,7 @@ function StudioCanvas({
       </div>
 
       <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} />
+      {toastMessage && <Toast message={toastMessage} />}
     </div>
   );
 }

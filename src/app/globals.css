@@ -503,3 +503,20 @@ body {
     animation: none;
   }
 }
+
+/* ---------- toast ---------- */
+
+.toast-in {
+  animation: toast-in 0.25s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translate(-50%, 10px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}

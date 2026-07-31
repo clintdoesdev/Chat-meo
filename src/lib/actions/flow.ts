@@ -30,19 +30,24 @@ export async function saveFlow(botId: string, flowId: string, graph: unknown) {
   return { error: null };
 }
 
-export async function publishBot(botId: string) {
+export async function publishFlow(botId: string) {
   const session = await auth();
   if (!session?.user) return { error: "Not signed in." };
 
-  const result = await prisma.bot.updateMany({
-    where: { id: botId, userId: session.user.id },
-    data: { status: "LIVE" },
+  const bot = await prisma.bot.findUnique({
+    where: { id: botId },
+    select: { userId: true, slug: true },
   });
-
-  if (result.count === 0) {
+  if (!bot || bot.userId !== session.user.id) {
     return { error: "Bot not found." };
   }
 
+  await prisma.$transaction([
+    prisma.bot.update({ where: { id: botId }, data: { status: "LIVE" } }),
+    prisma.flow.updateMany({ where: { botId }, data: { isActive: true } }),
+  ]);
+
   revalidatePath("/app");
+  revalidatePath(`/app/studio/${bot.slug}`);
   return { error: null };
 }
