@@ -1,5 +1,6 @@
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { MeoMark } from "@/components/meo-mark";
+import { PillSelect } from "@/components/studio/pill-select";
 import {
   NODE_KIND_META,
   type AiModel,
@@ -8,6 +9,17 @@ import {
   type FlowNodeData,
   type WebhookMethod,
 } from "@/lib/flow-types";
+
+const MODEL_LABELS: Record<AiModel, string> = {
+  "claude-sonnet": "Claude Sonnet",
+  "claude-haiku": "Claude Haiku",
+};
+
+function newBranchId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `branch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
 const MODELS: AiModel[] = ["claude-sonnet", "claude-haiku"];
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -117,28 +129,27 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
                 onChange={(event) =>
                   onChange(node.id, { systemPrompt: event.target.value })
                 }
-                rows={4}
-                className={`${fieldClass()} resize-y leading-relaxed`}
+                rows={5}
+                className={`${fieldClass()} resize-y font-mono text-[13px] leading-relaxed`}
               />
             </div>
             <div className="mb-3.5">
               <label htmlFor="field-model" className={labelClass()}>
                 Model
               </label>
-              <select
+              <PillSelect
                 id="field-model"
                 value={data.model ?? "claude-sonnet"}
                 onChange={(event) =>
                   onChange(node.id, { model: event.target.value as AiModel })
                 }
-                className={fieldClass()}
               >
                 {MODELS.map((model) => (
                   <option key={model} value={model}>
-                    {model}
+                    {MODEL_LABELS[model]}
                   </option>
                 ))}
-              </select>
+              </PillSelect>
             </div>
             <div className="mb-3.5">
               <label
@@ -182,10 +193,27 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
             </div>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={labelClass().replace("mb-1.5 ", "")}>Branches</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next: ConditionBranch[] = [
+                    ...(data.branches ?? []),
+                    { id: newBranchId(), label: "New branch", value: "" },
+                  ];
+                  onChange(node.id, { branches: next });
+                }}
+                className="flex items-center gap-1 rounded-full border border-line-2 px-2.5 py-1 text-[10.5px] font-semibold text-muted transition hover:border-orange-2/50 hover:text-text"
+              >
+                <Plus size={11} strokeWidth={2.5} />
+                Add
+              </button>
             </div>
             <div className="flex flex-col gap-2.5">
               {(data.branches ?? []).map((branch, index) => (
-                <div key={branch.id} className="rounded-[12px] border border-line-2 bg-card-2 p-2.5">
+                <div
+                  key={branch.id}
+                  className="relative rounded-[12px] border border-line-2 bg-card-2 p-2.5 pr-8"
+                >
                   <input
                     aria-label={`Branch ${index + 1} label`}
                     value={branch.label}
@@ -208,8 +236,22 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
                     placeholder="Match value"
                     className="w-full bg-transparent text-[11.5px] text-muted placeholder:text-[#5C5C5C] focus:outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = (data.branches ?? []).filter((b) => b.id !== branch.id);
+                      onChange(node.id, { branches: next });
+                    }}
+                    aria-label={`Remove branch ${index + 1}`}
+                    className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-bad"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               ))}
+              {(data.branches ?? []).length === 0 && (
+                <p className="text-[11.5px] text-muted">No branches yet — add one above.</p>
+              )}
             </div>
           </>
         )}
@@ -248,20 +290,19 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
               <label htmlFor="field-method" className={labelClass()}>
                 Method
               </label>
-              <select
+              <PillSelect
                 id="field-method"
                 value={data.method ?? "POST"}
                 onChange={(event) =>
                   onChange(node.id, { method: event.target.value as WebhookMethod })
                 }
-                className={fieldClass()}
               >
                 {WEBHOOK_METHODS.map((method) => (
                   <option key={method} value={method}>
                     {method}
                   </option>
                 ))}
-              </select>
+              </PillSelect>
             </div>
             <div className="mb-3.5">
               <label htmlFor="field-url" className={labelClass()}>
