@@ -2,11 +2,15 @@ import { X } from "lucide-react";
 import { MeoMark } from "@/components/meo-mark";
 import {
   NODE_KIND_META,
+  type AiModel,
+  type ConditionBranch,
   type FlowNode,
   type FlowNodeData,
+  type WebhookMethod,
 } from "@/lib/flow-types";
 
-const MODELS = ["claude-sonnet", "claude-haiku", "claude-opus"];
+const MODELS: AiModel[] = ["claude-sonnet", "claude-haiku"];
+const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 type NodeInspectorProps = {
   node: FlowNode | null;
@@ -125,7 +129,7 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
                 id="field-model"
                 value={data.model ?? "claude-sonnet"}
                 onChange={(event) =>
-                  onChange(node.id, { model: event.target.value })
+                  onChange(node.id, { model: event.target.value as AiModel })
                 }
                 className={fieldClass()}
               >
@@ -163,24 +167,67 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
         )}
 
         {node.type === "condition" && (
-          <div className="mb-3.5">
-            <label htmlFor="field-condition" className={labelClass()}>
-              Condition
-            </label>
-            <input
-              id="field-condition"
-              value={data.condition ?? ""}
-              onChange={(event) =>
-                onChange(node.id, { condition: event.target.value })
-              }
-              placeholder='reply contains "pricing"'
-              className={fieldClass()}
-            />
-          </div>
+          <>
+            <div className="mb-3.5">
+              <label htmlFor="field-variable" className={labelClass()}>
+                Variable
+              </label>
+              <input
+                id="field-variable"
+                value={data.variable ?? ""}
+                onChange={(event) => onChange(node.id, { variable: event.target.value })}
+                placeholder="last_message"
+                className={fieldClass()}
+              />
+            </div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className={labelClass().replace("mb-1.5 ", "")}>Branches</span>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {(data.branches ?? []).map((branch, index) => (
+                <div key={branch.id} className="rounded-[12px] border border-line-2 bg-card-2 p-2.5">
+                  <input
+                    aria-label={`Branch ${index + 1} label`}
+                    value={branch.label}
+                    onChange={(event) => {
+                      const next: ConditionBranch[] = [...(data.branches ?? [])];
+                      next[index] = { ...branch, label: event.target.value };
+                      onChange(node.id, { branches: next });
+                    }}
+                    placeholder="Branch label"
+                    className="mb-1.5 w-full bg-transparent text-[12.5px] font-medium text-text placeholder:text-[#5C5C5C] focus:outline-none"
+                  />
+                  <input
+                    aria-label={`Branch ${index + 1} value`}
+                    value={branch.value}
+                    onChange={(event) => {
+                      const next: ConditionBranch[] = [...(data.branches ?? [])];
+                      next[index] = { ...branch, value: event.target.value };
+                      onChange(node.id, { branches: next });
+                    }}
+                    placeholder="Match value"
+                    className="w-full bg-transparent text-[11.5px] text-muted placeholder:text-[#5C5C5C] focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
         {node.type === "capture" && (
           <>
+            <div className="mb-3.5">
+              <label htmlFor="field-question" className={labelClass()}>
+                Question
+              </label>
+              <textarea
+                id="field-question"
+                value={data.question ?? ""}
+                onChange={(event) => onChange(node.id, { question: event.target.value })}
+                rows={3}
+                className={`${fieldClass()} resize-y leading-relaxed`}
+              />
+            </div>
             <div className="mb-3.5">
               <label htmlFor="field-variable-name" className={labelClass()}>
                 Variable name
@@ -188,44 +235,47 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
               <input
                 id="field-variable-name"
                 value={data.variableName ?? ""}
-                onChange={(event) =>
-                  onChange(node.id, { variableName: event.target.value })
-                }
+                onChange={(event) => onChange(node.id, { variableName: event.target.value })}
                 className={fieldClass()}
-              />
-            </div>
-            <div className="mb-3.5">
-              <label htmlFor="field-prompt" className={labelClass()}>
-                Prompt
-              </label>
-              <textarea
-                id="field-prompt"
-                value={data.prompt ?? ""}
-                onChange={(event) =>
-                  onChange(node.id, { prompt: event.target.value })
-                }
-                rows={3}
-                className={`${fieldClass()} resize-y leading-relaxed`}
               />
             </div>
           </>
         )}
 
         {node.type === "webhook" && (
-          <div className="mb-3.5">
-            <label htmlFor="field-url" className={labelClass()}>
-              URL
-            </label>
-            <input
-              id="field-url"
-              value={data.url ?? ""}
-              onChange={(event) =>
-                onChange(node.id, { url: event.target.value })
-              }
-              placeholder="https://"
-              className={fieldClass()}
-            />
-          </div>
+          <>
+            <div className="mb-3.5">
+              <label htmlFor="field-method" className={labelClass()}>
+                Method
+              </label>
+              <select
+                id="field-method"
+                value={data.method ?? "POST"}
+                onChange={(event) =>
+                  onChange(node.id, { method: event.target.value as WebhookMethod })
+                }
+                className={fieldClass()}
+              >
+                {WEBHOOK_METHODS.map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mb-3.5">
+              <label htmlFor="field-url" className={labelClass()}>
+                URL
+              </label>
+              <input
+                id="field-url"
+                value={data.url ?? ""}
+                onChange={(event) => onChange(node.id, { url: event.target.value })}
+                placeholder="https://"
+                className={fieldClass()}
+              />
+            </div>
+          </>
         )}
 
         {node.type === "handoff" && (

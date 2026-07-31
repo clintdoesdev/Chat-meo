@@ -9,16 +9,33 @@ export type FlowNodeKind =
   | "webhook"
   | "handoff";
 
+export type AiModel = "claude-sonnet" | "claude-haiku";
+export type WebhookMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export type ConditionBranch = {
+  id: string;
+  label: string;
+  value: string;
+};
+
 export type FlowNodeData = {
   label: string;
+  // start / message
   text?: string;
+  // ai
   systemPrompt?: string;
-  model?: string;
+  model?: AiModel;
   temperature?: number;
-  condition?: string;
+  // condition
+  variable?: string;
+  branches?: ConditionBranch[];
+  // capture
+  question?: string;
   variableName?: string;
-  prompt?: string;
+  // webhook
   url?: string;
+  method?: WebhookMethod;
+  // handoff
   note?: string;
 };
 
@@ -69,21 +86,28 @@ export const NODE_KINDS: NodeKindMeta[] = [
     kind: "condition",
     label: "Condition",
     color: "#6EA8FF",
-    defaultData: { label: "Condition", condition: "reply contains \"pricing\"" },
+    defaultData: {
+      label: "Condition",
+      variable: "last_message",
+      branches: [
+        { id: "branch-1", label: "Contains \"pricing\"", value: "pricing" },
+        { id: "branch-2", label: "Else", value: "" },
+      ],
+    },
     inPalette: true,
   },
   {
     kind: "capture",
     label: "Capture input",
     color: "#4ED88E",
-    defaultData: { label: "Capture input", variableName: "email", prompt: "What's your email?" },
+    defaultData: { label: "Capture input", variableName: "email", question: "What's your email?" },
     inPalette: true,
   },
   {
     kind: "webhook",
     label: "Webhook",
     color: "#C58BFF",
-    defaultData: { label: "Webhook", url: "https://" },
+    defaultData: { label: "Webhook", url: "https://", method: "POST" },
     inPalette: true,
   },
   {
