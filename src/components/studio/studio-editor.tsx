@@ -15,6 +15,7 @@ import { ChevronLeft, Play } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MeoMark } from "@/components/meo-mark";
+import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
 import { FlowNodeView } from "@/components/studio/flow-node";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
@@ -44,6 +45,8 @@ type BotSummary = { id: string; name: string; slug: string; status: "DRAFT" | "L
 
 type SaveStatus = "saved" | "saving";
 
+const HISTORY_BURST_MS = 600;
+
 /** Strips React Flow's volatile/derived fields (selected, measured, dragging…) so we can
  * detect whether the graph actually changed, not just whether it re-rendered. */
 function serializeGraph(nodes: FlowNode[], edges: FlowEdge[]): string {
@@ -61,6 +64,11 @@ function serializeGraph(nodes: FlowNode[], edges: FlowEdge[]): string {
   return JSON.stringify({ nodes: cleanNodes, edges: cleanEdges });
 }
 
+/** The start node is the flow's single entry point and can never be removed by the user. */
+function withDeletable(nodes: FlowNode[]): FlowNode[] {
+  return nodes.map((node) => ({ ...node, deletable: node.type !== "start" }));
+}
+
 function StudioCanvas({
   bot,
   flowId,
@@ -70,7 +78,7 @@ function StudioCanvas({
   flowId: string;
   initialGraph: FlowGraph;
 }) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(initialGraph.nodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(withDeletable(initialGraph.nodes));
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>(initialGraph.edges);
   const [status, setStatus] = useState<BotSummary["status"]>(bot.status);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -79,6 +87,12 @@ function StudioCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const lastSavedRef = useRef(serializeGraph(initialGraph.nodes, initialGraph.edges));
+
+  const [historyStore] = useState(() => createFlowHistoryStore());
+  const isRestoringRef = useRef(false);
+  const inBurstRef = useRef(false);
+  const burstTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const prevSnapshotRef = useRef<FlowSnapshot>({ nodes, edges });
 
   const selectedNode = useMemo(() => nodes.find((node) => node.selected) ?? null, [nodes]);
 
@@ -121,6 +135,7 @@ function StudioCanvas({
         type: kind,
         position,
         data: { ...meta.defaultData },
+        deletable: true,
       };
 
       setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat({ ...newNode, selected: true }));
@@ -128,6 +143,7 @@ function StudioCanvas({
     [screenToFlowPosition, setNodes],
   );
 
+  // Autosave: debounce 1200ms after the graph actually changes.
   useEffect(() => {
     const snapshot = serializeGraph(nodes, edges);
     if (snapshot === lastSavedRef.current) return;
@@ -140,6 +156,57 @@ function StudioCanvas({
     }, 1200);
     return () => clearTimeout(timer);
   }, [nodes, edges, flowId]);
+
+  // Undo history: on the first meaningful change after a quiet period, record the state as it
+  // was right before that change. Further changes within the same burst (typing, dragging)
+  // don't add new entries, so one undo reverts one edit rather than one keystroke/frame.
+  useEffect(() => {
+    if (isRestoringRef.current) {
+      isRestoringRef.current = false;
+      prevSnapshotRef.current = { nodes, edges };
+      return;
+    }
+
+    const prev = prevSnapshotRef.current;
+    if (serializeGraph(prev.nodes, prev.edges) === serializeGraph(nodes, edges)) return;
+
+    if (!inBurstRef.current) {
+      historyStore.getState().pushCurrent(prev);
+      inBurstRef.current = true;
+    }
+    prevSnapshotRef.current = { nodes, edges };
+
+    clearTimeout(burstTimerRef.current);
+    burstTimerRef.current = setTimeout(() => {
+      inBurstRef.current = false;
+    }, HISTORY_BURST_MS);
+  }, [nodes, edges, historyStore]);
+
+  const handleUndo = useCallback(() => {
+    const previous = historyStore.getState().popPrevious();
+    if (!previous) return;
+    isRestoringRef.current = true;
+    inBurstRef.current = false;
+    clearTimeout(burstTimerRef.current);
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+  }, [historyStore, setNodes, setEdges]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z";
+      if (!isUndo) return;
+      const target = event.target as HTMLElement | null;
+      const isEditableField =
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (isEditableField) return;
+      event.preventDefault();
+      handleUndo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleUndo]);
 
   async function handlePublish() {
     const result = await publishBot(bot.id);
@@ -202,10 +269,18 @@ function StudioCanvas({
 
         <div
           ref={canvasRef}
-          className="relative min-h-[380px] flex-1 bg-[#0C0C0C]"
+          className="studio-flow-canvas relative min-h-[380px] flex-1 bg-[#0C0C0C]"
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
+          <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+            <defs>
+              <linearGradient id="studio-edge-gradient" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#FF5C16" />
+                <stop offset="1" stopColor="#FF8A3C" />
+              </linearGradient>
+            </defs>
+          </svg>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -217,6 +292,7 @@ function StudioCanvas({
             fitView
             fitViewOptions={{ maxZoom: 1 }}
             proOptions={{ hideAttribution: true }}
+            deleteKeyCode={["Backspace", "Delete"]}
           >
             <Background gap={24} color="rgba(255,255,255,.06)" />
           </ReactFlow>

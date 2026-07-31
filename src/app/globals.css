@@ -478,3 +478,28 @@ body {
     transform: translateX(-50%);
   }
 }
+
+/* ---------- Flow Studio: animated dashed gradient edges ---------- */
+
+.studio-flow-canvas .react-flow__edge-path {
+  stroke: url(#studio-edge-gradient);
+  stroke-width: 2px;
+  stroke-dasharray: 6 7;
+  animation: studio-edge-flow 0.7s linear infinite;
+}
+
+.studio-flow-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2.5px;
+}
+
+@keyframes studio-edge-flow {
+  to {
+    stroke-dashoffset: -13;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-flow-canvas .react-flow__edge-path {
+    animation: none;
+  }
+}
