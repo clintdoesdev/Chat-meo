@@ -4,7 +4,6 @@ import "@xyflow/react/dist/style.css";
 import {
   addEdge,
   Background,
-  Controls,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -12,11 +11,15 @@ import {
   useReactFlow,
   type Connection,
 } from "@xyflow/react";
+import { ChevronLeft, Play } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MeoMark } from "@/components/meo-mark";
 import { FlowNodeView } from "@/components/studio/flow-node";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
-import { MeoMark } from "@/components/meo-mark";
+import { TestDrawer } from "@/components/studio/test-drawer";
+import { ZoomPill } from "@/components/studio/zoom-pill";
 import { publishBot, saveFlowGraph } from "@/lib/actions/flow";
 import {
   NODE_KIND_META,
@@ -39,7 +42,7 @@ const nodeTypes = {
 
 type BotSummary = { id: string; name: string; slug: string; status: "DRAFT" | "LIVE" };
 
-type SaveStatus = "saved" | "pending" | "saving";
+type SaveStatus = "saved" | "saving";
 
 /** Strips React Flow's volatile/derived fields (selected, measured, dragging…) so we can
  * detect whether the graph actually changed, not just whether it re-rendered. */
@@ -71,12 +74,17 @@ function StudioCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>(initialGraph.edges);
   const [status, setStatus] = useState<BotSummary["status"]>(bot.status);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [testOpen, setTestOpen] = useState(false);
   const { screenToFlowPosition } = useReactFlow<FlowNode, FlowEdge>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const lastSavedRef = useRef(serializeGraph(initialGraph.nodes, initialGraph.edges));
 
   const selectedNode = useMemo(() => nodes.find((node) => node.selected) ?? null, [nodes]);
+
+  const deselectAll = useCallback(() => {
+    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+  }, [setNodes]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -124,13 +132,12 @@ function StudioCanvas({
     const snapshot = serializeGraph(nodes, edges);
     if (snapshot === lastSavedRef.current) return;
 
-    setSaveStatus("pending");
+    setSaveStatus("saving");
     const timer = setTimeout(async () => {
-      setSaveStatus("saving");
       await saveFlowGraph(flowId, { nodes, edges });
       lastSavedRef.current = snapshot;
       setSaveStatus("saved");
-    }, 800);
+    }, 1200);
     return () => clearTimeout(timer);
   }, [nodes, edges, flowId]);
 
@@ -139,51 +146,63 @@ function StudioCanvas({
     if (!result.error) setStatus("LIVE");
   }
 
-  const saveLabel =
-    saveStatus === "saved" ? "All changes saved" : saveStatus === "saving" ? "Saving…" : "Unsaved changes";
-
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <MeoMark size={30} />
-          <div>
-            <h1 className="text-[18px] font-bold">{bot.name}</h1>
-            <div className={`text-[12px] ${saveStatus === "saved" ? "text-ok" : "text-muted"}`}>
-              {saveLabel}
-            </div>
+      <header className="mb-4 flex flex-wrap items-center gap-3">
+        <Link
+          href="/app"
+          aria-label="Back to dashboard"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-line-2 text-muted transition hover:border-orange-2/50 hover:text-text"
+        >
+          <ChevronLeft size={16} strokeWidth={2.5} />
+        </Link>
+        <MeoMark size={28} />
+        <div className="mr-auto min-w-0">
+          <h1 className="truncate text-[15px] font-bold leading-tight">{bot.name}</h1>
+          <div
+            className={`text-[11.5px] font-medium ${saveStatus === "saved" ? "text-ok" : "text-muted"}`}
+          >
+            {saveStatus === "saved" ? "All changes saved" : "Saving…"}
           </div>
         </div>
-        <div className="flex items-center gap-2.5">
-          <span
-            className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
-              status === "LIVE"
-                ? "border-ok/30 bg-ok/10 text-ok"
-                : "border-line-2 bg-card-2 text-muted"
-            }`}
-          >
-            {status === "LIVE" ? "Live" : "Draft"}
-          </span>
-          <button
-            type="button"
-            onClick={handlePublish}
-            disabled={status === "LIVE"}
-            className="rounded-full bg-grad-orange px-4 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] disabled:opacity-50"
-          >
-            {status === "LIVE" ? "Published" : "Publish"}
-          </button>
-        </div>
-      </div>
+
+        <span
+          className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+            status === "LIVE"
+              ? "border-ok/30 bg-ok/10 text-ok"
+              : "border-line-2 bg-card-2 text-muted"
+          }`}
+        >
+          {status === "LIVE" ? "Live" : "Draft"}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => setTestOpen(true)}
+          className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+        >
+          <Play size={12} fill="currentColor" strokeWidth={0} />
+          Test
+        </button>
+
+        <button
+          type="button"
+          onClick={handlePublish}
+          disabled={status === "LIVE"}
+          className="rounded-full bg-grad-orange px-4 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] disabled:opacity-50"
+        >
+          {status === "LIVE" ? "Published" : "Publish"}
+        </button>
+      </header>
 
       <div
-        className="grid overflow-hidden rounded-[18px] border border-line-2"
-        style={{ gridTemplateColumns: "216px 1fr 260px", height: "calc(100vh - 220px)", minHeight: 520 }}
+        className="flex h-[calc(100vh-260px)] min-h-[520px] flex-col overflow-hidden rounded-[18px] border border-line-2 min-[1020px]:h-[calc(100vh-200px)] min-[1020px]:flex-row"
       >
         <NodePalette />
 
         <div
           ref={canvasRef}
-          className="relative bg-[#0C0C0C]"
+          className="relative min-h-[380px] flex-1 bg-[#0C0C0C]"
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
@@ -200,12 +219,14 @@ function StudioCanvas({
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={24} color="rgba(255,255,255,.06)" />
-            <Controls showInteractive={false} />
           </ReactFlow>
+          <ZoomPill />
         </div>
 
-        <NodeInspector node={selectedNode} onChange={updateNodeData} />
+        <NodeInspector node={selectedNode} onChange={updateNodeData} onClose={deselectAll} />
       </div>
+
+      <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} />
     </div>
   );
 }
