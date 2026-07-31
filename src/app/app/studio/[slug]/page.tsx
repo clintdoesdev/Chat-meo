@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { StudioEditor } from "@/components/studio/studio-editor";
-import { defaultFlowGraph, isFlowGraph, type FlowGraph } from "@/lib/flow-types";
+import { parseFlowGraph } from "@/lib/flow-schema";
+import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
 
 export default async function StudioBotPage({
@@ -34,7 +35,7 @@ export default async function StudioBotPage({
     });
   }
 
-  const graph: FlowGraph = isFlowGraph(flow.graph) ? flow.graph : defaultFlowGraph();
+  const graph = parseFlowGraph(flow.graph) ?? defaultFlowGraph();
 
   return (
     <StudioEditor

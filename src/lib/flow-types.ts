@@ -139,8 +139,3 @@ export function defaultFlowGraph(): FlowGraph {
   };
 }
 
-export function isFlowGraph(value: unknown): value is FlowGraph {
-  if (!value || typeof value !== "object") return false;
-  const graph = value as Record<string, unknown>;
-  return Array.isArray(graph.nodes) && Array.isArray(graph.edges);
-}

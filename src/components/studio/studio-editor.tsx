@@ -15,13 +15,15 @@ import { ChevronLeft, Play } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MeoMark } from "@/components/meo-mark";
+import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
 import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
 import { FlowNodeView } from "@/components/studio/flow-node";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
 import { TestDrawer } from "@/components/studio/test-drawer";
+import { ValidationBanner } from "@/components/studio/validation-banner";
 import { ZoomPill } from "@/components/studio/zoom-pill";
-import { publishBot, saveFlowGraph } from "@/lib/actions/flow";
+import { publishBot, saveFlow } from "@/lib/actions/flow";
 import {
   NODE_KIND_META,
   type FlowEdge,
@@ -69,6 +71,39 @@ function withDeletable(nodes: FlowNode[]): FlowNode[] {
   return nodes.map((node) => ({ ...node, deletable: node.type !== "start" }));
 }
 
+/** Nodes unreachable from Start (via edges), and AI nodes with no system prompt set. */
+function computeFlowIssues(nodes: FlowNode[], edges: FlowEdge[]): string[] {
+  const startNode = nodes.find((node) => node.type === "start");
+  const reachable = new Set<string>();
+  if (startNode) {
+    const queue = [startNode.id];
+    reachable.add(startNode.id);
+    while (queue.length > 0) {
+      const current = queue.shift() as string;
+      for (const edge of edges) {
+        if (edge.source === current && !reachable.has(edge.target)) {
+          reachable.add(edge.target);
+          queue.push(edge.target);
+        }
+      }
+    }
+  }
+
+  const orphanCount = nodes.filter((node) => node.type !== "start" && !reachable.has(node.id)).length;
+  const emptyPromptCount = nodes.filter(
+    (node) => node.type === "ai" && !(node.data.systemPrompt ?? "").trim(),
+  ).length;
+
+  const issues: string[] = [];
+  if (orphanCount > 0) {
+    issues.push(`${orphanCount} node${orphanCount > 1 ? "s" : ""} not connected to Start`);
+  }
+  if (emptyPromptCount > 0) {
+    issues.push(`${emptyPromptCount} AI node${emptyPromptCount > 1 ? "s" : ""} missing a prompt`);
+  }
+  return issues;
+}
+
 function StudioCanvas({
   bot,
   flowId,
@@ -95,6 +130,17 @@ function StudioCanvas({
   const prevSnapshotRef = useRef<FlowSnapshot>({ nodes, edges });
 
   const selectedNode = useMemo(() => nodes.find((node) => node.selected) ?? null, [nodes]);
+
+  const issues = useMemo(() => computeFlowIssues(nodes, edges), [nodes, edges]);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const lastIssueSignatureRef = useRef("");
+  useEffect(() => {
+    const signature = issues.join("|");
+    if (signature !== lastIssueSignatureRef.current) {
+      lastIssueSignatureRef.current = signature;
+      setBannerDismissed(false);
+    }
+  }, [issues]);
 
   const deselectAll = useCallback(() => {
     setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
@@ -150,12 +196,12 @@ function StudioCanvas({
 
     setSaveStatus("saving");
     const timer = setTimeout(async () => {
-      await saveFlowGraph(flowId, { nodes, edges });
+      await saveFlow(bot.id, flowId, { nodes, edges });
       lastSavedRef.current = snapshot;
       setSaveStatus("saved");
     }, 1200);
     return () => clearTimeout(timer);
-  }, [nodes, edges, flowId]);
+  }, [nodes, edges, flowId, bot.id]);
 
   // Undo history: on the first meaningful change after a quiet period, record the state as it
   // was right before that change. Further changes within the same burst (typing, dragging)
@@ -297,6 +343,12 @@ function StudioCanvas({
             <Background gap={24} color="rgba(255,255,255,.06)" />
           </ReactFlow>
           <ZoomPill />
+          {!bannerDismissed && (
+            <ValidationBanner issues={issues} onDismiss={() => setBannerDismissed(true)} />
+          )}
+          {nodes.length === 1 && nodes[0].type === "start" && (
+            <EmptyFlowHint startNode={nodes[0]} />
+          )}
         </div>
 
         <NodeInspector node={selectedNode} onChange={updateNodeData} onClose={deselectAll} />
