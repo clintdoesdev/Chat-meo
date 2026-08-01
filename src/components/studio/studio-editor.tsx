@@ -16,10 +16,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GetEmbedModal } from "@/components/app/get-embed-modal";
 import { MeoMark } from "@/components/meo-mark";
+import { ConfirmDeleteModal } from "@/components/studio/confirm-delete-modal";
 import { DragGhost } from "@/components/studio/drag-ghost";
 import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
 import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
 import { FlowNodeView } from "@/components/studio/flow-node";
+import { StudioNodeActionsContext } from "@/components/studio/node-actions-context";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
 import { TestDrawer } from "@/components/studio/test-drawer";
@@ -123,7 +125,7 @@ function StudioCanvas({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [testOpen, setTestOpen] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
-  const { screenToFlowPosition } = useReactFlow<FlowNode, FlowEdge>();
+  const { screenToFlowPosition, deleteElements } = useReactFlow<FlowNode, FlowEdge>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const lastSavedRef = useRef(serializeGraph(initialGraph.nodes, initialGraph.edges));
@@ -134,7 +136,25 @@ function StudioCanvas({
   const burstTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const prevSnapshotRef = useRef<FlowSnapshot>({ nodes, edges });
 
-  const selectedNode = useMemo(() => nodes.find((node) => node.selected) ?? null, [nodes]);
+  // Which node's settings sheet is open — driven only by long-press / right-click (see
+  // FlowNodeView + StudioNodeActionsContext), deliberately independent of React Flow's own
+  // click-to-select state so a plain tap/click no longer pops the sheet open.
+  const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null);
+  const detailsNode = useMemo(() => nodes.find((node) => node.id === detailsNodeId) ?? null, [nodes, detailsNodeId]);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pendingDeleteNode = useMemo(
+    () => nodes.find((node) => node.id === pendingDeleteId) ?? null,
+    [nodes, pendingDeleteId],
+  );
+
+  const nodeActions = useMemo(() => ({ openDetails: (id: string) => setDetailsNodeId(id) }), []);
+
+  const confirmDeleteNode = useCallback(() => {
+    if (!pendingDeleteId) return;
+    void deleteElements({ nodes: [{ id: pendingDeleteId }] });
+    if (detailsNodeId === pendingDeleteId) setDetailsNodeId(null);
+    setPendingDeleteId(null);
+  }, [pendingDeleteId, detailsNodeId, deleteElements]);
 
   const issues = useMemo(() => computeFlowIssues(nodes, edges), [nodes, edges]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -146,10 +166,6 @@ function StudioCanvas({
       setBannerDismissed(false);
     }
   }, [issues]);
-
-  const deselectAll = useCallback(() => {
-    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
-  }, [setNodes]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -369,21 +385,23 @@ function StudioCanvas({
               </linearGradient>
             </defs>
           </svg>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            nodeTypes={nodeTypes}
-            colorMode="dark"
-            fitView
-            fitViewOptions={{ maxZoom: 1 }}
-            proOptions={{ hideAttribution: true }}
-            deleteKeyCode={["Backspace", "Delete"]}
-          >
-            <Background gap={24} color="rgba(255,255,255,.06)" />
-          </ReactFlow>
+          <StudioNodeActionsContext.Provider value={nodeActions}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              nodeTypes={nodeTypes}
+              colorMode="dark"
+              fitView
+              fitViewOptions={{ maxZoom: 1 }}
+              proOptions={{ hideAttribution: true }}
+              deleteKeyCode={["Backspace", "Delete"]}
+            >
+              <Background gap={24} color="rgba(255,255,255,.06)" />
+            </ReactFlow>
+          </StudioNodeActionsContext.Provider>
           <ZoomPill />
           {!bannerDismissed && (
             <ValidationBanner issues={issues} onDismiss={() => setBannerDismissed(true)} />
@@ -394,12 +412,21 @@ function StudioCanvas({
         </div>
 
         <NodeInspector
-          node={selectedNode}
+          node={detailsNode}
           flowId={flowId}
           onChange={updateNodeData}
-          onClose={deselectAll}
+          onClose={() => setDetailsNodeId(null)}
+          onRequestDelete={() => detailsNodeId && setPendingDeleteId(detailsNodeId)}
         />
       </div>
+
+      {pendingDeleteNode && (
+        <ConfirmDeleteModal
+          label={pendingDeleteNode.data.label || NODE_KIND_META[pendingDeleteNode.type as FlowNodeKind]?.label || "this node"}
+          onConfirm={confirmDeleteNode}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+      )}
 
       <TestDrawer
         open={testOpen}

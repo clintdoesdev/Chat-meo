@@ -1,4 +1,4 @@
-import { Plus, X } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { MeoMark } from "@/components/meo-mark";
 import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
 import { PillSelect } from "@/components/studio/pill-select";
@@ -30,6 +30,7 @@ type NodeInspectorProps = {
   flowId: string;
   onChange: (id: string, patch: Partial<FlowNodeData>) => void;
   onClose: () => void;
+  onRequestDelete: () => void;
 };
 
 function fieldClass() {
@@ -46,7 +47,7 @@ const sheetPositionClass =
   "min-[1020px]:w-[260px] min-[1020px]:shrink-0 min-[1020px]:translate-y-0 min-[1020px]:rounded-t-none " +
   "min-[1020px]:border-t-0 min-[1020px]:border-l min-[1020px]:pb-0";
 
-export function NodeInspector({ node, flowId, onChange, onClose }: NodeInspectorProps) {
+export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete }: NodeInspectorProps) {
   if (!node || !node.type) {
     return (
       <aside
@@ -85,8 +86,23 @@ export function NodeInspector({ node, flowId, onChange, onClose }: NodeInspector
           </button>
         </div>
 
-        <h4 className="text-sm font-semibold">{meta.label}</h4>
-        <p className="mb-4 text-[11.5px] text-muted">{node.id}</p>
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h4 className="text-sm font-semibold">{meta.label}</h4>
+            <p className="text-[11.5px] text-muted">{node.id}</p>
+          </div>
+          {node.deletable !== false && (
+            <button
+              type="button"
+              data-fx-skip
+              onClick={onRequestDelete}
+              aria-label={`Delete ${meta.label}`}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-bad/15 text-bad transition hover:bg-bad/25"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
 
         <div className="mb-3.5">
           <label htmlFor="field-label" className={labelClass()}>

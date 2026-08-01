@@ -504,6 +504,33 @@ body {
   }
 }
 
+/* A quick tap on a node (short of a long-press) gets this instead of opening anything. */
+.node-wobble {
+  animation: node-wobble 0.4s ease-in-out;
+}
+
+@keyframes node-wobble {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-1.5deg) scale(0.98);
+  }
+  50% {
+    transform: rotate(1.5deg) scale(1.02);
+  }
+  75% {
+    transform: rotate(-1deg) scale(0.99);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-wobble {
+    animation: none;
+  }
+}
+
 /* ---------- toast ---------- */
 
 .toast-in {

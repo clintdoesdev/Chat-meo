@@ -1,11 +1,13 @@
-import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
-import { useEffect, useRef } from "react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useEffect, useRef, useState } from "react";
+import { useStudioNodeActions } from "@/components/studio/node-actions-context";
 import { NODE_KIND_META, type FlowNode, type FlowNodeData, type FlowNodeKind } from "@/lib/flow-types";
 
 const HANDLE_COLOR = "#FF5C16";
 const HANDLE_CLASS = "!h-[9px] !w-[9px] !border-2 !border-[#0C0C0C]";
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
+const WOBBLE_MS = 400;
 
 function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   switch (kind) {
@@ -25,14 +27,17 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   }
 }
 
-export function FlowNodeView({ id, data, selected, type, deletable }: NodeProps<FlowNode>) {
+export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) {
   const meta = type ? NODE_KIND_META[type] : undefined;
   const color = meta?.color ?? "#FF5C16";
   const branches = type === "condition" ? (data.branches ?? []) : [];
-  const { deleteElements } = useReactFlow();
+  const { openDetails } = useStudioNodeActions();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const wobbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const firedRef = useRef(false);
+  const [wobbling, setWobbling] = useState(false);
 
   function clearPressTimer() {
     if (pressTimerRef.current) {
@@ -41,83 +46,118 @@ export function FlowNodeView({ id, data, selected, type, deletable }: NodeProps<
     }
   }
 
-  function confirmDelete() {
-    const label = data.label || meta?.label || "this node";
-    if (!confirm(`Delete "${label}"? This can't be undone.`)) return;
-    void deleteElements({ nodes: [{ id }] });
+  function triggerWobble() {
+    setWobbling(true);
+    if (wobbleTimerRef.current) clearTimeout(wobbleTimerRef.current);
+    wobbleTimerRef.current = setTimeout(() => setWobbling(false), WOBBLE_MS);
   }
 
   // React Flow's own pointer handling on the node wrapper calls stopPropagation() on the
-  // native touch event during the bubble phase, which short-circuits React's synthetic event
-  // dispatch entirely (React's JSX props depend on the native event bubbling all the way up
-  // to React's root listener). So long-press detection is wired via native capture-phase
-  // addEventListener instead of onTouchStart/onTouchMove/onTouchEnd JSX props — capture-phase
-  // listeners run top-down before any bubble-phase stopPropagation() can block them.
+  // native pointer/touch event during the bubble phase, which short-circuits React's synthetic
+  // event dispatch entirely (React's JSX props depend on the native event bubbling all the way
+  // up to React's root listener). So press-and-hold detection is wired via native capture-phase
+  // addEventListener instead of onTouchStart/onMouseDown JSX props — capture-phase listeners run
+  // top-down before any bubble-phase stopPropagation() can block them.
+  //
+  // React Flow also takes pointer capture on the node for its own drag handling, which means a
+  // "mouseup"/"touchend" fired at release time doesn't reliably bubble (or even dispatch) on
+  // this node's own element anymore. So press-start is detected on the node itself, but the
+  // move/end tracking that follows is done on `window` (capture phase) instead, which sees the
+  // event regardless of which element the browser/React Flow considers its target.
   useEffect(() => {
-    if (!deletable) return;
     const node = rootRef.current;
     if (!node) return;
 
-    function handleTouchStart(event: TouchEvent) {
-      const touch = event.touches[0];
-      if (!touch) return;
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    function endPress() {
+      const wasPending = pressTimerRef.current !== null;
       clearPressTimer();
-      pressTimerRef.current = setTimeout(() => {
-        if (navigator.vibrate) navigator.vibrate(10);
-        confirmDelete();
-      }, LONG_PRESS_MS);
+      pressStartRef.current = null;
+      window.removeEventListener("touchmove", handleWindowTouchMove, { capture: true });
+      window.removeEventListener("touchend", endPress, { capture: true });
+      window.removeEventListener("touchcancel", endPress, { capture: true });
+      window.removeEventListener("mousemove", handleWindowMouseMove, { capture: true });
+      window.removeEventListener("mouseup", endPress, { capture: true });
+      // A short tap that released before the long-press timer fired: just a wobble, no panel.
+      if (wasPending && !firedRef.current) {
+        triggerWobble();
+      }
     }
 
-    function handleTouchMove(event: TouchEvent) {
-      const start = touchStartRef.current;
-      const touch = event.touches[0];
-      if (!start || !touch) return;
-      if (
-        Math.abs(touch.clientX - start.x) > MOVE_CANCEL_PX ||
-        Math.abs(touch.clientY - start.y) > MOVE_CANCEL_PX
-      ) {
+    function movePress(x: number, y: number) {
+      const start = pressStartRef.current;
+      if (!start) return;
+      if (Math.abs(x - start.x) > MOVE_CANCEL_PX || Math.abs(y - start.y) > MOVE_CANCEL_PX) {
         clearPressTimer();
       }
     }
 
-    function handleTouchEnd() {
+    function handleWindowTouchMove(event: TouchEvent) {
+      const touch = event.touches[0];
+      if (touch) movePress(touch.clientX, touch.clientY);
+    }
+    function handleWindowMouseMove(event: MouseEvent) {
+      movePress(event.clientX, event.clientY);
+    }
+
+    function startPress(x: number, y: number) {
+      pressStartRef.current = { x, y };
+      firedRef.current = false;
       clearPressTimer();
+      pressTimerRef.current = setTimeout(() => {
+        firedRef.current = true;
+        if (navigator.vibrate) navigator.vibrate(10);
+        openDetails(id);
+      }, LONG_PRESS_MS);
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      const touch = event.touches[0];
+      if (!touch) return;
+      startPress(touch.clientX, touch.clientY);
+      window.addEventListener("touchmove", handleWindowTouchMove, { capture: true, passive: true });
+      window.addEventListener("touchend", endPress, { capture: true, passive: true });
+      window.addEventListener("touchcancel", endPress, { capture: true, passive: true });
+    }
+    function handleMouseDown(event: MouseEvent) {
+      if (event.button !== 0) return;
+      startPress(event.clientX, event.clientY);
+      window.addEventListener("mousemove", handleWindowMouseMove, { capture: true });
+      window.addEventListener("mouseup", endPress, { capture: true });
     }
 
     node.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
-    node.addEventListener("touchmove", handleTouchMove, { capture: true, passive: true });
-    node.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
-    node.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
+    node.addEventListener("mousedown", handleMouseDown, { capture: true });
 
     return () => {
       clearPressTimer();
+      if (wobbleTimerRef.current) clearTimeout(wobbleTimerRef.current);
       node.removeEventListener("touchstart", handleTouchStart, { capture: true });
-      node.removeEventListener("touchmove", handleTouchMove, { capture: true });
-      node.removeEventListener("touchend", handleTouchEnd, { capture: true });
-      node.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
+      node.removeEventListener("mousedown", handleMouseDown, { capture: true });
+      window.removeEventListener("touchmove", handleWindowTouchMove, { capture: true });
+      window.removeEventListener("touchend", endPress, { capture: true });
+      window.removeEventListener("touchcancel", endPress, { capture: true });
+      window.removeEventListener("mousemove", handleWindowMouseMove, { capture: true });
+      window.removeEventListener("mouseup", endPress, { capture: true });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deletable, id, data.label, meta?.label]);
+  }, [id]);
 
   return (
     <div
       ref={rootRef}
-      className="w-[186px] rounded-[14px] border bg-[#161616] p-3 text-[12px] shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)]"
+      className={`w-[186px] rounded-[14px] border bg-[#161616] p-3 text-[12px] shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)] ${
+        wobbling ? "node-wobble" : ""
+      }`}
       style={{
         borderColor: selected ? "#FF8A3C" : "rgba(255,255,255,.12)",
         boxShadow: selected
           ? "0 0 0 3px rgba(255,110,40,.18), 0 16px 40px -18px rgba(0,0,0,.9)"
           : undefined,
       }}
-      onContextMenu={
-        deletable
-          ? (event: React.MouseEvent) => {
-              event.preventDefault();
-              confirmDelete();
-            }
-          : undefined
-      }
+      onContextMenu={(event: React.MouseEvent) => {
+        event.preventDefault();
+        openDetails(id);
+      }}
     >
       {type !== "start" && (
         <Handle
