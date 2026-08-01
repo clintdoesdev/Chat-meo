@@ -3,7 +3,7 @@ import { DM_Sans } from "next/font/google";
 import { ClickFeedback } from "@/components/click-feedback";
 import { SharedDefs } from "@/components/shared-defs";
 import { SmoothScroll } from "@/components/smooth-scroll";
-import "./globals.css";
+import "../globals.css";
 
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",

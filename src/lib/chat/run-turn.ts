@@ -31,7 +31,7 @@ function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" 
   return "OPEN";
 }
 
-export type BotAccess = { live: boolean; allowedDomains: string[] };
+export type BotAccess = { live: boolean; allowedDomains: string[]; testMode: boolean };
 
 /** A lightweight lookup the route uses to decide 404/403/429 *before* it's committed to a
  * response (streaming's status can't change after the stream starts) — runChatTurn does the
@@ -42,13 +42,20 @@ export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess 
     where: { publicKey: botPublicKey },
     select: {
       allowedDomains: true,
-      bot: { select: { status: true, flows: { where: { isActive: true }, take: 1, select: { id: true } } } },
+      bot: {
+        select: {
+          status: true,
+          testMode: true,
+          flows: { where: { isActive: true }, take: 1, select: { id: true } },
+        },
+      },
     },
   });
   if (!apiKey) return null;
   return {
     live: apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0,
     allowedDomains: apiKey.allowedDomains,
+    testMode: apiKey.bot.testMode,
   };
 }
 

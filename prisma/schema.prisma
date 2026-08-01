@@ -12,6 +12,11 @@ enum BotStatus {
   LIVE
 }
 
+enum WidgetPosition {
+  BOTTOM_LEFT
+  BOTTOM_RIGHT
+}
+
 enum ConversationStatus {
   OPEN
   RESOLVED
@@ -72,14 +77,23 @@ model VerificationCode {
 }
 
 model Bot {
-  id           String    @id @default(cuid())
-  userId       String
-  name         String
-  slug         String    @unique
-  status       BotStatus @default(DRAFT)
-  primaryColor String    @default("#FF5C16")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String         @id @default(cuid())
+  userId          String
+  name            String
+  slug            String         @unique
+  status          BotStatus      @default(DRAFT)
+  primaryColor    String         @default("#FF5C16")
+  welcomeMessage  String?
+  widgetPosition  WidgetPosition @default(BOTTOM_RIGHT)
+  /// Permissive mode for the embeddable widget: while true, the origin allowlist check in
+  /// src/lib/chat/origin-check.ts is skipped when BotApiKey.allowedDomains is still empty, so a
+  /// bot owner can test the widget (e.g. on the dashboard preview or test-embed.html) before
+  /// they've configured a real domain. Flipped off automatically the first time a domain is
+  /// added (see addAllowedDomain in src/lib/actions/embed.ts) — from then on, an empty
+  /// allowedDomains list means "no domain configured yet," not "anything goes."
+  testMode        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   flows         Flow[]

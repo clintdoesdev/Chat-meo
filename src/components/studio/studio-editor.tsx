@@ -11,9 +11,10 @@ import {
   useReactFlow,
   type Connection,
 } from "@xyflow/react";
-import { ChevronLeft, Play } from "lucide-react";
+import { ChevronLeft, Code2, Play } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GetEmbedModal } from "@/components/app/get-embed-modal";
 import { MeoMark } from "@/components/meo-mark";
 import { DragGhost } from "@/components/studio/drag-ghost";
 import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
@@ -121,6 +122,7 @@ function StudioCanvas({
   const [status, setStatus] = useState<BotSummary["status"]>(bot.status);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [testOpen, setTestOpen] = useState(false);
+  const [embedOpen, setEmbedOpen] = useState(false);
   const { screenToFlowPosition } = useReactFlow<FlowNode, FlowEdge>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
@@ -321,6 +323,15 @@ function StudioCanvas({
 
         <button
           type="button"
+          onClick={() => setEmbedOpen(true)}
+          className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+        >
+          <Code2 size={13} />
+          Get embed
+        </button>
+
+        <button
+          type="button"
           onClick={() => setTestOpen(true)}
           className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
         >
@@ -398,6 +409,7 @@ function StudioCanvas({
       />
       {toastMessage && <Toast message={toastMessage} />}
       {paletteDrag && <DragGhost kind={paletteDrag.kind} x={paletteDrag.x} y={paletteDrag.y} />}
+      {embedOpen && <GetEmbedModal botId={bot.id} botName={bot.name} onClose={() => setEmbedOpen(false)} />}
     </div>
   );
 }

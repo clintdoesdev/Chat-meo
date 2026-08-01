@@ -1,0 +1,233 @@
+/* Hand-written, not Tailwind — this route deliberately doesn't pull in the dashboard's
+   generated utility stylesheet. Keep additions here small; this ships to every visitor of
+   every embedded bot. */
+
+:root {
+  --cm-bg: #0a0a0a;
+  --cm-card: #141414;
+  --cm-card-2: #1b1b1b;
+  --cm-line: rgba(255, 255, 255, 0.08);
+  --cm-text: #f5f5f5;
+  --cm-muted: #8f8f8f;
+  --cm-bad: #ff5757;
+  --cm-primary: #ff5c16;
+  --cm-primary-2: #ff8a3c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--cm-bg);
+  color: var(--cm-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cm-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.cm-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--cm-line);
+  flex-shrink: 0;
+}
+
+.cm-header-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.cm-header-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--cm-muted);
+  margin-top: 2px;
+}
+
+.cm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ed88e;
+  flex-shrink: 0;
+}
+
+.cm-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cm-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.cm-row.cm-user {
+  flex-direction: row-reverse;
+}
+
+.cm-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--cm-card-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cm-bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cm-bubble.cm-bot {
+  background: var(--cm-card-2);
+  color: var(--cm-text);
+  border-bottom-left-radius: 6px;
+}
+
+.cm-bubble.cm-user {
+  background: linear-gradient(180deg, var(--cm-primary-2), var(--cm-primary));
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+
+.cm-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.cm-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cm-muted);
+  animation: cm-bounce 1.1s infinite ease-in-out;
+}
+
+.cm-typing span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.cm-typing span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes cm-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.cm-inputbar {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--cm-line);
+}
+
+.cm-inputrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--cm-card-2);
+  border: 1px solid var(--cm-line);
+  border-radius: 999px;
+  padding: 6px 6px 6px 14px;
+}
+
+.cm-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--cm-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.cm-input::placeholder {
+  color: #5c5c5c;
+}
+
+.cm-send {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--cm-primary-2), var(--cm-primary));
+  color: #fff;
+  cursor: pointer;
+}
+
+.cm-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cm-error-screen {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+}
+
+.cm-error-screen p {
+  font-size: 13px;
+  color: var(--cm-muted);
+  max-width: 32ch;
+}
+
+.cm-log::-webkit-scrollbar {
+  width: 6px;
+}
+.cm-log::-webkit-scrollbar-thumb {
+  background: var(--cm-line);
+  border-radius: 999px;
+}

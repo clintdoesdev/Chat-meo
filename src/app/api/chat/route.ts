@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createStreamingGrokLlm, grokLlm } from "@/engine/llm";
-import { isOriginAllowed } from "@/lib/chat/origin-check";
+import { corsHeaders } from "@/lib/chat/cors";
+import { isChatRequestAllowed, isOwnHost, resolveEmbedHostname } from "@/lib/chat/origin-check";
 import { resolveBotAccess, runChatTurn } from "@/lib/chat/run-turn";
 import { chatRateLimiter } from "@/lib/rate-limit";
 
@@ -11,15 +12,24 @@ const BodySchema = z.object({
   message: z.string().max(4000).optional(),
 });
 
+const RATE_LIMIT_REPLY = "You're sending messages a little fast — please wait a moment and try again.";
+
 function sseFrame(data: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(request.headers.get("origin")) });
+}
+
 export async function POST(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  const cors = corsHeaders(origin);
+
   const json = await request.json().catch(() => null);
   const parsed = BodySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400, headers: cors });
   }
 
   // Resolved once, up front, for both response modes below — a streaming response's status
@@ -29,17 +39,21 @@ export async function POST(request: NextRequest) {
   // conversation/message side effects.
   const access = await resolveBotAccess(parsed.data.botPublicKey);
   if (!access || !access.live) {
-    return NextResponse.json({ error: "Bot not found." }, { status: 404 });
+    return NextResponse.json({ error: "Bot not found." }, { status: 404, headers: cors });
   }
 
-  if (process.env.NODE_ENV === "production") {
-    if (!isOriginAllowed(request.headers.get("origin"), access.allowedDomains)) {
-      return NextResponse.json({ error: "Origin not allowed." }, { status: 403 });
-    }
+  const embedHost = resolveEmbedHostname(request);
+  if (!isOwnHost(embedHost, request) && !isChatRequestAllowed(embedHost, access)) {
+    return NextResponse.json({ error: "Origin not allowed." }, { status: 403, headers: cors });
   }
 
   if (!(await chatRateLimiter.consume(parsed.data.visitorId))) {
-    return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+    // A graceful in-character reply rather than a bare error — the widget renders `replies`
+    // as a normal bot bubble regardless of status code.
+    return NextResponse.json(
+      { error: "Too many requests.", replies: [{ content: RATE_LIMIT_REPLY }], status: "RUNNING" },
+      { status: 429, headers: cors },
+    );
   }
 
   const streaming = request.nextUrl.searchParams.get("stream") === "1";
@@ -47,9 +61,9 @@ export async function POST(request: NextRequest) {
   if (!streaming) {
     const result = await runChatTurn(parsed.data, { llm: grokLlm });
     if (result.kind === "not_found") {
-      return NextResponse.json({ error: "Bot not found." }, { status: 404 });
+      return NextResponse.json({ error: "Bot not found." }, { status: 404, headers: cors });
     }
-    return NextResponse.json({ replies: result.replies, status: result.status });
+    return NextResponse.json({ replies: result.replies, status: result.status }, { headers: cors });
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -77,6 +91,7 @@ export async function POST(request: NextRequest) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      ...cors,
     },
   });
 }
