@@ -1,5 +1,6 @@
 import { Plus, X } from "lucide-react";
 import { MeoMark } from "@/components/meo-mark";
+import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
 import { PillSelect } from "@/components/studio/pill-select";
 import {
   NODE_KIND_META,
@@ -26,6 +27,7 @@ const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE
 
 type NodeInspectorProps = {
   node: FlowNode | null;
+  flowId: string;
   onChange: (id: string, patch: Partial<FlowNodeData>) => void;
   onClose: () => void;
 };
@@ -44,7 +46,7 @@ const sheetPositionClass =
   "min-[1020px]:w-[260px] min-[1020px]:shrink-0 min-[1020px]:translate-y-0 min-[1020px]:rounded-t-none " +
   "min-[1020px]:border-t-0 min-[1020px]:border-l min-[1020px]:pb-0";
 
-export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
+export function NodeInspector({ node, flowId, onChange, onClose }: NodeInspectorProps) {
   if (!node || !node.type) {
     return (
       <aside
@@ -174,6 +176,7 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
                 className="w-full accent-orange"
               />
             </div>
+            <KnowledgeUpload flowId={flowId} nodeId={node.id} />
           </>
         )}
 

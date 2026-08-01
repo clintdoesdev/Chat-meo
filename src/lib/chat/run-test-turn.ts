@@ -3,6 +3,7 @@ import { createInitialState, step } from "@/engine/executor";
 import { grokLlm } from "@/engine/llm";
 import { parseEngineState } from "@/engine/state-schema";
 import type { EngineState, Reply } from "@/engine/types";
+import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
 import { parseFlowGraph } from "@/lib/flow-schema";
 
 export type RunTestTurnParams = {
@@ -10,6 +11,10 @@ export type RunTestTurnParams = {
   state?: unknown;
   message?: string;
   sessionId?: string;
+  /** So the Test drawer can preview an AI node's uploaded knowledge-base docs even though the
+   * graph it's testing is the unsaved in-editor one — docs are keyed by flowId, not by the graph
+   * blob itself. Omitted (e.g. no flow yet) simply means no documents get attached. */
+  flowId?: string;
 };
 
 export type RunTestTurnResult =
@@ -26,6 +31,7 @@ export async function runTestTurn(params: RunTestTurnParams): Promise<RunTestTur
   if (!persistedGraph) return { kind: "invalid_graph" };
 
   const graph = adaptPersistedGraph(persistedGraph);
+  if (params.flowId) await attachAiNodeDocuments(graph, params.flowId);
   const state = params.state ? parseEngineState(params.state, graph) : createInitialState(graph);
 
   const output = await step(graph, state, params.message, {

@@ -382,10 +382,20 @@ function StudioCanvas({
           )}
         </div>
 
-        <NodeInspector node={selectedNode} onChange={updateNodeData} onClose={deselectAll} />
+        <NodeInspector
+          node={selectedNode}
+          flowId={flowId}
+          onChange={updateNodeData}
+          onClose={deselectAll}
+        />
       </div>
 
-      <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} graph={{ nodes, edges }} />
+      <TestDrawer
+        open={testOpen}
+        onClose={() => setTestOpen(false)}
+        graph={{ nodes, edges }}
+        flowId={flowId}
+      />
       {toastMessage && <Toast message={toastMessage} />}
       {paletteDrag && <DragGhost kind={paletteDrag.kind} x={paletteDrag.x} y={paletteDrag.y} />}
     </div>

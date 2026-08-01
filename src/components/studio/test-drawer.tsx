@@ -19,6 +19,7 @@ async function postTestTurn(body: {
   state?: EngineState;
   message?: string;
   sessionId: string;
+  flowId?: string;
 }): Promise<{ replies: { content: string }[]; state: EngineState } | null> {
   const res = await fetch("/api/chat/test", {
     method: "POST",
@@ -33,10 +34,12 @@ export function TestDrawer({
   open,
   onClose,
   graph,
+  flowId,
 }: {
   open: boolean;
   onClose: () => void;
   graph: FlowGraph;
+  flowId?: string;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [engineState, setEngineState] = useState<EngineState | null>(null);
@@ -71,6 +74,7 @@ export function TestDrawer({
       state: engineState ?? undefined,
       message: userMessage,
       sessionId,
+      flowId,
     });
     setSending(false);
 

@@ -98,7 +98,8 @@ model Flow {
   isActive  Boolean  @default(false)
   updatedAt DateTime @updatedAt
 
-  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot       Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  documents AiNodeDocument[]
 
   @@index([botId])
   @@map("flows")
@@ -132,6 +133,26 @@ model Message {
 
   @@index([conversationId])
   @@map("messages")
+}
+
+model AiNodeDocument {
+  id        String   @id @default(cuid())
+  flowId    String
+  /// The AI node's id within Flow.graph — not a foreign key, since nodes live inside the
+  /// graph JSON rather than as their own rows. Deleting/recreating a node orphans its docs,
+  /// same as any other per-node data already does when a node is removed from the graph.
+  nodeId    String
+  fileName  String
+  /// Extracted plain text, capped (see src/lib/documents/extract-text.ts) — we keep the text
+  /// used for AI context, not the original file bytes.
+  content   String   @db.Text
+  charCount Int
+  createdAt DateTime @default(now())
+
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([flowId, nodeId])
+  @@map("ai_node_documents")
 }
 
 model BotApiKey {

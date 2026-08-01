@@ -2,6 +2,7 @@ import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState, step } from "@/engine/executor";
 import { parseEngineState } from "@/engine/state-schema";
 import type { EngineDeps, EngineStatus, LlmChatMessage, LlmDep, Reply } from "@/engine/types";
+import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
@@ -79,6 +80,7 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
   if (!flow) return { kind: "not_found" };
 
   const graph = adaptPersistedGraph(parseFlowGraph(flow.graph) ?? defaultFlowGraph());
+  await attachAiNodeDocuments(graph, flow.id);
 
   let conversation = await prisma.conversation.findFirst({
     where: { botId: apiKey.bot.id, visitorId: params.visitorId, status: "OPEN" },
