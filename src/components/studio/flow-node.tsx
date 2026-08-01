@@ -1,8 +1,11 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
+import { useEffect, useRef } from "react";
 import { NODE_KIND_META, type FlowNode, type FlowNodeData, type FlowNodeKind } from "@/lib/flow-types";
 
 const HANDLE_COLOR = "#FF5C16";
 const HANDLE_CLASS = "!h-[9px] !w-[9px] !border-2 !border-[#0C0C0C]";
+const LONG_PRESS_MS = 500;
+const MOVE_CANCEL_PX = 10;
 
 function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   switch (kind) {
@@ -22,13 +25,84 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   }
 }
 
-export function FlowNodeView({ data, selected, type }: NodeProps<FlowNode>) {
+export function FlowNodeView({ id, data, selected, type, deletable }: NodeProps<FlowNode>) {
   const meta = type ? NODE_KIND_META[type] : undefined;
   const color = meta?.color ?? "#FF5C16";
   const branches = type === "condition" ? (data.branches ?? []) : [];
+  const { deleteElements } = useReactFlow();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function clearPressTimer() {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  }
+
+  function confirmDelete() {
+    const label = data.label || meta?.label || "this node";
+    if (!confirm(`Delete "${label}"? This can't be undone.`)) return;
+    void deleteElements({ nodes: [{ id }] });
+  }
+
+  // React Flow's own pointer handling on the node wrapper calls stopPropagation() on the
+  // native touch event during the bubble phase, which short-circuits React's synthetic event
+  // dispatch entirely (React's JSX props depend on the native event bubbling all the way up
+  // to React's root listener). So long-press detection is wired via native capture-phase
+  // addEventListener instead of onTouchStart/onTouchMove/onTouchEnd JSX props — capture-phase
+  // listeners run top-down before any bubble-phase stopPropagation() can block them.
+  useEffect(() => {
+    if (!deletable) return;
+    const node = rootRef.current;
+    if (!node) return;
+
+    function handleTouchStart(event: TouchEvent) {
+      const touch = event.touches[0];
+      if (!touch) return;
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      clearPressTimer();
+      pressTimerRef.current = setTimeout(() => {
+        if (navigator.vibrate) navigator.vibrate(10);
+        confirmDelete();
+      }, LONG_PRESS_MS);
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      const start = touchStartRef.current;
+      const touch = event.touches[0];
+      if (!start || !touch) return;
+      if (
+        Math.abs(touch.clientX - start.x) > MOVE_CANCEL_PX ||
+        Math.abs(touch.clientY - start.y) > MOVE_CANCEL_PX
+      ) {
+        clearPressTimer();
+      }
+    }
+
+    function handleTouchEnd() {
+      clearPressTimer();
+    }
+
+    node.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
+    node.addEventListener("touchmove", handleTouchMove, { capture: true, passive: true });
+    node.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
+    node.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
+
+    return () => {
+      clearPressTimer();
+      node.removeEventListener("touchstart", handleTouchStart, { capture: true });
+      node.removeEventListener("touchmove", handleTouchMove, { capture: true });
+      node.removeEventListener("touchend", handleTouchEnd, { capture: true });
+      node.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deletable, id, data.label, meta?.label]);
 
   return (
     <div
+      ref={rootRef}
       className="w-[186px] rounded-[14px] border bg-[#161616] p-3 text-[12px] shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)]"
       style={{
         borderColor: selected ? "#FF8A3C" : "rgba(255,255,255,.12)",
@@ -36,6 +110,14 @@ export function FlowNodeView({ data, selected, type }: NodeProps<FlowNode>) {
           ? "0 0 0 3px rgba(255,110,40,.18), 0 16px 40px -18px rgba(0,0,0,.9)"
           : undefined,
       }}
+      onContextMenu={
+        deletable
+          ? (event: React.MouseEvent) => {
+              event.preventDefault();
+              confirmDelete();
+            }
+          : undefined
+      }
     >
       {type !== "start" && (
         <Handle
