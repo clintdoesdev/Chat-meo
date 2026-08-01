@@ -122,6 +122,18 @@ body {
   border-bottom-right-radius: 6px;
 }
 
+.cm-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  opacity: 0.92;
+}
+
+.cm-link:hover {
+  opacity: 1;
+}
+
 .cm-typing {
   display: flex;
   align-items: center;

@@ -2,6 +2,7 @@
 
 import { ChevronDown, RotateCcw, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { linkify } from "@/components/linkify";
 import { MeoMark } from "@/components/meo-mark";
 import type { EngineState } from "@/engine/types";
 import type { FlowGraph } from "@/lib/flow-types";
@@ -185,7 +186,7 @@ export function TestDrawer({
                       : "rounded-bl-md bg-card-2 text-text"
                   }`}
                 >
-                  {message.content}
+                  {linkify(message.content, "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100")}
                 </div>
               </div>
             ))}

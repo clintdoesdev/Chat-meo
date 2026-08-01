@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { linkify } from "@/components/linkify";
 
 type ChatMessage = { id: string; role: "user" | "bot"; content: string };
 
@@ -179,7 +180,7 @@ export function WidgetChat({
                 <MeoDot />
               </span>
             )}
-            <div className={`cm-bubble cm-${message.role}`}>{message.content}</div>
+            <div className={`cm-bubble cm-${message.role}`}>{linkify(message.content, "cm-link")}</div>
           </div>
         ))}
         {sending && (
