@@ -321,8 +321,12 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
 
         {node.type === "handoff" && (
           <div className="mb-3.5">
+            <p className="mb-3 rounded-lg border border-line-2 bg-card-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              Customers on the web widget always see: “Your message is being sent to a live team
+              to assist you.” — this isn’t editable here.
+            </p>
             <label htmlFor="field-note" className={labelClass()}>
-              Note
+              Internal note
             </label>
             <textarea
               id="field-note"
@@ -331,6 +335,7 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
                 onChange(node.id, { note: event.target.value })
               }
               rows={3}
+              placeholder="For your team only — why this conversation is being handed off."
               className={`${fieldClass()} resize-y leading-relaxed`}
             />
           </div>

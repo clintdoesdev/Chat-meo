@@ -120,6 +120,9 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
     fetch,
     logger: console,
     conversationId: conversation.id,
+    // /api/chat is the chatmeo-hosted web widget today; future webhook-delivered channels
+    // (WhatsApp etc.) will pass their own channel through here instead.
+    channel: "web",
   };
 
   const output = await step(graph, state, params.message, engineDeps);

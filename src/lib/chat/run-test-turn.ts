@@ -33,6 +33,7 @@ export async function runTestTurn(params: RunTestTurnParams): Promise<RunTestTur
     fetch,
     logger: console,
     conversationId: params.sessionId ?? "test-session",
+    channel: "web",
   });
 
   return { kind: "success", replies: output.replies, state: output.state };

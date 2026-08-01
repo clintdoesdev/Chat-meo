@@ -12,7 +12,7 @@ import type {
 
 const MAX_HOPS_PER_STEP = 25;
 const WEBHOOK_TIMEOUT_MS = 5000;
-const DEFAULT_HANDOFF_MESSAGE = "I'll get a teammate to help you from here.";
+const HANDOFF_MESSAGE = "Your message is being sent to a live team to assist you.";
 const LOOP_GUARD_MESSAGE = "Something went wrong on our end — let's start over.";
 
 /** A fresh conversation, positioned at the flow's Start node (or immediately ended if the
@@ -209,11 +209,11 @@ export async function step(
       }
 
       case "handoff": {
-        const message = interpolate(
-          node.data.note && node.data.note.trim() ? node.data.note : DEFAULT_HANDOFF_MESSAGE,
-          variables,
-        );
-        replies.push({ content: message });
+        // node.data.note is an internal note for the human teammate, not customer-facing —
+        // the customer always sees the same fixed message, and only on our own web widget.
+        if ((deps.channel ?? "web") === "web") {
+          replies.push({ content: HANDOFF_MESSAGE });
+        }
         status = "HANDOFF";
         currentNodeId = null;
         walking = false;

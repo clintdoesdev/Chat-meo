@@ -46,6 +46,8 @@ export type WebhookNode = {
 export type HandoffNode = {
   id: string;
   type: "handoff";
+  /** `note` is an internal note for your team about why this handoff happened — it's never
+   * shown to the customer, who always sees the fixed handoff message (see executor.ts). */
   data: { note?: string };
 };
 
@@ -102,10 +104,17 @@ export type LoggerDep = {
   info?: (message: string, meta?: unknown) => void;
 };
 
+/** Where this turn is running. The handoff node's customer-facing message only makes sense on
+ * our own hosted widget — webhook-delivered channels (e.g. WhatsApp) handle their own
+ * agent-handoff UX, so the engine stays silent there and just flips the conversation status.
+ * Missing/omitted defaults to "web" for callers (and existing tests) that predate channels. */
+export type EngineChannel = "web" | "webhook";
+
 export type EngineDeps = {
   llm: LlmDep;
   fetch: typeof fetch;
   logger: LoggerDep;
   /** Passed through to webhook node payloads; not otherwise used by the engine. */
   conversationId: string;
+  channel?: EngineChannel;
 };

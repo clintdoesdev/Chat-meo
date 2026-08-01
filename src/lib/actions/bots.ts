@@ -48,4 +48,5 @@ export async function deleteBot(formData: FormData) {
   });
 
   revalidatePath("/app");
+  revalidatePath("/app/studio");
 }

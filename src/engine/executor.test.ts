@@ -315,20 +315,22 @@ describe("step: ai node", () => {
 });
 
 describe("step: handoff", () => {
-  it("emits the configured note and sets status HANDOFF", async () => {
+  it("emits the fixed customer-facing message and sets status HANDOFF, ignoring the internal note", async () => {
     const graph: FlowGraph = {
-      nodes: [{ id: "handoff-1", type: "handoff", data: { note: "Connecting you with a human." } }],
+      nodes: [{ id: "handoff-1", type: "handoff", data: { note: "Internal: billing dispute, check account history." } }],
       edges: [],
     };
     const state: EngineState = { currentNodeId: "handoff-1", variables: {}, status: "RUNNING" };
     const output = await step(graph, state, undefined, createDeps());
 
-    expect(output.replies).toEqual([{ content: "Connecting you with a human." }]);
+    expect(output.replies).toEqual([
+      { content: "Your message is being sent to a live team to assist you." },
+    ]);
     expect(output.state.status).toBe("HANDOFF");
     expect(output.state.currentNodeId).toBeNull();
   });
 
-  it("uses a default message when no note is configured", async () => {
+  it("defaults to the web channel and shows the message when deps.channel is omitted", async () => {
     const graph: FlowGraph = {
       nodes: [{ id: "handoff-1", type: "handoff", data: {} }],
       edges: [],
@@ -338,6 +340,19 @@ describe("step: handoff", () => {
 
     expect(output.replies[0].content.length).toBeGreaterThan(0);
     expect(output.state.status).toBe("HANDOFF");
+  });
+
+  it("still transitions to HANDOFF but stays silent on non-web channels", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "handoff-1", type: "handoff", data: {} }],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "handoff-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps({ channel: "webhook" }));
+
+    expect(output.replies).toEqual([]);
+    expect(output.state.status).toBe("HANDOFF");
+    expect(output.state.currentNodeId).toBeNull();
   });
 });
 

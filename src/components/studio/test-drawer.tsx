@@ -143,6 +143,7 @@ export function TestDrawer({
           <div className="flex items-center gap-1">
             <button
               type="button"
+              data-fx-skip
               onClick={handleRestart}
               aria-label="Restart"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
@@ -151,6 +152,7 @@ export function TestDrawer({
             </button>
             <button
               type="button"
+              data-fx-skip
               onClick={onClose}
               aria-label="Close"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
@@ -160,25 +162,39 @@ export function TestDrawer({
           </div>
         </div>
 
-        <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4">
-          <div className="flex flex-col gap-2.5">
+        <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-5">
+          <div className="flex flex-col gap-3.5">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`max-w-[82%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
-                  message.role === "user"
-                    ? "self-end rounded-br-md bg-grad-orange text-white"
-                    : "self-start rounded-bl-md bg-card-2 text-text"
-                }`}
+                className={`flex items-end gap-2 ${message.role === "user" ? "flex-row-reverse" : ""}`}
               >
-                {message.content}
+                {message.role === "bot" && (
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-card-2">
+                    <MeoMark size={14} />
+                  </span>
+                )}
+                <div
+                  className={`max-w-[76%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                    message.role === "user"
+                      ? "rounded-br-md bg-grad-orange text-white"
+                      : "rounded-bl-md bg-card-2 text-text"
+                  }`}
+                >
+                  {message.content}
+                </div>
               </div>
             ))}
             {sending && (
-              <div className="flex max-w-[82%] items-center gap-1 self-start rounded-2xl rounded-bl-md bg-card-2 px-3.5 py-3">
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
+              <div className="flex items-end gap-2">
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-card-2">
+                  <MeoMark size={14} />
+                </span>
+                <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-card-2 px-3.5 py-3">
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                </div>
               </div>
             )}
           </div>
@@ -187,23 +203,26 @@ export function TestDrawer({
         <div className="border-t border-line">
           <button
             type="button"
+            data-fx-skip
             onClick={() => setDebugOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-4 py-2 text-[13px] text-muted transition hover:text-text"
+            className="flex w-full items-center justify-between px-4 py-2.5 text-[12.5px] font-medium text-muted transition hover:text-text"
           >
             <span>Debug</span>
             <ChevronDown size={14} className={`transition-transform ${debugOpen ? "rotate-180" : ""}`} />
           </button>
           {debugOpen && (
-            <div className="space-y-1 px-4 pb-3 text-[13px] text-muted">
-              <p className="truncate">
-                Node: <span className="text-text/80">{engineState?.currentNodeId ?? "—"}</span>
+            <div className="mx-4 mb-3 space-y-1.5 rounded-lg border border-line-2 bg-card-2 px-3 py-2.5 text-[12.5px]">
+              <p className="flex justify-between gap-3 truncate">
+                <span className="text-muted">Node</span>
+                <span className="truncate text-text/80">{engineState?.currentNodeId ?? "—"}</span>
               </p>
-              <p className="truncate">
-                Status: <span className="text-text/80">{engineState?.status ?? "—"}</span>
+              <p className="flex justify-between gap-3 truncate">
+                <span className="text-muted">Status</span>
+                <span className="text-text/80">{engineState?.status ?? "—"}</span>
               </p>
-              <p className="break-words">
-                Variables:{" "}
-                <span className="text-text/80">
+              <p className="flex justify-between gap-3">
+                <span className="flex-shrink-0 text-muted">Variables</span>
+                <span className="break-words text-right text-text/80">
                   {engineState && Object.keys(engineState.variables).length > 0
                     ? JSON.stringify(engineState.variables)
                     : "{}"}
@@ -213,8 +232,8 @@ export function TestDrawer({
           )}
         </div>
 
-        <div className="border-t border-line p-3">
-          <div className="flex items-center gap-2 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2.5">
+        <div className="border-t border-line p-3.5">
+          <div className="flex items-center gap-2 rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-3">
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -227,6 +246,7 @@ export function TestDrawer({
             />
             <button
               type="button"
+              data-fx-skip
               onClick={handleSend}
               disabled={sending || ended || !input.trim()}
               aria-label="Send"
