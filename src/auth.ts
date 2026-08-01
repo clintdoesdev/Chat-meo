@@ -22,7 +22,7 @@ const DUMMY_HASH = "$2b$10$VK/yXBml5EWgxKKpF0a/oe2NmtJwzOCu7yPE/lWotQBgSHeCTWroi
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update: updateSession } = NextAuth({
   ...authConfig,
   session: { strategy: "jwt" },
   providers: [
@@ -136,7 +136,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user?.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email },
@@ -144,6 +144,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (dbUser) {
           token.id = dbUser.id;
         }
+      }
+      // Lets the profile-update server action refresh the display name in this session's
+      // JWT (via updateSession()) without requiring a full sign-out/sign-in.
+      if (trigger === "update" && session?.user?.name) {
+        token.name = session.user.name;
       }
       return token;
     },

@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secret-crypto";
 import { totpAuthUrl } from "@/lib/totp";
-import { MeoMark } from "@/components/meo-mark";
+import { ProfileSettings } from "@/components/app/profile-settings";
 import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 
 export const metadata: Metadata = {
@@ -19,6 +19,7 @@ export default async function SettingsPage() {
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: {
+      name: true,
       email: true,
       passwordHash: true,
       twoFactorEnabled: true,
@@ -44,15 +45,14 @@ export default async function SettingsPage() {
       : null;
 
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-      <MeoMark size={40} />
-      <h1 className="text-lg font-bold">Settings</h1>
-      <p className="max-w-[36ch] text-sm text-muted">
-        Profile, billing, and API key management ship in a later phase.
-      </p>
-      <p className="text-[12.5px] text-muted">Signed in as {user.email}</p>
+    <div>
+      <div className="mb-[22px]">
+        <h1 className="text-[22px] font-bold tracking-tight">Settings</h1>
+        <p className="mt-0.5 text-[12.5px] text-muted">Signed in as {user.email}</p>
+      </div>
 
-      <div className="mt-3">
+      <div className="flex flex-col gap-4">
+        <ProfileSettings name={user.name} email={user.email} />
         <TwoFactorSettings
           initialStatus={status}
           hasPassword={Boolean(user.passwordHash)}
