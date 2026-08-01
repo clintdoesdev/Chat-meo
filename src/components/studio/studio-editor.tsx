@@ -385,7 +385,7 @@ function StudioCanvas({
         <NodeInspector node={selectedNode} onChange={updateNodeData} onClose={deselectAll} />
       </div>
 
-      <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} />
+      <TestDrawer open={testOpen} onClose={() => setTestOpen(false)} graph={{ nodes, edges }} />
       {toastMessage && <Toast message={toastMessage} />}
       {paletteDrag && <DragGhost kind={paletteDrag.kind} x={paletteDrag.x} y={paletteDrag.y} />}
     </div>
