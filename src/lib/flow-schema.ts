@@ -11,7 +11,11 @@ const FlowNodeDataSchema = z.object({
   label: z.string(),
   text: z.string().optional(),
   systemPrompt: z.string().optional(),
-  model: z.enum(["claude-sonnet", "claude-haiku"]).optional(),
+  // Deliberately a plain string, not an enum of today's model ids: the Studio's inspector UI
+  // is what constrains which values get *written* going forward (see AiModel in flow-types.ts).
+  // Keeping this permissive means graphs saved under an older or future model roster still
+  // validate — adapt-graph.ts/llm.ts already fall back gracefully for any unrecognized value.
+  model: z.string().optional(),
   temperature: z.number().min(0).max(1).optional(),
   variable: z.string().optional(),
   branches: z.array(ConditionBranchSchema).optional(),

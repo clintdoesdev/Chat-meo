@@ -11,8 +11,8 @@ import {
 } from "@/lib/flow-types";
 
 const MODEL_LABELS: Record<AiModel, string> = {
-  "claude-sonnet": "Claude Sonnet",
-  "claude-haiku": "Claude Haiku",
+  "grok-main": "Grok 4.3 (smart)",
+  "grok-fast": "Grok 4.1 Fast (fast)",
 };
 
 function newBranchId(): string {
@@ -21,7 +21,7 @@ function newBranchId(): string {
     : `branch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const MODELS: AiModel[] = ["claude-sonnet", "claude-haiku"];
+const MODELS: AiModel[] = ["grok-main", "grok-fast"];
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 type NodeInspectorProps = {
@@ -139,7 +139,7 @@ export function NodeInspector({ node, onChange, onClose }: NodeInspectorProps) {
               </label>
               <PillSelect
                 id="field-model"
-                value={data.model ?? "claude-sonnet"}
+                value={data.model ?? "grok-main"}
                 onChange={(event) =>
                   onChange(node.id, { model: event.target.value as AiModel })
                 }

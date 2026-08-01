@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createStreamingGrokLlm, grokLlm } from "@/engine/llm";
-import { isBotLiveForKey, runChatTurn } from "@/lib/chat/run-turn";
+import { isOriginAllowed } from "@/lib/chat/origin-check";
+import { resolveBotAccess, runChatTurn } from "@/lib/chat/run-turn";
+import { chatRateLimiter } from "@/lib/rate-limit";
 
 const BodySchema = z.object({
   botPublicKey: z.string().min(1),
@@ -20,8 +22,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  // TODO(phase 3 step 5): enforce allowedDomains against the request's Origin header, and rate
-  // limit per visitorId.
+  // Resolved once, up front, for both response modes below — a streaming response's status
+  // can't change after the stream starts, so "not found"/"origin not allowed"/"rate limited"
+  // all have to be decided before committing to one. runChatTurn repeats a small part of this
+  // lookup once it actually runs; that duplication buys keeping this check free of any
+  // conversation/message side effects.
+  const access = await resolveBotAccess(parsed.data.botPublicKey);
+  if (!access || !access.live) {
+    return NextResponse.json({ error: "Bot not found." }, { status: 404 });
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    if (!isOriginAllowed(request.headers.get("origin"), access.allowedDomains)) {
+      return NextResponse.json({ error: "Origin not allowed." }, { status: 403 });
+    }
+  }
+
+  if (!(await chatRateLimiter.consume(parsed.data.visitorId))) {
+    return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+  }
 
   const streaming = request.nextUrl.searchParams.get("stream") === "1";
 
@@ -31,13 +50,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Bot not found." }, { status: 404 });
     }
     return NextResponse.json({ replies: result.replies, status: result.status });
-  }
-
-  // The stream's response status is fixed the moment it's returned below, so "bot not found"
-  // has to be resolved before we commit to starting it — can't downgrade a 200 to a 404 mid-stream.
-  const live = await isBotLiveForKey(parsed.data.botPublicKey);
-  if (!live) {
-    return NextResponse.json({ error: "Bot not found." }, { status: 404 });
   }
 
   const stream = new ReadableStream<Uint8Array>({

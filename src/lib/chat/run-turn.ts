@@ -30,18 +30,25 @@ function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" 
   return "OPEN";
 }
 
-/** A lightweight existence check the streaming route path uses to decide 404 vs. starting an
- * SSE stream before it's committed to a response status — runChatTurn does the full lookup
- * again once the stream starts, which is a small duplicate query but keeps this check free of
- * conversation/message side effects. */
-export async function isBotLiveForKey(botPublicKey: string): Promise<boolean> {
+export type BotAccess = { live: boolean; allowedDomains: string[] };
+
+/** A lightweight lookup the route uses to decide 404/403/429 *before* it's committed to a
+ * response (streaming's status can't change after the stream starts) — runChatTurn does the
+ * full lookup again once it actually runs, which is a small duplicate query but keeps this
+ * check free of conversation/message side effects. */
+export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess | null> {
   const apiKey = await prisma.botApiKey.findUnique({
     where: { publicKey: botPublicKey },
     select: {
+      allowedDomains: true,
       bot: { select: { status: true, flows: { where: { isActive: true }, take: 1, select: { id: true } } } },
     },
   });
-  return Boolean(apiKey && apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0);
+  if (!apiKey) return null;
+  return {
+    live: apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0,
+    allowedDomains: apiKey.allowedDomains,
+  };
 }
 
 /**

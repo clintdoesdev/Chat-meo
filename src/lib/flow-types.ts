@@ -9,7 +9,7 @@ export type FlowNodeKind =
   | "webhook"
   | "handoff";
 
-export type AiModel = "claude-sonnet" | "claude-haiku";
+export type AiModel = "grok-main" | "grok-fast";
 export type WebhookMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type ConditionBranch = {
@@ -77,7 +77,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
     defaultData: {
       label: "AI response",
       systemPrompt: "You are Meo, a friendly assistant. Be warm, brief, and helpful.",
-      model: "claude-sonnet",
+      model: "grok-main",
       temperature: 0.35,
     },
     inPalette: true,
