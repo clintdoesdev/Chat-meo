@@ -1,10 +1,12 @@
 import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState, step } from "@/engine/executor";
 import { parseEngineState } from "@/engine/state-schema";
-import type { EngineDeps, EngineStatus, LlmDep, Reply } from "@/engine/types";
+import type { EngineDeps, EngineStatus, LlmChatMessage, LlmDep, Reply } from "@/engine/types";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
+
+const MAX_HISTORY_MESSAGES = 12;
 
 export type RunTurnParams = {
   botPublicKey: string;
@@ -26,6 +28,20 @@ function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" 
   if (engineStatus === "HANDOFF") return "HANDOFF";
   if (engineStatus === "ENDED") return "RESOLVED";
   return "OPEN";
+}
+
+/** A lightweight existence check the streaming route path uses to decide 404 vs. starting an
+ * SSE stream before it's committed to a response status — runChatTurn does the full lookup
+ * again once the stream starts, which is a small duplicate query but keeps this check free of
+ * conversation/message side effects. */
+export async function isBotLiveForKey(botPublicKey: string): Promise<boolean> {
+  const apiKey = await prisma.botApiKey.findUnique({
+    where: { publicKey: botPublicKey },
+    select: {
+      bot: { select: { status: true, flows: { where: { isActive: true }, take: 1, select: { id: true } } } },
+    },
+  });
+  return Boolean(apiKey && apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0);
 }
 
 /**
@@ -74,6 +90,18 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
 
   const state = parseEngineState(conversation.engineState, graph);
 
+  // Fetched before persisting this turn's inbound message, so the executor's own local
+  // history (which prepends that same message) doesn't end up duplicated in the merge below.
+  const priorMessages = await prisma.message.findMany({
+    where: { conversationId: conversation.id },
+    orderBy: { createdAt: "desc" },
+    take: MAX_HISTORY_MESSAGES,
+  });
+  const priorHistory: LlmChatMessage[] = priorMessages.reverse().map((m) => ({
+    role: m.role === "USER" ? "user" : "assistant",
+    content: m.content,
+  }));
+
   if (params.message) {
     await prisma.message.create({
       data: { conversationId: conversation.id, role: "USER", content: params.message },
@@ -81,7 +109,7 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
   }
 
   const engineDeps: EngineDeps = {
-    llm: deps.llm,
+    llm: (args) => deps.llm({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) }),
     fetch,
     logger: console,
     conversationId: conversation.id,
