@@ -105,16 +105,19 @@ model Flow {
 }
 
 model Conversation {
-  id        String             @id @default(cuid())
-  botId     String
-  visitorId String
-  status    ConversationStatus @default(OPEN)
-  createdAt DateTime           @default(now())
+  id          String             @id @default(cuid())
+  botId       String
+  visitorId   String
+  status      ConversationStatus @default(OPEN)
+  /// Serialized engine EngineState ({ currentNodeId, variables, status }) — see src/engine/types.ts.
+  engineState Json               @default("{}")
+  createdAt   DateTime           @default(now())
 
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   messages Message[]
 
   @@index([botId])
+  @@index([botId, visitorId, status])
   @@map("conversations")
 }
 
