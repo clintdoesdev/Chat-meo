@@ -72,7 +72,7 @@ async function callWebhook(
       signal: controller.signal,
     });
   } catch (error) {
-    deps.logger.error("Webhook call failed", { url, error });
+    deps.logger.error("[engine] Webhook call failed", { url, error });
   } finally {
     clearTimeout(timeout);
   }
@@ -123,7 +123,7 @@ export async function step(
 
   while (walking && currentNodeId) {
     if (hops >= MAX_HOPS_PER_STEP) {
-      deps.logger.error("Engine loop guard triggered", { currentNodeId });
+      deps.logger.error("[engine] Loop guard triggered", { currentNodeId });
       replies.push({ content: LOOP_GUARD_MESSAGE });
       status = "ENDED";
       currentNodeId = null;
@@ -167,7 +167,7 @@ export async function step(
             model: node.data.model,
           });
         } catch (error) {
-          deps.logger.error("LLM call failed", error);
+          deps.logger.error("[engine] LLM call failed", error);
           content = "Sorry, I couldn't come up with a reply just now.";
         }
         replies.push({ content });

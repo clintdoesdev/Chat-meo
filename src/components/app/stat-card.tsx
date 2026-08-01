@@ -8,9 +8,10 @@ type StatCardProps = {
   trend: Trend | null;
   spark: number[];
   compact?: boolean;
+  caption?: string;
 };
 
-export function StatCard({ label, value, trend, spark, compact = false }: StatCardProps) {
+export function StatCard({ label, value, trend, spark, compact = false, caption }: StatCardProps) {
   return (
     <div
       className={`min-w-0 rounded-[18px] border border-line bg-card ${compact ? "p-3.5" : "p-5"}`}
@@ -34,6 +35,7 @@ export function StatCard({ label, value, trend, spark, compact = false }: StatCa
         )}
       </div>
       <Sparkline values={spark} className="mt-3 h-[30px] w-full" />
+      {caption && <div className="mt-2 text-[11px] text-muted">{caption}</div>}
     </div>
   );
 }

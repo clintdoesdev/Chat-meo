@@ -8,6 +8,7 @@ import { MeoMark } from "@/components/meo-mark";
 const LINKS = [
   { href: "/", label: "Home" },
   { href: "#features", label: "Features" },
+  { href: "#beta", label: "Beta access" },
 ];
 
 export function LandingNav() {

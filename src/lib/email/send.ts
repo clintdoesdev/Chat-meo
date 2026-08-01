@@ -1,6 +1,7 @@
 import { getEmailFrom, getResendClient } from "@/lib/email/resend";
 import {
   accountConflictTemplate,
+  betaFeedbackTemplate,
   emailVerificationTemplate,
   newSignInTemplate,
   passwordResetTemplate,
@@ -9,7 +10,11 @@ import {
   twoFactorCodeTemplate,
 } from "@/lib/email/templates";
 
-async function dispatch(to: string, template: { subject: string; html: string }): Promise<void> {
+async function dispatch(
+  to: string,
+  template: { subject: string; html: string },
+  attachments?: { filename: string; content: Buffer; contentType: string }[],
+): Promise<void> {
   const client = getResendClient();
   if (!client) {
     console.warn(`[email] RESEND_API_KEY not set — skipping send to ${to}: ${template.subject}`);
@@ -21,6 +26,7 @@ async function dispatch(to: string, template: { subject: string; html: string })
     to,
     subject: template.subject,
     html: template.html,
+    ...(attachments ? { attachments } : {}),
   });
 
   if (error) {
@@ -59,4 +65,28 @@ export function sendSecurityAlertEmail(to: string, title: string, message: strin
 /** Reusable sender for customer-support replies — not wired to any UI/ticketing yet. */
 export function sendSupportReplyEmail(to: string, subject: string, message: string) {
   return dispatch(to, supportReplyTemplate(subject, message));
+}
+
+/** Beta feedback widget → email-to-yourself, the lowest-setup option for now (no Feedback
+ * table). Silently skipped (with a console warning) if FEEDBACK_EMAIL_TO isn't configured, same
+ * as every other send here does when RESEND_API_KEY is missing. */
+export function sendBetaFeedbackEmail(
+  fromEmail: string,
+  message: string,
+  screenshot?: { buffer: Buffer; contentType: string },
+) {
+  const to = process.env.FEEDBACK_EMAIL_TO;
+  if (!to) {
+    console.warn("[email] FEEDBACK_EMAIL_TO not set — dropping beta feedback from", fromEmail);
+    return Promise.resolve();
+  }
+
+  const ext = screenshot?.contentType.split("/")[1] ?? "png";
+  return dispatch(
+    to,
+    betaFeedbackTemplate(fromEmail, message, Boolean(screenshot)),
+    screenshot
+      ? [{ filename: `screenshot.${ext}`, content: screenshot.buffer, contentType: screenshot.contentType }]
+      : undefined,
+  );
 }

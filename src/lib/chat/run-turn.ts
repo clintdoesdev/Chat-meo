@@ -31,7 +31,7 @@ function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" 
   return "OPEN";
 }
 
-export type BotAccess = { live: boolean; allowedDomains: string[]; testMode: boolean };
+export type BotAccess = { botId: string; live: boolean; allowedDomains: string[]; testMode: boolean };
 
 /** A lightweight lookup the route uses to decide 404/403/429 *before* it's committed to a
  * response (streaming's status can't change after the stream starts) — runChatTurn does the
@@ -44,6 +44,7 @@ export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess 
       allowedDomains: true,
       bot: {
         select: {
+          id: true,
           status: true,
           testMode: true,
           flows: { where: { isActive: true }, take: 1, select: { id: true } },
@@ -53,6 +54,7 @@ export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess 
   });
   if (!apiKey) return null;
   return {
+    botId: apiKey.bot.id,
     live: apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0,
     allowedDomains: apiKey.allowedDomains,
     testMode: apiKey.bot.testMode,
@@ -149,6 +151,14 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: { engineState: output.state, status: conversationStatusFor(output.state.status) },
+  });
+
+  console.log("[chat] turn", {
+    botId: apiKey.bot.id,
+    conversationId: conversation.id,
+    hadInboundMessage: Boolean(params.message),
+    replyCount: output.replies.length,
+    status: output.state.status,
   });
 
   return { kind: "success", replies: output.replies, status: output.state.status };

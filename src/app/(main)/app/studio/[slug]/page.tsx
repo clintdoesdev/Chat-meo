@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { MeoMark } from "@/components/meo-mark";
 import { StudioEditor } from "@/components/studio/studio-editor";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
@@ -38,10 +40,26 @@ export default async function StudioBotPage({
   const graph = parseFlowGraph(flow.graph) ?? defaultFlowGraph();
 
   return (
-    <StudioEditor
-      bot={{ id: bot.id, name: bot.name, slug: bot.slug, status: bot.status }}
-      flowId={flow.id}
-      initialGraph={graph}
-    />
+    <ErrorBoundary
+      label="Studio canvas"
+      wrapperClassName="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center"
+      retryButtonClassName="mt-2 rounded-full bg-grad-orange px-5 py-2 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)]"
+      fallback={
+        <>
+          <MeoMark size={40} />
+          <h1 className="text-lg font-bold">Something went wrong</h1>
+          <p className="max-w-[36ch] text-sm text-muted">
+            The Studio hit a snag rendering this flow. Your saved changes are safe — try
+            refreshing.
+          </p>
+        </>
+      }
+    >
+      <StudioEditor
+        bot={{ id: bot.id, name: bot.name, slug: bot.slug, status: bot.status }}
+        flowId={flow.id}
+        initialGraph={graph}
+      />
+    </ErrorBoundary>
   );
 }

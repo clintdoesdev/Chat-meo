@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { BETA_BOT_CAP } from "@/lib/beta-limits";
 import { prisma } from "@/lib/prisma";
 
 function slugify(name: string): string {
@@ -14,12 +15,19 @@ function slugify(name: string): string {
   return base || "bot";
 }
 
-export async function createBot(formData: FormData) {
+export async function createBot(formData: FormData): Promise<{ error: string | null }> {
   const session = await auth();
   if (!session?.user) redirect("/signin");
 
   const name = String(formData.get("name") ?? "").trim();
-  if (!name) return;
+  if (!name) return { error: null };
+
+  const existingCount = await prisma.bot.count({ where: { userId: session.user.id } });
+  if (existingCount >= BETA_BOT_CAP) {
+    return {
+      error: `You've hit the beta limit of ${BETA_BOT_CAP} bots — reply to our waitlist email if you need more.`,
+    };
+  }
 
   const base = slugify(name);
   let slug = base;
@@ -34,6 +42,7 @@ export async function createBot(formData: FormData) {
   });
 
   revalidatePath("/app");
+  return { error: null };
 }
 
 export async function deleteBot(formData: FormData) {

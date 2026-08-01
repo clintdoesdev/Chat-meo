@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { WidgetChat } from "@/components/widget/widget-chat";
 import { lightenHex } from "@/lib/color";
 import { prisma } from "@/lib/prisma";
@@ -76,11 +77,28 @@ export default async function WidgetPage({
         </div>
       </div>
 
-      <WidgetChat
-        botPublicKey={publicKey}
-        visitorId={visitorId || "anonymous"}
-        welcomeMessage={apiKey.bot.welcomeMessage}
-      />
+      <ErrorBoundary
+        label="Widget chat"
+        reloadOnRetry
+        wrapperClassName="cm-error-screen"
+        retryButtonClassName="cm-refresh-btn"
+        retryLabel="Refresh"
+        fallback={
+          <>
+            <svg width="36" height="36" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="24" cy="30" r="4.4" fill="#8f8f8f" />
+              <circle cx="40" cy="30" r="4.4" fill="#8f8f8f" />
+            </svg>
+            <p>Something went wrong. Please refresh.</p>
+          </>
+        }
+      >
+        <WidgetChat
+          botPublicKey={publicKey}
+          visitorId={visitorId || "anonymous"}
+          welcomeMessage={apiKey.bot.welcomeMessage}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

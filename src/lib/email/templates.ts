@@ -163,3 +163,21 @@ export function supportReplyTemplate(subject: string, message: string): { subjec
     ),
   };
 }
+
+export function betaFeedbackTemplate(
+  fromEmail: string,
+  message: string,
+  hasScreenshot: boolean,
+): { subject: string; html: string } {
+  const safeMessage = escapeHtml(message);
+  const safeFrom = escapeHtml(fromEmail);
+  return {
+    subject: `Beta feedback from ${fromEmail}`,
+    html: shell(
+      "New beta feedback",
+      `<p style="margin:0 0 4px 0;font-weight:600;font-size:16px;">New beta feedback</p>
+       <p style="margin:0 0 12px 0;color:${MUTED};">From ${safeFrom}${hasScreenshot ? " · screenshot attached" : ""}</p>
+       <div style="margin:0;padding:14px 16px;background:#fafafa;border:1px solid ${BORDER};border-radius:10px;color:${INK};white-space:pre-line;">${safeMessage}</div>`,
+    ),
+  };
+}

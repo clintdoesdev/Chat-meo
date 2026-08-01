@@ -1,6 +1,5 @@
-import { Plus } from "lucide-react";
 import { BotRow } from "@/components/app/bot-row";
-import { createBot } from "@/lib/actions/bots";
+import { NewBotForm } from "@/components/app/new-bot-form";
 
 type BotSummary = {
   id: string;
@@ -15,21 +14,7 @@ export function BotsPanel({ bots }: { bots: BotSummary[] }) {
     <div className="rounded-2xl border border-line bg-card p-[18px]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <b className="text-sm font-semibold">Your bots</b>
-        <form action={createBot} className="flex gap-2">
-          <input
-            name="name"
-            required
-            placeholder="New bot name"
-            className="w-40 rounded-full border border-line-2 bg-card-2 px-3.5 py-1.5 text-[12.5px] text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none sm:w-52"
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-grad-orange px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)]"
-          >
-            <Plus size={13} />
-            New bot
-          </button>
-        </form>
+        <NewBotForm />
       </div>
 
       {bots.length === 0 ? (

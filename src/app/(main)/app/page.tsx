@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { BetaUsagePanel } from "@/components/app/beta-usage-panel";
 import { BotsPanel } from "@/components/app/bots-panel";
 import { StatCard } from "@/components/app/stat-card";
+import { BETA_BOT_CAP, BETA_MESSAGE_CAP, startOfCurrentMonth } from "@/lib/beta-limits";
 import { prisma } from "@/lib/prisma";
 import { bucketByDay, weekOverWeekTrend } from "@/lib/stats";
 
@@ -17,8 +19,9 @@ export default async function OverviewPage() {
   });
 
   const botIds = bots.map((bot) => bot.id);
+  const monthStart = startOfCurrentMonth();
 
-  const [conversations, messages] = botIds.length
+  const [conversations, messages, monthlyUsageByConversation] = botIds.length
     ? await Promise.all([
         prisma.conversation.findMany({
           where: { botId: { in: botIds } },
@@ -28,8 +31,23 @@ export default async function OverviewPage() {
           where: { conversation: { botId: { in: botIds } } },
           select: { createdAt: true },
         }),
+        prisma.conversation.findMany({
+          where: { botId: { in: botIds } },
+          select: {
+            botId: true,
+            _count: { select: { messages: { where: { role: "USER", createdAt: { gte: monthStart } } } } },
+          },
+        }),
       ])
-    : [[], []];
+    : [[], [], []];
+
+  const monthlyUsageByBot = new Map<string, number>();
+  for (const conversation of monthlyUsageByConversation) {
+    monthlyUsageByBot.set(
+      conversation.botId,
+      (monthlyUsageByBot.get(conversation.botId) ?? 0) + conversation._count.messages,
+    );
+  }
 
   const resolvedConversations = conversations.filter((c) => c.status === "RESOLVED");
   const resolutionRate =
@@ -41,6 +59,7 @@ export default async function OverviewPage() {
   const conversationDates = conversations.map((c) => c.createdAt);
   const resolvedDates = resolvedConversations.map((c) => c.createdAt);
   const messageDates = messages.map((m) => m.createdAt);
+  const messagesThisMonth = [...monthlyUsageByBot.values()].reduce((sum, n) => sum + n, 0);
 
   return (
     <div>
@@ -75,8 +94,20 @@ export default async function OverviewPage() {
           value={String(messages.length)}
           trend={weekOverWeekTrend(messageDates)}
           spark={bucketByDay(messageDates, 7)}
+          caption={`${messagesThisMonth} this month`}
         />
       </div>
+
+      <BetaUsagePanel
+        botCap={BETA_BOT_CAP}
+        botCount={bots.length}
+        messageCap={BETA_MESSAGE_CAP}
+        bots={bots.map((bot) => ({
+          id: bot.id,
+          name: bot.name,
+          messagesThisMonth: monthlyUsageByBot.get(bot.id) ?? 0,
+        }))}
+      />
 
       <BotsPanel
         bots={bots.map((bot) => ({

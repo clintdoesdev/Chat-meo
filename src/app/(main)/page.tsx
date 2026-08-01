@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Check } from "lucide-react";
 import Link from "next/link";
 import { ChannelMarquee } from "@/components/landing/channel-marquee";
 import { DashboardMockup } from "@/components/landing/dashboard-mockup";
@@ -8,6 +8,14 @@ import { HeroRefraction } from "@/components/landing/hero-refraction";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { MeoMark } from "@/components/meo-mark";
 import { Reveal } from "@/components/reveal";
+import { BETA_BOT_CAP, BETA_MESSAGE_CAP } from "@/lib/beta-limits";
+
+const BETA_INCLUDES = [
+  "The full Visual Flow Studio — as many flows as you like",
+  "AI replies powered by Grok, no separate API key needed",
+  "Embed your bot on any website, unlimited conversations",
+  `Up to ${BETA_BOT_CAP} bots, ${BETA_MESSAGE_CAP.toLocaleString()} messages per bot each month`,
+];
 
 export default function LandingPage() {
   return (
@@ -24,10 +32,9 @@ export default function LandingPage() {
 
           <Reveal className="flex justify-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-line-2 bg-card/60 px-4 py-[7px] text-[13px] text-muted">
-              <span className="h-1.5 w-1.5 rounded-full bg-orange shadow-[0_0_8px_rgba(255,92,22,.8)]" />
-              New — Visual Flow Studio, now in beta
-              <Link href="#features" data-fx className="font-semibold text-orange-2">
-                Read more →
+              Free during beta
+              <Link href="#beta" data-fx className="font-semibold text-orange-2">
+                What&apos;s included →
               </Link>
             </div>
           </Reveal>
@@ -108,6 +115,50 @@ export default function LandingPage() {
           <FeatureGrid />
         </section>
 
+        <section id="beta" className="scroll-mt-20 py-[84px]">
+          <Reveal className="mx-auto mb-11 max-w-[560px] text-center">
+            <h2 className="text-[clamp(26px,3.4vw,38px)] font-extrabold leading-[1.12] tracking-[-0.02em]">
+              Free during beta
+            </h2>
+            <p className="mt-3 text-sm text-muted">
+              Chatmeo is free while we&apos;re in beta, within the soft limits below. Pricing comes
+              later — for now, everyone gets the same access.
+            </p>
+          </Reveal>
+
+          <Reveal>
+            <div className="mx-auto max-w-[560px] rounded-[20px] border border-line bg-card p-7">
+              <ul className="flex flex-col gap-3.5">
+                {BETA_INCLUDES.map((item) => (
+                  <li key={item} className="flex items-start gap-2.5 text-[13.5px] text-text">
+                    <span className="mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full bg-orange/15 text-orange-2">
+                      <Check size={11} strokeWidth={3} />
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-7 flex flex-wrap items-center justify-center gap-3 border-t border-line pt-6">
+                <Link
+                  href="/signin?mode=up"
+                  data-fx
+                  className="btn-sheen inline-flex items-center gap-2 rounded-[10px] bg-[linear-gradient(135deg,#FF8A3C,#FF5C16)] px-5 py-3 text-sm font-bold text-[#1A0B00] shadow-[0_0_24px_rgba(255,92,22,.35)] transition hover:brightness-110"
+                >
+                  Join the beta — it&apos;s free
+                </Link>
+                <a
+                  href="mailto:hello@chatmeo.app?subject=Higher%20beta%20limits"
+                  data-fx
+                  className="inline-flex items-center gap-2 rounded-[12px] border border-line-2 bg-card/70 px-5 py-3 text-sm font-medium transition hover:border-orange-2/50"
+                >
+                  Need higher limits? Email us
+                </a>
+              </div>
+            </div>
+          </Reveal>
+        </section>
+
         <footer className="mt-14 border-t border-line pt-16">
           <div className="flex flex-wrap justify-between gap-10 pb-12">
             <div>
@@ -129,6 +180,9 @@ export default function LandingPage() {
                 </Link>
                 <Link href="#features" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
                   Features
+                </Link>
+                <Link href="#beta" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
+                  Beta access
                 </Link>
                 <Link href="/signin" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
                   Sign in
