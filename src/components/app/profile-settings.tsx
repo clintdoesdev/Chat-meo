@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, Loader2, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { ActionsCheckIcon, AnimatedSpinnerIcon, CommsUserIcon } from "@/components/icons";
 import { updateProfileName } from "@/lib/actions/profile";
 
 export function ProfileSettings({ name, email }: { name: string; email: string }) {
@@ -34,7 +34,7 @@ export function ProfileSettings({ name, email }: { name: string; email: string }
     <div className="w-full max-w-[540px] rounded-[18px] border border-line-2 bg-card p-5 text-left">
       <div className="mb-4 flex items-center gap-2.5">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange/10 text-orange-2">
-          <User size={16} />
+          <CommsUserIcon size={16} />
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold">Profile</p>
@@ -73,7 +73,7 @@ export function ProfileSettings({ name, email }: { name: string; email: string }
         )}
         {saved && !error && (
           <p className="flex items-center gap-1.5 text-[12.5px] text-ok">
-            <Check size={13} /> Saved
+            <ActionsCheckIcon size={13} /> Saved
           </p>
         )}
 
@@ -83,7 +83,7 @@ export function ProfileSettings({ name, email }: { name: string; email: string }
           data-fx-skip
           className="flex items-center justify-center gap-1.5 self-start rounded-full bg-grad-orange px-5 py-[10px] text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110 disabled:opacity-50"
         >
-          {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {pending ? <AnimatedSpinnerIcon size={14} /> : <ActionsCheckIcon size={14} />}
           Save changes
         </button>
       </form>

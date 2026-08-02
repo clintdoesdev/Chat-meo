@@ -1,7 +1,8 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { ActionsCloseIcon, ActionsPlusIcon } from "@/components/icons";
 import { NodeInfoButton } from "@/components/studio/node-info-button";
+import { NODE_KIND_ICON } from "@/components/studio/node-icons";
 import { PALETTE_KINDS, type FlowNodeKind } from "@/lib/flow-types";
 
 /** Mobile-only replacement for the drag-a-chip-onto-the-canvas palette: dragging a small
@@ -19,7 +20,7 @@ export function MobileAddNodeButton({ onClick }: { onClick: () => void }) {
         border border-orange-2/40 bg-grad-orange text-white shadow-[0_10px_30px_-10px_rgba(255,92,22,.7)]
         transition active:scale-95 min-[1020px]:hidden"
     >
-      <Plus size={20} strokeWidth={2.5} />
+      <ActionsPlusIcon size={20} />
     </button>
   );
 }
@@ -61,33 +62,41 @@ export function MobileNodePickerSheet({
             aria-label="Close"
             className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
           >
-            <X size={16} />
+            <ActionsCloseIcon size={16} />
           </button>
         </div>
 
         <h3 className="mb-3 text-sm font-semibold">Add a node</h3>
 
         <div className="grid grid-cols-2 gap-2.5">
-          {PALETTE_KINDS.map((meta) => (
-            <div
-              key={meta.kind}
-              role="button"
-              tabIndex={0}
-              data-fx-skip
-              onClick={() => onSelect(meta.kind)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(meta.kind);
-                }
-              }}
-              className="flex cursor-pointer items-center gap-2.5 rounded-[14px] border border-line-2 bg-card-2 p-3.5 text-left transition active:scale-[0.97] hover:border-orange-2/50"
-            >
-              <i className="h-2.5 w-2.5 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
-              <span className="flex-1 text-[13px] font-medium">{meta.label}</span>
-              <NodeInfoButton label={meta.label} description={meta.description} />
-            </div>
-          ))}
+          {PALETTE_KINDS.map((meta) => {
+            const Icon = NODE_KIND_ICON[meta.kind];
+            return (
+              <div
+                key={meta.kind}
+                role="button"
+                tabIndex={0}
+                data-fx-skip
+                onClick={() => onSelect(meta.kind)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(meta.kind);
+                  }
+                }}
+                className="flex cursor-pointer items-center gap-2.5 rounded-[14px] border border-line-2 bg-card-2 p-3.5 text-left transition active:scale-[0.97] hover:border-orange-2/50"
+              >
+                <span
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[9px]"
+                  style={{ background: `${meta.color}26`, color: meta.color }}
+                >
+                  <Icon size={15} />
+                </span>
+                <span className="flex-1 text-[13px] font-medium">{meta.label}</span>
+                <NodeInfoButton label={meta.label} description={meta.description} />
+              </div>
+            );
+          })}
         </div>
       </div>
     </>

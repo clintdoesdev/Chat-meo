@@ -1,10 +1,10 @@
 "use client";
 
-import { Settings } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { BotSettingsModal } from "@/components/app/bot-settings-modal";
 import { LongPressMenu } from "@/components/app/long-press-menu";
+import { NavSettingsIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { deleteBot } from "@/lib/actions/bots";
 
@@ -77,7 +77,7 @@ export function BotRow({
             aria-label={`Settings for ${bot.name}`}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-card-2 hover:text-text"
           >
-            <Settings size={15} />
+            <NavSettingsIcon size={15} />
           </button>
         </div>
       </LongPressMenu>

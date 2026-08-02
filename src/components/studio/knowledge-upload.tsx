@@ -1,7 +1,8 @@
 "use client";
 
-import { FileText, Loader2, Trash2, Upload } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { ActionsTrashIcon, ActionsUploadIcon, AnimatedSpinnerIcon } from "@/components/icons";
 import {
   deleteAiNodeDocument,
   listAiNodeDocuments,
@@ -91,7 +92,7 @@ export function KnowledgeUpload({ flowId, nodeId }: { flowId: string; nodeId: st
               aria-label={`Remove ${doc.fileName}`}
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-bad disabled:opacity-40"
             >
-              <Trash2 size={12} />
+              <ActionsTrashIcon size={12} />
             </button>
           </div>
         ))}
@@ -117,7 +118,7 @@ export function KnowledgeUpload({ flowId, nodeId }: { flowId: string; nodeId: st
         disabled={pending}
         className="flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-line-2 px-3 py-2 text-[12px] font-semibold text-muted transition hover:border-orange-2/50 hover:text-text disabled:opacity-50"
       >
-        {pending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+        {pending ? <AnimatedSpinnerIcon size={13} /> : <ActionsUploadIcon size={13} />}
         {pending ? "Uploading…" : "Upload document"}
       </button>
     </div>

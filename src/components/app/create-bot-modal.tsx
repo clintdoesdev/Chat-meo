@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { ActionsCloseIcon, ActionsPlusIcon } from "@/components/icons";
 import { useRef, useState, useTransition } from "react";
 import { ColorPicker } from "@/components/color-picker";
 import { createBot } from "@/lib/actions/bots";
@@ -18,7 +18,7 @@ export function CreateBotButton() {
         onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-grad-orange px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)]"
       >
-        <Plus size={13} />
+        <ActionsPlusIcon size={13} />
         New bot
       </button>
       {open && <CreateBotModal onClose={() => setOpen(false)} />}
@@ -63,7 +63,7 @@ function CreateBotModal({ onClose }: { onClose: () => void }) {
               aria-label="Close"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
             >
-              <X size={16} />
+              <ActionsCloseIcon size={16} />
             </button>
           </div>
 
@@ -120,7 +120,7 @@ function CreateBotModal({ onClose }: { onClose: () => void }) {
               disabled={pending}
               className="flex items-center justify-center gap-1.5 rounded-full bg-grad-orange px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] disabled:opacity-60"
             >
-              <Plus size={14} />
+              <ActionsPlusIcon size={14} />
               {pending ? "Creating…" : "Create bot"}
             </button>
             <p className="text-center text-[11px] text-muted">

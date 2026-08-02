@@ -1,8 +1,8 @@
 "use client";
 
-import { Bell, Check, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { ActionsCheckIcon, CommsBellIcon, CommsUserIcon } from "@/components/icons";
 import { markNotificationsRead } from "@/lib/actions/notifications";
 import { timeAgo } from "@/lib/time";
 
@@ -53,7 +53,7 @@ export function NotificationsMenu({ notifications }: { notifications: Notificati
         onClick={() => setOpen((v) => !v)}
         className="relative flex h-[38px] w-[38px] items-center justify-center rounded-full border border-line-2 text-muted transition-colors hover:text-text hover:border-orange-2/50"
       >
-        <Bell size={16} />
+        <CommsBellIcon size={16} />
         {unreadCount > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-orange px-[3px] text-[9px] font-bold leading-none text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -73,7 +73,7 @@ export function NotificationsMenu({ notifications }: { notifications: Notificati
                 disabled={marking}
                 className="flex items-center gap-1 text-[11px] font-semibold text-orange-2 transition hover:text-orange disabled:opacity-50"
               >
-                <Check size={11} />
+                <ActionsCheckIcon size={11} />
                 Mark all read
               </button>
             )}
@@ -92,7 +92,7 @@ export function NotificationsMenu({ notifications }: { notifications: Notificati
                   className="flex items-start gap-2.5 rounded-[11px] px-3 py-2.5 transition-colors hover:bg-card-2"
                 >
                   <span className="relative mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-orange/10 text-orange-2">
-                    <UserRound size={13} />
+                    <CommsUserIcon size={13} />
                     {!item.read && (
                       <span
                         aria-hidden="true"

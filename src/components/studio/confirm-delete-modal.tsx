@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { ActionsTrashIcon } from "@/components/icons";
 
 export function ConfirmDeleteModal({
   label,
@@ -21,7 +21,7 @@ export function ConfirmDeleteModal({
         className="fixed left-1/2 top-1/2 z-[100] w-[min(320px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line-2 bg-[#161616] p-5 text-center shadow-[0_30px_60px_-20px_rgba(0,0,0,.9)]"
       >
         <span className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-bad/10 text-bad">
-          <Trash2 size={20} />
+          <ActionsTrashIcon size={20} />
         </span>
         <h3 className="mb-1.5 text-[14.5px] font-bold">Delete &ldquo;{label}&rdquo;?</h3>
         <p className="mb-4 text-[12.5px] text-muted">This can&apos;t be undone.</p>

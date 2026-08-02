@@ -1,8 +1,9 @@
 "use client";
 
-import { Copy, ExternalLink, Upload, X } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ColorPicker } from "@/components/color-picker";
+import { ActionsCloseIcon, ActionsDuplicateIcon, ActionsUploadIcon } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
 import { Toast } from "@/components/studio/toast";
 import {
@@ -180,7 +181,7 @@ export function BotSettingsModal({
               aria-label="Close"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
             >
-              <X size={16} />
+              <ActionsCloseIcon size={16} />
             </button>
           </div>
 
@@ -283,7 +284,7 @@ export function BotSettingsModal({
                           onClick={() => avatarFileRef.current?.click()}
                           className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-2 text-[12px] font-semibold text-text transition hover:border-orange-2/50"
                         >
-                          <Upload size={13} />
+                          <ActionsUploadIcon size={13} />
                           Upload
                         </button>
                         <input
@@ -326,7 +327,7 @@ export function BotSettingsModal({
                           aria-label="Copy live link"
                           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-line-2 bg-card-2 text-muted transition hover:border-orange-2/50 hover:text-text"
                         >
-                          <Copy size={14} />
+                          <ActionsDuplicateIcon size={14} />
                         </button>
                       </div>
                       <p className="mt-1.5 text-[11px] text-muted">
@@ -453,7 +454,7 @@ export function BotSettingsModal({
                           aria-label="Copy embed script"
                           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-line-2 bg-card-2 text-muted transition hover:border-orange-2/50 hover:text-text"
                         >
-                          <Copy size={14} />
+                          <ActionsDuplicateIcon size={14} />
                         </button>
                       </div>
                       <p className="mt-1.5 text-[11px] text-muted">
@@ -477,7 +478,7 @@ export function BotSettingsModal({
                               aria-label={`Remove ${domain}`}
                               className="flex h-4 w-4 items-center justify-center rounded-full text-muted hover:text-bad"
                             >
-                              <X size={10} />
+                              <ActionsCloseIcon size={10} />
                             </button>
                           </span>
                         ))}

@@ -1,4 +1,4 @@
-import { Plus, Trash2, X } from "lucide-react";
+import { ActionsCloseIcon, ActionsPlusIcon, ActionsTrashIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
 import { PillSelect } from "@/components/studio/pill-select";
@@ -82,7 +82,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
             aria-label="Close"
             className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
           >
-            <X size={16} />
+            <ActionsCloseIcon size={16} />
           </button>
         </div>
 
@@ -99,7 +99,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               aria-label={`Delete ${meta.label}`}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-bad/15 text-bad transition hover:bg-bad/25"
             >
-              <Trash2 size={15} />
+              <ActionsTrashIcon size={15} />
             </button>
           )}
         </div>
@@ -223,7 +223,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 }}
                 className="flex items-center gap-1 rounded-full border border-line-2 px-2.5 py-1 text-[10.5px] font-semibold text-muted transition hover:border-orange-2/50 hover:text-text"
               >
-                <Plus size={11} strokeWidth={2.5} />
+                <ActionsPlusIcon size={11} />
                 Add
               </button>
             </div>
@@ -264,7 +264,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                     aria-label={`Remove branch ${index + 1}`}
                     className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-bad"
                   >
-                    <X size={12} />
+                    <ActionsCloseIcon size={12} />
                   </button>
                 </div>
               ))}

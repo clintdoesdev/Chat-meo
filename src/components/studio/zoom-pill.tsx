@@ -1,7 +1,7 @@
 "use client";
 
 import { useReactFlow, useStore } from "@xyflow/react";
-import { Minus, Plus } from "lucide-react";
+import { CanvasZoomInIcon, CanvasZoomOutIcon } from "@/components/icons";
 
 export function ZoomPill() {
   const { zoomIn, zoomOut } = useReactFlow();
@@ -15,7 +15,7 @@ export function ZoomPill() {
         aria-label="Zoom out"
         className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
       >
-        <Minus size={14} strokeWidth={2.5} />
+        <CanvasZoomOutIcon size={14} />
       </button>
       <span className="w-9 select-none text-center text-[11.5px] font-semibold tabular-nums text-muted">
         {Math.round(zoom * 100)}%
@@ -26,7 +26,7 @@ export function ZoomPill() {
         aria-label="Zoom in"
         className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
       >
-        <Plus size={14} strokeWidth={2.5} />
+        <CanvasZoomInIcon size={14} />
       </button>
     </div>
   );

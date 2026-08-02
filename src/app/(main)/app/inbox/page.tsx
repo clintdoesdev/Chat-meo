@@ -3,8 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { InboxView, type ConversationSummary } from "@/components/app/inbox-view";
-import { MeoMark } from "@/components/meo-mark";
 import { prisma } from "@/lib/prisma";
+import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 
 export const metadata: Metadata = {
   title: "Inbox — Chatmeo",
@@ -24,7 +24,7 @@ export default async function InboxPage() {
   if (bots.length === 0) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-        <MeoMark size={40} />
+        <LazyGlassIcon icon="bubble" size={64} />
         <h1 className="text-lg font-bold">No bots yet</h1>
         <p className="max-w-[36ch] text-sm text-muted">
           Conversations will show up here once visitors start chatting with a bot you&apos;ve created.

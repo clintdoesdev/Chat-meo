@@ -1,9 +1,11 @@
 "use client";
 
-import { ChevronDown, RotateCcw, Send, X } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ActionsCloseIcon, ActionsUndoIcon, CommsSendIcon } from "@/components/icons";
 import { linkify } from "@/components/linkify";
 import { MeoMark } from "@/components/meo-mark";
+import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 import type { EngineState } from "@/engine/types";
 import type { FlowGraph } from "@/lib/flow-types";
 
@@ -143,7 +145,7 @@ export function TestDrawer({
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3.5">
           <div className="flex items-center gap-2.5">
-            <MeoMark size={22} />
+            <LazyGlassIcon icon="bubble" size={26} />
             <h3 className="text-[13.5px] font-semibold">Test bot</h3>
           </div>
           <div className="flex items-center gap-1">
@@ -154,7 +156,7 @@ export function TestDrawer({
               aria-label="Restart"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
             >
-              <RotateCcw size={14} />
+              <ActionsUndoIcon size={14} />
             </button>
             <button
               type="button"
@@ -163,7 +165,7 @@ export function TestDrawer({
               aria-label="Close"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
             >
-              <X size={16} />
+              <ActionsCloseIcon size={16} />
             </button>
           </div>
         </div>
@@ -264,7 +266,7 @@ export function TestDrawer({
               aria-label="Send"
               className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-grad-orange text-white transition disabled:opacity-40"
             >
-              <Send size={13} />
+              <CommsSendIcon size={13} />
             </button>
           </div>
         </div>

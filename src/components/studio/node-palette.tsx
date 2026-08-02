@@ -1,4 +1,5 @@
 import { NodeInfoButton } from "@/components/studio/node-info-button";
+import { NODE_KIND_ICON } from "@/components/studio/node-icons";
 import { usePaletteDragHandle, type PaletteDragCallbacks } from "@/components/studio/use-palette-drag-handle";
 import { PALETTE_KINDS } from "@/lib/flow-types";
 
@@ -10,6 +11,7 @@ function PaletteChip({
   callbacks: PaletteDragCallbacks;
 }) {
   const handlers = usePaletteDragHandle(meta.kind, callbacks);
+  const Icon = NODE_KIND_ICON[meta.kind];
 
   return (
     <div
@@ -19,7 +21,12 @@ function PaletteChip({
         hover:-translate-x-0 hover:border-orange-2/50 active:cursor-grabbing
         min-[1020px]:mb-2 min-[1020px]:touch-auto min-[1020px]:whitespace-normal min-[1020px]:hover:-translate-x-0.5"
     >
-      <i className="h-2 w-2 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
+      <span
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[8px]"
+        style={{ background: `${meta.color}26`, color: meta.color }}
+      >
+        <Icon size={13} />
+      </span>
       <span className="flex-1">{meta.label}</span>
       <NodeInfoButton label={meta.label} description={meta.description} />
     </div>

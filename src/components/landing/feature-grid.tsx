@@ -1,5 +1,6 @@
-import { Sparkles, User } from "lucide-react";
+import { CommsUserIcon } from "@/components/icons";
 import { Reveal } from "@/components/reveal";
+import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 
 const CARD =
   "rounded-[18px] border border-line bg-card p-6 transition hover:-translate-y-[3px] hover:border-orange-2/40";
@@ -102,6 +103,9 @@ export function FeatureGrid() {
     <div className="mt-14 grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1020px]:grid-cols-3">
       <Reveal className="min-[1020px]:col-span-2">
         <div className={`${CARD} relative overflow-hidden`}>
+          <IconBox>
+            <LazyGlassIcon icon="flow" size={30} />
+          </IconBox>
           <FlowDiagram />
           <h3 className="text-[19px] font-bold">Visual Flow Studio</h3>
           <p className="mt-2 text-[14.5px] leading-[1.55] text-muted">
@@ -113,7 +117,7 @@ export function FeatureGrid() {
       <Reveal delayMs={80}>
         <div className={CARD}>
           <IconBox>
-            <Sparkles size={22} className="text-orange-2" strokeWidth={1.8} />
+            <LazyGlassIcon icon="spark" size={30} />
           </IconBox>
           <h3 className="text-[17px] font-bold">AI-powered replies</h3>
           <p className="mt-2 text-[14.5px] leading-[1.55] text-muted">
@@ -125,7 +129,7 @@ export function FeatureGrid() {
       <Reveal delayMs={160}>
         <div className={CARD}>
           <IconBox>
-            <User size={22} className="text-orange-2" strokeWidth={1.8} />
+            <CommsUserIcon size={22} className="text-orange-2" />
           </IconBox>
           <h3 className="text-[17px] font-bold">Lead capture</h3>
           <p className="mt-2 text-[14.5px] leading-[1.55] text-muted">

@@ -1,9 +1,9 @@
-import { Bot, CheckCircle2, MessageSquare, MessagesSquare } from "lucide-react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { BetaUsagePanel } from "@/components/app/beta-usage-panel";
 import { BotsPanel } from "@/components/app/bots-panel";
 import { StatCard } from "@/components/app/stat-card";
+import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
 import { BETA_BOT_CAP, BETA_MESSAGE_CAP, startOfCurrentMonth } from "@/lib/beta-limits";
 import { prisma } from "@/lib/prisma";
 import { bucketByDay, weekOverWeekTrend } from "@/lib/stats";
@@ -77,21 +77,21 @@ export default async function OverviewPage() {
           value={String(bots.length)}
           trend={weekOverWeekTrend(botDates)}
           spark={bucketByDay(botDates, 7)}
-          icon={Bot}
+          icon={NavBotsIcon}
         />
         <StatCard
           label="Conversations"
           value={String(conversations.length)}
           trend={weekOverWeekTrend(conversationDates)}
           spark={bucketByDay(conversationDates, 7)}
-          icon={MessageSquare}
+          icon={NavInboxIcon}
         />
         <StatCard
           label="Resolution rate"
           value={resolutionRate === null ? "—" : `${resolutionRate}%`}
           trend={weekOverWeekTrend(resolvedDates)}
           spark={bucketByDay(resolvedDates, 7)}
-          icon={CheckCircle2}
+          icon={StatusSuccessIcon}
         />
         <StatCard
           label="Messages"
@@ -99,7 +99,7 @@ export default async function OverviewPage() {
           trend={weekOverWeekTrend(messageDates)}
           spark={bucketByDay(messageDates, 7)}
           caption={`${messagesThisMonth} this month`}
-          icon={MessagesSquare}
+          icon={NodesMessageIcon}
         />
       </div>
 

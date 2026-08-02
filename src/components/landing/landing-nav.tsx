@@ -1,8 +1,9 @@
 "use client";
 
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { ActionsCloseIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 
 const LINKS = [
@@ -57,7 +58,7 @@ export function LandingNav() {
             data-fx-skip
             className="flex h-10 w-10 items-center justify-center rounded-full border border-line-2 min-[760px]:hidden"
           >
-            {open ? <X size={18} /> : <Menu size={18} />}
+            {open ? <ActionsCloseIcon size={18} /> : <Menu size={18} />}
           </button>
         </div>
       </div>

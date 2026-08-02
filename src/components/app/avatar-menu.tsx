@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { CommsLogoutIcon, NavSettingsIcon } from "@/components/icons";
 import { signOutAction } from "@/lib/actions/auth";
 
 type AvatarMenuProps = {
@@ -54,15 +55,17 @@ export function AvatarMenu({ name, email }: AvatarMenuProps) {
           <Link
             href="/app/settings"
             onClick={() => setOpen(false)}
-            className="block rounded-[11px] px-3 py-2.5 text-[13px] transition-colors hover:bg-card-2"
+            className="flex items-center gap-2 rounded-[11px] px-3 py-2.5 text-[13px] transition-colors hover:bg-card-2"
           >
+            <NavSettingsIcon size={14} />
             Settings
           </Link>
           <form action={signOutAction}>
             <button
               type="submit"
-              className="w-full rounded-[11px] px-3 py-2.5 text-left text-[13px] text-bad transition-colors hover:bg-card-2"
+              className="flex w-full items-center gap-2 rounded-[11px] px-3 py-2.5 text-left text-[13px] text-bad transition-colors hover:bg-card-2"
             >
+              <CommsLogoutIcon size={14} />
               Sign out
             </button>
           </form>

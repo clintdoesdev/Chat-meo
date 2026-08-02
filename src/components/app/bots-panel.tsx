@@ -1,5 +1,6 @@
 import { BotRow } from "@/components/app/bot-row";
 import { CreateBotButton } from "@/components/app/create-bot-modal";
+import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 
 type BotSummary = {
   id: string;
@@ -19,9 +20,10 @@ export function BotsPanel({ bots }: { bots: BotSummary[] }) {
       </div>
 
       {bots.length === 0 ? (
-        <p className="py-8 text-center text-[13px] text-muted">
-          No bots yet — create your first one above.
-        </p>
+        <div className="flex flex-col items-center gap-2 py-8">
+          <LazyGlassIcon icon="bubble" size={56} />
+          <p className="text-center text-[13px] text-muted">No bots yet — create your first one above.</p>
+        </div>
       ) : (
         <div className="flex flex-col">
           {bots.map((bot) => (

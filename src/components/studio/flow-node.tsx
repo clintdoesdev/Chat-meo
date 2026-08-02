@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
+import { NODE_KIND_ICON } from "@/components/studio/node-icons";
 import { useStudioNodeActions } from "@/components/studio/node-actions-context";
 import { NODE_KIND_META, type FlowNode, type FlowNodeData, type FlowNodeKind } from "@/lib/flow-types";
 
@@ -30,6 +31,7 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
 export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) {
   const meta = type ? NODE_KIND_META[type] : undefined;
   const color = meta?.color ?? "#FF5C16";
+  const Icon = NODE_KIND_ICON[type ?? "message"];
   const branches = type === "condition" ? (data.branches ?? []) : [];
   const { openDetails } = useStudioNodeActions();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -169,13 +171,16 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
       )}
 
       <div className="mb-1 flex items-center gap-2 text-[12px] font-bold">
-        <i
-          className="h-2 w-2 flex-shrink-0 rounded-[3px]"
+        <span
+          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[7px]"
           style={{
-            background: color,
-            boxShadow: type === "ai" ? `0 0 8px 1px ${color}` : undefined,
+            background: `${color}26`,
+            color,
+            boxShadow: type === "ai" ? `0 0 8px 1px ${color}55` : undefined,
           }}
-        />
+        >
+          <Icon size={11} />
+        </span>
         <span className="truncate">{data.label || meta?.label}</span>
       </div>
 

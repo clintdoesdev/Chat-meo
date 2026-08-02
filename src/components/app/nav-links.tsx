@@ -1,14 +1,14 @@
 "use client";
 
-import { LayoutGrid, MessageSquare, Settings, Workflow } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NavDashboardIcon, NavFlowsIcon, NavInboxIcon, NavSettingsIcon } from "@/components/icons";
 
 const NAV_ITEMS = [
-  { href: "/app", label: "Overview", Icon: LayoutGrid },
-  { href: "/app/studio", label: "Studio", Icon: Workflow },
-  { href: "/app/inbox", label: "Inbox", Icon: MessageSquare },
-  { href: "/app/settings", label: "Settings", Icon: Settings },
+  { href: "/app", label: "Overview", Icon: NavDashboardIcon },
+  { href: "/app/studio", label: "Studio", Icon: NavFlowsIcon },
+  { href: "/app/inbox", label: "Inbox", Icon: NavInboxIcon },
+  { href: "/app/settings", label: "Settings", Icon: NavSettingsIcon },
 ];
 
 export function NavLinks({ variant }: { variant: "top" | "bottom" }) {

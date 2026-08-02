@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Loader2, Mail, ShieldCheck, ShieldOff, Smartphone } from "lucide-react";
+import { Mail, ShieldCheck, ShieldOff, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { ActionsCheckIcon, AnimatedSpinnerIcon } from "@/components/icons";
 import {
   beginTotpSetup,
   cancelTotpSetup,
@@ -191,7 +192,7 @@ export function TwoFactorSettings({
                 disabled={pending}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-grad-orange py-[10px] text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110 disabled:opacity-60"
               >
-                {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {pending ? <AnimatedSpinnerIcon size={14} /> : <ActionsCheckIcon size={14} />}
                 Confirm
               </button>
             </div>
@@ -202,7 +203,7 @@ export function TwoFactorSettings({
       {view === "status" && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 rounded-[12px] border border-ok/30 bg-ok/10 px-3.5 py-2.5 text-[12.5px] font-semibold text-ok">
-            <Check size={14} />
+            <ActionsCheckIcon size={14} />
             {status === "email" ? "Email code enabled" : "Authenticator app enabled"}
           </div>
           {error && (

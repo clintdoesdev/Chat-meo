@@ -1,7 +1,7 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ActionsTrashIcon } from "@/components/icons";
 
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
@@ -106,7 +106,7 @@ export function LongPressMenu({
             }}
             className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[12.5px] font-medium text-bad transition hover:bg-bad/10"
           >
-            <Trash2 size={14} />
+            <ActionsTrashIcon size={14} />
             Delete
           </button>
         </div>

@@ -1,4 +1,5 @@
-import { ArrowDown, ArrowUp, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp } from "lucide-react";
+import type { ComponentType } from "react";
 import { Sparkline } from "@/components/app/sparkline";
 import type { Trend } from "@/lib/stats";
 
@@ -9,7 +10,7 @@ type StatCardProps = {
   spark: number[];
   compact?: boolean;
   caption?: string;
-  icon?: LucideIcon;
+  icon?: ComponentType<{ size?: number; className?: string }>;
 };
 
 export function StatCard({ label, value, trend, spark, compact = false, caption, icon: Icon }: StatCardProps) {

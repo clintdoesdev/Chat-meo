@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, MessageCircle, X } from "lucide-react";
+import { ActionsCloseIcon, AnimatedSpinnerIcon, NodesMessageIcon } from "@/components/icons";
 import { useState } from "react";
 import { linkify } from "@/components/linkify";
 import { MeoMark } from "@/components/meo-mark";
@@ -116,7 +116,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
                 className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full"
                 style={{ background: "rgba(255,92,22,.15)" }}
               >
-                <MessageCircle size={17} className="text-orange-2" />
+                <NodesMessageIcon size={17} className="text-orange-2" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
@@ -171,7 +171,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
             aria-label="Close"
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
           >
-            <X size={16} />
+            <ActionsCloseIcon size={16} />
           </button>
         </div>
 
@@ -185,7 +185,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
         <div className="flex-1 overflow-y-auto px-4 py-5">
           {loadingDetail && (
             <div className="flex h-full items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-muted" />
+              <AnimatedSpinnerIcon size={20} className="text-muted" />
             </div>
           )}
           {!loadingDetail && detail && detail.messages.length === 0 && (

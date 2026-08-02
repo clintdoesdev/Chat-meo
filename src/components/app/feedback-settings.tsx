@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, MessageSquarePlus, Paperclip } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
+import { ActionsCheckIcon, CommsAttachmentIcon, NodesMessageIcon } from "@/components/icons";
 import { submitFeedback } from "@/lib/actions/feedback";
 
 export function FeedbackSettings() {
@@ -30,7 +30,7 @@ export function FeedbackSettings() {
     <div className="w-full max-w-[540px] rounded-[18px] border border-line-2 bg-card p-5 text-left">
       <div className="mb-4 flex items-center gap-2.5">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange/10 text-orange-2">
-          <MessageSquarePlus size={16} />
+          <NodesMessageIcon size={16} />
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold">Beta feedback</p>
@@ -47,7 +47,7 @@ export function FeedbackSettings() {
           className="w-full resize-y rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none"
         />
         <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted transition hover:text-text">
-          <Paperclip size={12} />
+          <CommsAttachmentIcon size={12} />
           {fileName ?? "Attach a screenshot (optional)"}
           <input
             type="file"
@@ -65,7 +65,7 @@ export function FeedbackSettings() {
         )}
         {sent && !error && (
           <p className="flex items-center gap-1.5 text-[12.5px] text-ok">
-            <Check size={13} /> Thanks — got it!
+            <ActionsCheckIcon size={13} /> Thanks — got it!
           </p>
         )}
 

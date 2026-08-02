@@ -11,10 +11,11 @@ import {
   useReactFlow,
   type Connection,
 } from "@xyflow/react";
-import { ChevronLeft, Play, Share2 } from "lucide-react";
+import { ChevronLeft, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BotSettingsModal } from "@/components/app/bot-settings-modal";
+import { CanvasPlayIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { ConfirmDeleteModal } from "@/components/studio/confirm-delete-modal";
 import { DragGhost } from "@/components/studio/drag-ghost";
@@ -370,7 +371,7 @@ function StudioCanvas({
           onClick={() => setTestOpen(true)}
           className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
         >
-          <Play size={12} fill="currentColor" strokeWidth={0} />
+          <CanvasPlayIcon size={12} />
           Test
         </button>
 

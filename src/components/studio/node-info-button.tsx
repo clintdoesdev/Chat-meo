@@ -1,8 +1,8 @@
 "use client";
 
-import { Info } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { StatusInfoIcon } from "@/components/icons";
 
 const POPOVER_WIDTH = 220;
 const POPOVER_MAX_HEIGHT = 140;
@@ -78,7 +78,7 @@ export function NodeInfoButton({ label, description }: { label: string; descript
           open ? "bg-white/[.12] text-text" : "text-muted hover:bg-white/[.08] hover:text-text"
         }`}
       >
-        <Info size={12} />
+        <StatusInfoIcon size={12} />
       </button>
       {open &&
         coords &&

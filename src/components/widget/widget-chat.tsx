@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CommsSendIcon } from "@/components/icons";
 import { linkify } from "@/components/linkify";
 
 type ChatMessage = { id: string; role: "user" | "bot"; content: string };
@@ -244,7 +245,7 @@ export function WidgetChat({
             disabled={!ready || sending || ended || !input.trim()}
             aria-label="Send"
           >
-            <SendIcon />
+            <CommsSendIcon size={13} />
           </button>
         </div>
       </div>
@@ -257,20 +258,6 @@ function MeoDot() {
     <svg width="12" height="12" viewBox="0 0 64 64" aria-hidden="true">
       <circle cx="24" cy="30" r="4.4" fill="var(--cm-primary)" />
       <circle cx="40" cy="30" r="4.4" fill="var(--cm-primary)" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M3 11.5L20.5 3 12 20.5l-2.2-7-6.8-2z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }
