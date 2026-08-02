@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@/auth";
-import { extractText, UnsupportedFileTypeError } from "@/lib/documents/extract-text";
+import { extractText } from "@/lib/documents/extract-text";
 import { prisma } from "@/lib/prisma";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -66,7 +66,10 @@ export async function uploadAiNodeDocument(
     try {
       content = await extractText(file.name, buffer);
     } catch (error) {
-      if (error instanceof UnsupportedFileTypeError) return { error: error.message };
+      // extractText only ever throws curated, user-safe messages (UnsupportedFileTypeError, or a
+      // plain Error it constructed itself for a load/parse failure) — safe to show verbatim,
+      // unlike an arbitrary caught exception elsewhere in this function.
+      if (error instanceof Error) return { error: error.message };
       return { error: "Couldn't read that file." };
     }
 

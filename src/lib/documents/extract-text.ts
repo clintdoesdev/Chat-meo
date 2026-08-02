@@ -51,6 +51,11 @@ export async function extractText(fileName: string, buffer: Buffer): Promise<str
     try {
       const result = await parser.getText();
       return truncate(result.text.trim());
+    } catch (error) {
+      console.error("[extract-text] pdf-parse failed to parse", fileName, error);
+      throw new Error(
+        "Couldn't extract text from that PDF — it may be corrupted, password-protected, or a scanned image with no embedded text.",
+      );
     } finally {
       await parser.destroy();
     }
