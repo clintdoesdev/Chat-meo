@@ -106,7 +106,7 @@ export function TwoFactorSettings({
   }
 
   return (
-    <div className="w-full max-w-[440px] rounded-[18px] border border-line-2 bg-card p-5 text-left">
+    <div className="w-full max-w-[540px] rounded-[18px] border border-line-2 bg-card p-5 text-left">
       <div className="mb-4 flex items-center gap-2.5">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange/10 text-orange-2">
           {status === "off" ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}

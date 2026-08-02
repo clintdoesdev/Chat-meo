@@ -17,6 +17,15 @@ enum WidgetPosition {
   BOTTOM_RIGHT
 }
 
+// Purely visual: which platform-styled header/background/bubble treatment the widget renders.
+// Independent of primaryColor — a preset sets both together, but editing the color afterward
+// doesn't fall back to DEFAULT, since "WhatsApp look with a custom accent" is a valid combo.
+enum WidgetTheme {
+  DEFAULT
+  WHATSAPP
+  TELEGRAM
+}
+
 enum ConversationStatus {
   OPEN
   RESOLVED
@@ -87,10 +96,13 @@ model Bot {
   slug            String         @unique
   status          BotStatus      @default(DRAFT)
   primaryColor    String         @default("#FF5C16")
-  /// Shown in the widget header and dashboard bot list in place of the default mark. A plain
-  /// image URL, not an uploaded file — no blob storage in this app, and this mirrors how
-  /// User.image already works for Google-provided avatars.
+  /// Shown in the widget header and dashboard bot list in place of the default mark. Either a
+  /// plain image URL, or a base64 data: URI from an in-app upload — no blob storage in this app,
+  /// so an uploaded file's bytes live directly in this column (size-capped client-side).
   avatarUrl       String?
+  /// Which platform-styled treatment the widget's header/background/bubbles use. See the
+  /// WidgetTheme enum doc for why this is independent of primaryColor.
+  theme           WidgetTheme    @default(DEFAULT)
   welcomeMessage  String?
   widgetPosition  WidgetPosition @default(BOTTOM_RIGHT)
   /// Permissive mode for the embeddable widget: while true, the origin allowlist check in

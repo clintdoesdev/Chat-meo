@@ -1,3 +1,4 @@
+import { Bot, CheckCircle2, MessageSquare, MessagesSquare } from "lucide-react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { BetaUsagePanel } from "@/components/app/beta-usage-panel";
@@ -76,18 +77,21 @@ export default async function OverviewPage() {
           value={String(bots.length)}
           trend={weekOverWeekTrend(botDates)}
           spark={bucketByDay(botDates, 7)}
+          icon={Bot}
         />
         <StatCard
           label="Conversations"
           value={String(conversations.length)}
           trend={weekOverWeekTrend(conversationDates)}
           spark={bucketByDay(conversationDates, 7)}
+          icon={MessageSquare}
         />
         <StatCard
           label="Resolution rate"
           value={resolutionRate === null ? "—" : `${resolutionRate}%`}
           trend={weekOverWeekTrend(resolvedDates)}
           spark={bucketByDay(resolvedDates, 7)}
+          icon={CheckCircle2}
         />
         <StatCard
           label="Messages"
@@ -95,6 +99,7 @@ export default async function OverviewPage() {
           trend={weekOverWeekTrend(messageDates)}
           spark={bucketByDay(messageDates, 7)}
           caption={`${messagesThisMonth} this month`}
+          icon={MessagesSquare}
         />
       </div>
 

@@ -270,3 +270,79 @@ body {
   background: var(--cm-line);
   border-radius: 999px;
 }
+
+/* Platform-styled presets (WhatsApp / Telegram) — set via Bot.theme, independent of
+   --cm-primary. These override header/background/bubble colors with each app's real dark-mode
+   palette and a faint tiled doodle/node pattern behind the log, since "identical a bit" was the
+   ask — the rest of the widget (avatar mark, typing dots) still follows the owner's accent. */
+
+.cm-app[data-cm-theme="whatsapp"] .cm-header {
+  background: #202c33;
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-log {
+  background-color: #0b141a;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='220'%20height='220'%3E%3Cg%20fill='none'%20stroke='rgba(255,255,255,0.045)'%20stroke-width='1.5'%3E%3Ccircle%20cx='28'%20cy='34'%20r='9'/%3E%3Cpath%20d='M88%2044%20q10%20-20%2020%200%20q10%2020%20-20%200z'/%3E%3Ccircle%20cx='152'%20cy='92'%20r='6'/%3E%3Cpath%20d='M42%20152%20q15%20-10%2025%205'/%3E%3Ccircle%20cx='190'%20cy='172'%20r='8'/%3E%3Cpath%20d='M168%2018%20q8%20-14%2016%200'/%3E%3Ccircle%20cx='60'%20cy='100'%20r='4'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-bubble.cm-user {
+  background: #005c4b;
+  border-bottom-right-radius: 3px;
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-bubble.cm-bot {
+  background: #1f2c34;
+  border-bottom-left-radius: 3px;
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-inputbar {
+  background: #1a2329;
+  border-top-color: rgba(255, 255, 255, 0.04);
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-inputrow {
+  background: #2a3942;
+  border-color: transparent;
+}
+
+.cm-app[data-cm-theme="whatsapp"] .cm-send {
+  background: #005c4b;
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-header {
+  background: #17212b;
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-log {
+  background-color: #0e1621;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='180'%20height='180'%3E%3Cg%20fill='none'%20stroke='rgba(120,170,255,0.07)'%20stroke-width='1.5'%3E%3Ccircle%20cx='20'%20cy='20'%20r='3'/%3E%3Ccircle%20cx='90'%20cy='58'%20r='3'/%3E%3Ccircle%20cx='150'%20cy='28'%20r='3'/%3E%3Cpath%20d='M20%2020%20L90%2058%20L150%2028'/%3E%3Ccircle%20cx='58'%20cy='140'%20r='3'/%3E%3Ccircle%20cx='128'%20cy='152'%20r='3'/%3E%3Cpath%20d='M58%20140%20L128%20152'/%3E%3Ccircle%20cx='160'%20cy='110'%20r='3'/%3E%3Cpath%20d='M128%20152%20L160%20110'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-bubble.cm-user {
+  background: linear-gradient(180deg, #4dabf5, #2aabee);
+  border-radius: 18px 18px 4px 18px;
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-bubble.cm-bot {
+  background: #182533;
+  border-radius: 18px 18px 18px 4px;
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-inputbar {
+  background: #17212b;
+  border-top-color: rgba(255, 255, 255, 0.04);
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-inputrow {
+  background: #1e2c3a;
+  border-color: transparent;
+  border-radius: 22px;
+}
+
+.cm-app[data-cm-theme="telegram"] .cm-send {
+  background: linear-gradient(180deg, #4dabf5, #2aabee);
+}

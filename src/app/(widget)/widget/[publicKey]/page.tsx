@@ -36,7 +36,14 @@ export default async function WidgetPage({
     where: { publicKey },
     select: {
       bot: {
-        select: { name: true, status: true, primaryColor: true, avatarUrl: true, welcomeMessage: true },
+        select: {
+          name: true,
+          status: true,
+          primaryColor: true,
+          theme: true,
+          avatarUrl: true,
+          welcomeMessage: true,
+        },
       },
     },
   });
@@ -50,9 +57,14 @@ export default async function WidgetPage({
 
   const primary = apiKey.bot.primaryColor;
   const primary2 = lightenHex(primary, 0.22);
+  const theme = apiKey.bot.theme.toLowerCase();
 
   return (
-    <div className="cm-app" style={{ ["--cm-primary" as string]: primary, ["--cm-primary-2" as string]: primary2 }}>
+    <div
+      className="cm-app"
+      data-cm-theme={theme}
+      style={{ ["--cm-primary" as string]: primary, ["--cm-primary-2" as string]: primary2 }}
+    >
       <div className="cm-header">
         {apiKey.bot.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL on a route that skips next/image's optimizer

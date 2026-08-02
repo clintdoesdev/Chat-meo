@@ -27,11 +27,14 @@ function newPublicKey(): string {
   return `pk_${randomBytes(18).toString("base64url")}`;
 }
 
+export type WidgetTheme = "DEFAULT" | "WHATSAPP" | "TELEGRAM";
+
 export type EmbedConfig = {
   name: string;
   avatarUrl: string | null;
   publicKey: string;
   primaryColor: string;
+  theme: WidgetTheme;
   welcomeMessage: string | null;
   widgetPosition: "BOTTOM_LEFT" | "BOTTOM_RIGHT";
   allowedDomains: string[];
@@ -51,6 +54,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
       name: true,
       avatarUrl: true,
       primaryColor: true,
+      theme: true,
       welcomeMessage: true,
       widgetPosition: true,
       testMode: true,
@@ -71,6 +75,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
     avatarUrl: full.avatarUrl,
     publicKey: apiKey.publicKey,
     primaryColor: full.primaryColor,
+    theme: full.theme,
     welcomeMessage: full.welcomeMessage,
     widgetPosition: full.widgetPosition,
     allowedDomains: apiKey.allowedDomains,
@@ -79,6 +84,11 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
 }
 
 const HTTP_URL_RE = /^https?:\/\/.+/i;
+// Matches the FileReader.readAsDataURL() output the avatar upload button produces client-side —
+// see the doc comment on Bot.avatarUrl for why a data: URI is stored directly rather than a blob
+// reference. Capped well under Postgres's row-size comfort zone.
+const IMAGE_DATA_URI_RE = /^data:image\/(png|jpeg|jpg|gif|webp);base64,[a-z0-9+/]+=*$/i;
+const MAX_AVATAR_DATA_URI_LENGTH = 300_000;
 
 export async function updateWidgetSettings(
   botId: string,
@@ -86,6 +96,7 @@ export async function updateWidgetSettings(
     name?: string;
     avatarUrl?: string;
     primaryColor?: string;
+    theme?: WidgetTheme;
     welcomeMessage?: string;
     widgetPosition?: "BOTTOM_LEFT" | "BOTTOM_RIGHT";
   },
@@ -103,8 +114,11 @@ export async function updateWidgetSettings(
   }
 
   const avatarUrl = input.avatarUrl?.trim();
-  if (avatarUrl && !HTTP_URL_RE.test(avatarUrl)) {
-    return { error: "Avatar must be a full image URL starting with http:// or https://." };
+  if (avatarUrl && !HTTP_URL_RE.test(avatarUrl) && !IMAGE_DATA_URI_RE.test(avatarUrl)) {
+    return { error: "Avatar must be an uploaded image or a full URL starting with http:// or https://." };
+  }
+  if (avatarUrl && avatarUrl.length > MAX_AVATAR_DATA_URI_LENGTH) {
+    return { error: "That image is too large — try one under 200KB." };
   }
 
   const welcomeMessage = input.welcomeMessage?.trim();
@@ -115,6 +129,7 @@ export async function updateWidgetSettings(
       ...(name ? { name } : {}),
       ...(input.avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
       ...(input.primaryColor !== undefined ? { primaryColor: input.primaryColor } : {}),
+      ...(input.theme !== undefined ? { theme: input.theme } : {}),
       ...(input.welcomeMessage !== undefined ? { welcomeMessage: welcomeMessage || null } : {}),
       ...(input.widgetPosition !== undefined ? { widgetPosition: input.widgetPosition } : {}),
     },

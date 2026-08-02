@@ -1,7 +1,8 @@
 "use client";
 
-import { Copy, ExternalLink, X } from "lucide-react";
+import { Copy, ExternalLink, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ColorPicker } from "@/components/color-picker";
 import { Skeleton } from "@/components/skeleton";
 import { Toast } from "@/components/studio/toast";
 import {
@@ -10,23 +11,26 @@ import {
   removeAllowedDomain,
   updateWidgetSettings,
   type EmbedConfig,
+  type WidgetTheme,
 } from "@/lib/actions/embed";
 import { buildEmbedSnippet, type WidgetPosition } from "@/lib/embed-snippet";
 
 const SAVE_DEBOUNCE_MS = 700;
+const MAX_AVATAR_BYTES = 200_000;
 
 type Tab = "general" | "embed";
 
-// A theme here is just a curated primaryColor — the widget's whole look already derives from
-// that one value (see lightenHex() in the widget page), so a preset is a one-tap shortcut to a
-// recognizable color rather than a separate styling system. Capped at 5 per the design brief.
-const THEME_PRESETS = [
-  { name: "Chatmeo", color: "#FF5C16" },
-  { name: "WhatsApp", color: "#25D366" },
-  { name: "Telegram", color: "#2AABEE" },
-  { name: "Midnight", color: "#7C5CFF" },
-  { name: "Sunset", color: "#FF4D8D" },
-] as const;
+// Chatmeo/Midnight/Sunset are just a curated primaryColor — the widget's default look already
+// derives from that one value (see lightenHex() in the widget page). WhatsApp/Telegram additionally
+// switch on a platform-styled header/background/bubble treatment (see widget.css's
+// [data-cm-theme] rules) alongside their accent color. Capped at 5 per the design brief.
+const THEME_PRESETS: { name: string; color: string; theme: WidgetTheme }[] = [
+  { name: "Chatmeo", color: "#FF5C16", theme: "DEFAULT" },
+  { name: "WhatsApp", color: "#25D366", theme: "WHATSAPP" },
+  { name: "Telegram", color: "#2AABEE", theme: "TELEGRAM" },
+  { name: "Midnight", color: "#7C5CFF", theme: "DEFAULT" },
+  { name: "Sunset", color: "#FF4D8D", theme: "DEFAULT" },
+];
 
 export function BotSettingsModal({
   botId,
@@ -44,7 +48,9 @@ export function BotSettingsModal({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState(botName);
   const [avatarInput, setAvatarInput] = useState("");
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [colorInput, setColorInput] = useState("#FF5C16");
+  const [themeInput, setThemeInput] = useState<WidgetTheme>("DEFAULT");
   const [messageInput, setMessageInput] = useState("");
   const [domainInput, setDomainInput] = useState("");
   const [domainError, setDomainError] = useState<string | null>(null);
@@ -52,6 +58,7 @@ export function BotSettingsModal({
   const [previewNonce, setPreviewNonce] = useState(0);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +72,7 @@ export function BotSettingsModal({
       setNameInput(result.name);
       setAvatarInput(result.avatarUrl ?? "");
       setColorInput(result.primaryColor);
+      setThemeInput(result.theme);
       setMessageInput(result.welcomeMessage ?? "");
     });
     return () => {
@@ -114,6 +122,27 @@ export function BotSettingsModal({
     setConfig((prev) =>
       prev ? { ...prev, allowedDomains: prev.allowedDomains.filter((d) => d !== domain) } : prev,
     );
+  }
+
+  function handleAvatarFile(file: File | undefined) {
+    if (!file) return;
+    setAvatarError(null);
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Please choose an image file.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError("That image is too large — try one under 200KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setAvatarInput(dataUrl);
+      scheduleSave({ avatarUrl: dataUrl });
+    };
+    reader.onerror = () => setAvatarError("Couldn't read that file — try another image.");
+    reader.readAsDataURL(file);
   }
 
   function handleCopy(text: string, label: string) {
@@ -234,7 +263,7 @@ export function BotSettingsModal({
                       <div className="flex items-center gap-2.5">
                         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-line-2 bg-card-2">
                           {avatarInput ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL, not a local/optimizable asset
+                            // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL or uploaded data: URI, not a local/optimizable asset
                             <img src={avatarInput} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <span className="text-[11px] font-bold text-muted">
@@ -243,16 +272,33 @@ export function BotSettingsModal({
                           )}
                         </span>
                         <input
+                          ref={avatarFileRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(event) => handleAvatarFile(event.target.files?.[0])}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => avatarFileRef.current?.click()}
+                          className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-2 text-[12px] font-semibold text-text transition hover:border-orange-2/50"
+                        >
+                          <Upload size={13} />
+                          Upload
+                        </button>
+                        <input
                           id="bot-avatar"
-                          value={avatarInput}
+                          value={avatarInput.startsWith("data:") ? "" : avatarInput}
                           onChange={(event) => {
+                            setAvatarError(null);
                             setAvatarInput(event.target.value);
                             scheduleSave({ avatarUrl: event.target.value });
                           }}
-                          placeholder="https://example.com/avatar.png"
+                          placeholder="or paste an image URL"
                           className="flex-1 rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-2.5 text-[12.5px] text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none"
                         />
                       </div>
+                      {avatarError && <p className="mt-1.5 text-[11px] text-bad">{avatarError}</p>}
                       <p className="mt-1.5 text-[11px] text-muted">
                         Shown in the widget header and your bot list. Leave blank to use the
                         default mark.
@@ -291,20 +337,18 @@ export function BotSettingsModal({
 
                     <div>
                       <label htmlFor="settings-color" className={labelClass()}>
-                        Primary color
+                        Primary color &amp; theme
                       </label>
                       <div className="flex items-center gap-2.5">
-                        <input
-                          id="settings-color"
-                          type="color"
+                        <ColorPicker
                           value={colorInput}
-                          onChange={(event) => {
-                            setColorInput(event.target.value);
-                            scheduleSave({ primaryColor: event.target.value });
+                          onChange={(hex) => {
+                            setColorInput(hex);
+                            scheduleSave({ primaryColor: hex });
                           }}
-                          className="h-9 w-9 flex-shrink-0 cursor-pointer rounded-lg border border-line-2 bg-transparent p-0.5"
                         />
                         <input
+                          id="settings-color"
                           value={colorInput}
                           onChange={(event) => {
                             setColorInput(event.target.value);
@@ -312,6 +356,7 @@ export function BotSettingsModal({
                               scheduleSave({ primaryColor: event.target.value });
                             }
                           }}
+                          spellCheck={false}
                           className="w-28 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2 font-mono text-[12.5px] text-text focus:border-orange-2/60 focus:outline-none"
                         />
                       </div>
@@ -322,10 +367,11 @@ export function BotSettingsModal({
                             type="button"
                             onClick={() => {
                               setColorInput(preset.color);
-                              scheduleSave({ primaryColor: preset.color });
+                              setThemeInput(preset.theme);
+                              scheduleSave({ primaryColor: preset.color, theme: preset.theme });
                             }}
                             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                              colorInput.toLowerCase() === preset.color.toLowerCase()
+                              colorInput.toLowerCase() === preset.color.toLowerCase() && themeInput === preset.theme
                                 ? "border-orange-2/50 bg-orange/10 text-text"
                                 : "border-line-2 bg-card-2 text-muted hover:text-text"
                             }`}

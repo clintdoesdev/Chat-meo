@@ -2,6 +2,7 @@
 
 import { Plus, X } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
+import { ColorPicker } from "@/components/color-picker";
 import { createBot } from "@/lib/actions/bots";
 
 const DEFAULT_COLOR = "#FF5C16";
@@ -82,21 +83,14 @@ function CreateBotModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div>
-              <label htmlFor="new-bot-color" className={labelClass()}>
-                Primary color
-              </label>
+              <label className={labelClass()}>Primary color</label>
+              <input type="hidden" name="primaryColor" value={color} />
               <div className="flex items-center gap-2.5">
-                <input
-                  id="new-bot-color"
-                  type="color"
-                  value={color}
-                  onChange={(event) => setColor(event.target.value)}
-                  className="h-9 w-9 flex-shrink-0 cursor-pointer rounded-lg border border-line-2 bg-transparent p-0.5"
-                />
+                <ColorPicker value={color} onChange={setColor} />
                 <input
                   value={color}
                   onChange={(event) => setColor(event.target.value)}
-                  name="primaryColor"
+                  spellCheck={false}
                   className="w-28 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2 font-mono text-[12.5px] text-text focus:border-orange-2/60 focus:outline-none"
                 />
               </div>

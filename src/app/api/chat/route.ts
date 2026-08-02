@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
         } else {
           controller.enqueue(sseFrame({ type: "done", replies: result.replies, status: result.status }));
         }
-      } catch {
+      } catch (error) {
+        console.error("[api/chat] streaming turn failed", error);
         controller.enqueue(sseFrame({ type: "error", error: "Something went wrong." }));
       } finally {
         controller.close();

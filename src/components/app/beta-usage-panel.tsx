@@ -39,7 +39,7 @@ export function BetaUsagePanel({
         <div className="flex flex-col gap-3">
           {bots.map((bot) => (
             <div key={bot.id}>
-              <div className="mb-1 flex items-center justify-between gap-3 text-[12px]">
+              <div className="mb-1 flex flex-col gap-0.5 text-[12px] min-[480px]:flex-row min-[480px]:items-center min-[480px]:justify-between min-[480px]:gap-3">
                 <span className="truncate font-medium text-text">{bot.name}</span>
                 <span className="flex-shrink-0 text-muted">
                   {bot.messagesThisMonth} messages used this month · Beta cap: {messageCap}

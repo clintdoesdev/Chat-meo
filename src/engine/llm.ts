@@ -70,7 +70,13 @@ export const grokLlm: LlmDep = async ({ systemPrompt, history, temperature, mode
       max_tokens: MAX_TOKENS,
     });
     return completion.choices[0]?.message?.content?.trim() || FALLBACK_REPLY;
-  } catch {
+  } catch (error) {
+    // Without this, a bad key, an invalid model id, or a rate limit all look identical from the
+    // outside — every failure just silently becomes the same generic apology, with nothing in
+    // any log to say why. This is the only place that ever sees the real error: executor.ts's
+    // own try/catch around the LLM call never fires, since this function already resolves
+    // instead of throwing.
+    console.error("[grokLlm] xAI request failed", error);
     return FALLBACK_REPLY;
   }
 };
@@ -104,7 +110,8 @@ export function createStreamingGrokLlm(onChunk: (delta: string) => void): LlmDep
         }
       }
       return full.trim() || FALLBACK_REPLY;
-    } catch {
+    } catch (error) {
+      console.error("[createStreamingGrokLlm] xAI request failed", error);
       onChunk(FALLBACK_REPLY);
       return FALLBACK_REPLY;
     }

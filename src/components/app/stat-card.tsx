@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, type LucideIcon } from "lucide-react";
 import { Sparkline } from "@/components/app/sparkline";
 import type { Trend } from "@/lib/stats";
 
@@ -9,14 +9,22 @@ type StatCardProps = {
   spark: number[];
   compact?: boolean;
   caption?: string;
+  icon?: LucideIcon;
 };
 
-export function StatCard({ label, value, trend, spark, compact = false, caption }: StatCardProps) {
+export function StatCard({ label, value, trend, spark, compact = false, caption, icon: Icon }: StatCardProps) {
   return (
     <div
-      className={`min-w-0 rounded-[18px] border border-line bg-card ${compact ? "p-3.5" : "p-5"}`}
+      className={`min-w-0 rounded-[18px] border border-line bg-card transition hover:border-orange-2/30 ${compact ? "p-3.5" : "p-5"}`}
     >
-      <div className="text-xs leading-snug text-muted">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs leading-snug text-muted">{label}</div>
+        {Icon && (
+          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange/10 text-orange-2">
+            <Icon size={13} />
+          </span>
+        )}
+      </div>
       <div
         className={`mb-1.5 mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-bold tracking-tight ${
           compact ? "text-lg" : "text-2xl"
