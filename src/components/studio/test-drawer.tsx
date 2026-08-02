@@ -88,6 +88,7 @@ export function TestDrawer({
     }
 
     setEngineState(result.state);
+    if (result.state.lastError) setDebugOpen(true);
     if (result.replies.length > 0) {
       setMessages((prev) => [
         ...prev,
@@ -233,6 +234,12 @@ export function TestDrawer({
                     : "{}"}
                 </span>
               </p>
+              {engineState?.lastError && (
+                <p className="flex justify-between gap-3 border-t border-line-2 pt-1.5">
+                  <span className="flex-shrink-0 text-muted">Last error</span>
+                  <span className="break-words text-right text-bad">{engineState.lastError}</span>
+                </p>
+              )}
             </div>
           )}
         </div>

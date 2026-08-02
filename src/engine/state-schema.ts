@@ -6,6 +6,7 @@ export const EngineStateSchema = z.object({
   currentNodeId: z.string().nullable(),
   variables: z.record(z.string(), z.string()),
   status: z.enum(["RUNNING", "AWAITING_INPUT", "ENDED", "HANDOFF"]),
+  lastError: z.string().optional(),
 });
 
 /** Parses a persisted engineState JSON blob, falling back to a fresh initial state for the

@@ -81,6 +81,10 @@ export type EngineState = {
   currentNodeId: string | null;
   variables: Record<string, string>;
   status: EngineStatus;
+  /** The most recent AI-node LLM failure's message, if the last step() call hit one — reset on
+   * every call, so it only ever reflects that turn's outcome. Diagnostic only (never shown to
+   * end visitors); the Studio Test drawer's Debug panel is what actually surfaces it. */
+  lastError?: string;
 };
 
 export type Reply = { content: string };

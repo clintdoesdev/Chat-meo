@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createStreamingGrokLlm, FALLBACK_REPLY, grokLlm } from "./llm";
+import { createStreamingGrokLlm, grokLlm } from "./llm";
 
 describe("grokLlm / createStreamingGrokLlm without a configured key", () => {
   const originalKey = process.env.XAI_API_KEY;
@@ -16,17 +16,19 @@ describe("grokLlm / createStreamingGrokLlm without a configured key", () => {
     }
   });
 
-  it("grokLlm resolves to the fallback reply instead of throwing", async () => {
-    const result = await grokLlm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" });
-    expect(result).toBe(FALLBACK_REPLY);
+  it("grokLlm throws a descriptive error instead of silently returning a generic reply", async () => {
+    await expect(
+      grokLlm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
+    ).rejects.toThrow(/XAI_API_KEY is not configured/);
   });
 
-  it("createStreamingGrokLlm invokes onChunk with the fallback and resolves the same text", async () => {
+  it("createStreamingGrokLlm throws the same way, without ever invoking onChunk", async () => {
     const chunks: string[] = [];
     const llm = createStreamingGrokLlm((delta) => chunks.push(delta));
-    const result = await llm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" });
 
-    expect(chunks).toEqual([FALLBACK_REPLY]);
-    expect(result).toBe(FALLBACK_REPLY);
+    await expect(
+      llm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
+    ).rejects.toThrow(/XAI_API_KEY is not configured/);
+    expect(chunks).toEqual([]);
   });
 });

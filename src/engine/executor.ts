@@ -98,6 +98,7 @@ export async function step(
   const history: LlmChatMessage[] = [];
   let currentNodeId = state.currentNodeId;
   let status: EngineState["status"] = "RUNNING";
+  let lastError: string | undefined;
 
   if (state.status === "AWAITING_INPUT") {
     const captureNode = findNode(graph, currentNodeId);
@@ -168,6 +169,7 @@ export async function step(
           });
         } catch (error) {
           deps.logger.error("[engine] LLM call failed", error);
+          lastError = error instanceof Error ? error.message : String(error);
           content = "Sorry, I couldn't come up with a reply just now.";
         }
         replies.push({ content });
@@ -228,5 +230,5 @@ export async function step(
     }
   }
 
-  return { replies, state: { currentNodeId, variables, status } };
+  return { replies, state: { currentNodeId, variables, status, lastError } };
 }

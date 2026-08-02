@@ -311,6 +311,7 @@ describe("step: ai node", () => {
     expect(result.replies).toHaveLength(1);
     expect(result.replies[0].content).not.toBe("");
     expect(result.state.status).toBe("ENDED");
+    expect(result.state.lastError).toBe("upstream 500");
   });
 });
 
