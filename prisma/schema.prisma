@@ -53,6 +53,10 @@ model User {
   failedLoginAttempts Int              @default(0)
   lockedUntil         DateTime?
   createdAt           DateTime         @default(now())
+  /// Notifications (handoff conversations across the user's bots) created after this timestamp
+  /// count as unread — see src/components/app/notifications-menu.tsx. Null means everything is
+  /// unread, same as never having opened the panel.
+  notificationsReadAt DateTime?
 
   bots              Bot[]
   verificationCodes VerificationCode[]
@@ -83,6 +87,10 @@ model Bot {
   slug            String         @unique
   status          BotStatus      @default(DRAFT)
   primaryColor    String         @default("#FF5C16")
+  /// Shown in the widget header and dashboard bot list in place of the default mark. A plain
+  /// image URL, not an uploaded file — no blob storage in this app, and this mirrors how
+  /// User.image already works for Google-provided avatars.
+  avatarUrl       String?
   welcomeMessage  String?
   widgetPosition  WidgetPosition @default(BOTTOM_RIGHT)
   /// Permissive mode for the embeddable widget: while true, the origin allowlist check in

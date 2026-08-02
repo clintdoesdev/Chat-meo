@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
+import { NodeInfoButton } from "@/components/studio/node-info-button";
 import { PALETTE_KINDS, type FlowNodeKind } from "@/lib/flow-types";
 
 /** Mobile-only replacement for the drag-a-chip-onto-the-canvas palette: dragging a small
@@ -68,16 +69,24 @@ export function MobileNodePickerSheet({
 
         <div className="grid grid-cols-2 gap-2.5">
           {PALETTE_KINDS.map((meta) => (
-            <button
+            <div
               key={meta.kind}
-              type="button"
+              role="button"
+              tabIndex={0}
               data-fx-skip
               onClick={() => onSelect(meta.kind)}
-              className="flex items-center gap-2.5 rounded-[14px] border border-line-2 bg-card-2 p-3.5 text-left transition active:scale-[0.97] hover:border-orange-2/50"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(meta.kind);
+                }
+              }}
+              className="flex cursor-pointer items-center gap-2.5 rounded-[14px] border border-line-2 bg-card-2 p-3.5 text-left transition active:scale-[0.97] hover:border-orange-2/50"
             >
               <i className="h-2.5 w-2.5 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
-              <span className="text-[13px] font-medium">{meta.label}</span>
-            </button>
+              <span className="flex-1 text-[13px] font-medium">{meta.label}</span>
+              <NodeInfoButton label={meta.label} description={meta.description} />
+            </div>
           ))}
         </div>
       </div>

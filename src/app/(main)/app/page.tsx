@@ -115,6 +115,7 @@ export default async function OverviewPage() {
           name: bot.name,
           slug: bot.slug,
           status: bot.status,
+          avatarUrl: bot.avatarUrl,
           conversationCount: bot._count.conversations,
         }))}
       />

@@ -15,7 +15,7 @@ export default async function AppLayout({
 
   const dbUser = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { emailVerified: true },
+    select: { emailVerified: true, notificationsReadAt: true },
   });
   if (!dbUser) redirect("/signin");
   if (!dbUser.emailVerified) redirect("/verify-email");
@@ -30,11 +30,13 @@ export default async function AppLayout({
     select: { id: true, visitorId: true, createdAt: true, bot: { select: { name: true } } },
   });
 
+  const readAt = dbUser.notificationsReadAt;
   const notifications = handoffConversations.map((c) => ({
     id: c.id,
     botName: c.bot.name,
     visitorId: c.visitorId,
     createdAt: c.createdAt.toISOString(),
+    read: readAt !== null && c.createdAt <= readAt,
   }));
 
   return (

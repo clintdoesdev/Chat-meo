@@ -20,7 +20,11 @@ export function LoadingMeo() {
 
   return (
     <div
-      className={`flex min-h-screen items-center justify-center bg-bg transition-opacity duration-200 ${
+      // Next's loading.tsx mounts in place of the route's children — inside <main>, below the
+      // sticky header, inset by its padding — so min-h-screen centered within *that* box lands
+      // visibly off-center in the real viewport. Fixed positioning centers it in the actual
+      // viewport regardless of how deep in the layout this ends up mounted.
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-bg transition-opacity duration-200 ${
         visible ? "opacity-100" : "opacity-0"
       }`}
     >

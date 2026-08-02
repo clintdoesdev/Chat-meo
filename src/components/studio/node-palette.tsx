@@ -1,3 +1,4 @@
+import { NodeInfoButton } from "@/components/studio/node-info-button";
 import { usePaletteDragHandle, type PaletteDragCallbacks } from "@/components/studio/use-palette-drag-handle";
 import { PALETTE_KINDS } from "@/lib/flow-types";
 
@@ -19,7 +20,8 @@ function PaletteChip({
         min-[1020px]:mb-2 min-[1020px]:touch-auto min-[1020px]:whitespace-normal min-[1020px]:hover:-translate-x-0.5"
     >
       <i className="h-2 w-2 flex-shrink-0 rounded-[3px]" style={{ background: meta.color }} />
-      {meta.label}
+      <span className="flex-1">{meta.label}</span>
+      <NodeInfoButton label={meta.label} description={meta.description} />
     </div>
   );
 }

@@ -16,6 +16,7 @@ export function BotRow({
     name: string;
     slug: string;
     status: "DRAFT" | "LIVE";
+    avatarUrl: string | null;
     conversationCount: number;
   };
 }) {
@@ -43,10 +44,15 @@ export function BotRow({
             }`}
           >
             <span
-              className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[10px]"
+              className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px]"
               style={{ background: "rgba(255,92,22,.15)" }}
             >
-              <MeoMark size={20} />
+              {bot.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL
+                <img src={bot.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <MeoMark size={20} />
+              )}
             </span>
             <div className="min-w-0">
               <div className="truncate text-[13.5px] font-semibold">{bot.name}</div>

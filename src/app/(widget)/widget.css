@@ -35,7 +35,12 @@ body {
 .cm-app {
   display: flex;
   flex-direction: column;
+  /* 100vh on mobile browsers includes the area behind the address bar, so the input row
+     ends up below the fold until the page itself is scrolled — exactly the bug this fixes.
+     100dvh tracks the real visible viewport as browser chrome shows/hides (WhatsApp/Telegram
+     do the same). Keep the 100vh line first as a fallback for browsers without dvh support. */
   height: 100vh;
+  height: 100dvh;
 }
 
 .cm-header {
@@ -44,6 +49,14 @@ body {
   gap: 10px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--cm-line);
+  flex-shrink: 0;
+}
+
+.cm-header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
   flex-shrink: 0;
 }
 
@@ -172,6 +185,7 @@ body {
 .cm-inputbar {
   flex-shrink: 0;
   padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--cm-line);
 }
 
@@ -222,6 +236,7 @@ body {
 .cm-error-screen {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   flex-direction: column;
   align-items: center;
   justify-content: center;

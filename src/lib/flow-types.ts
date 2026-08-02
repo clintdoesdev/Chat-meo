@@ -53,6 +53,8 @@ export type NodeKindMeta = {
   color: string;
   defaultData: FlowNodeData;
   inPalette: boolean;
+  /** Plain-language explanation shown behind the (i) info icon next to this node kind. */
+  description: string;
 };
 
 export const NODE_KINDS: NodeKindMeta[] = [
@@ -62,6 +64,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
     color: "#FF5C16",
     defaultData: { label: "Greeting", text: "Hey, I'm Meo. What can I help with?" },
     inPalette: false,
+    description: "Where every conversation begins. Every bot has exactly one — it can't be deleted.",
   },
   {
     kind: "message",
@@ -69,6 +72,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
     color: "#FF5C16",
     defaultData: { label: "Send message", text: "Write what Meo should say…" },
     inPalette: true,
+    description: "Sends a fixed piece of text to the visitor, word for word — no AI involved.",
   },
   {
     kind: "ai",
@@ -81,6 +85,8 @@ export const NODE_KINDS: NodeKindMeta[] = [
       temperature: 0.35,
     },
     inPalette: true,
+    description:
+      "Lets the AI write a reply based on a system prompt you set, the conversation so far, and any documents you upload for it to reference.",
   },
   {
     kind: "condition",
@@ -95,6 +101,8 @@ export const NODE_KINDS: NodeKindMeta[] = [
       ],
     },
     inPalette: true,
+    description:
+      "Branches the flow based on a variable's value — connect each branch to a different next step.",
   },
   {
     kind: "capture",
@@ -102,6 +110,8 @@ export const NODE_KINDS: NodeKindMeta[] = [
     color: "#4ED88E",
     defaultData: { label: "Capture input", variableName: "email", question: "What's your email?" },
     inPalette: true,
+    description:
+      "Asks the visitor a question and saves their reply to a variable you can reuse later in the flow.",
   },
   {
     kind: "webhook",
@@ -109,6 +119,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
     color: "#C58BFF",
     defaultData: { label: "Webhook", url: "https://", method: "POST" },
     inPalette: true,
+    description: "Calls an external URL (your own API, Zapier, etc.) while the conversation is running.",
   },
   {
     kind: "handoff",
@@ -116,6 +127,8 @@ export const NODE_KINDS: NodeKindMeta[] = [
     color: "#FF5757",
     defaultData: { label: "Handoff", note: "Route to a human teammate." },
     inPalette: true,
+    description:
+      "Ends the bot's automated replies and marks the conversation as needing a human — it'll show up in your Inbox.",
   },
 ];
 

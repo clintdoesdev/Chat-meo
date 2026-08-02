@@ -2,6 +2,7 @@
 
 import { Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Skeleton } from "@/components/skeleton";
 import { Toast } from "@/components/studio/toast";
 import {
   addAllowedDomain,
@@ -15,6 +16,17 @@ import { buildEmbedSnippet, type WidgetPosition } from "@/lib/embed-snippet";
 const SAVE_DEBOUNCE_MS = 700;
 
 type Tab = "general" | "embed";
+
+// A theme here is just a curated primaryColor — the widget's whole look already derives from
+// that one value (see lightenHex() in the widget page), so a preset is a one-tap shortcut to a
+// recognizable color rather than a separate styling system. Capped at 5 per the design brief.
+const THEME_PRESETS = [
+  { name: "Chatmeo", color: "#FF5C16" },
+  { name: "WhatsApp", color: "#25D366" },
+  { name: "Telegram", color: "#2AABEE" },
+  { name: "Midnight", color: "#7C5CFF" },
+  { name: "Sunset", color: "#FF4D8D" },
+] as const;
 
 export function BotSettingsModal({
   botId,
@@ -31,6 +43,7 @@ export function BotSettingsModal({
   const [config, setConfig] = useState<EmbedConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState(botName);
+  const [avatarInput, setAvatarInput] = useState("");
   const [colorInput, setColorInput] = useState("#FF5C16");
   const [messageInput, setMessageInput] = useState("");
   const [domainInput, setDomainInput] = useState("");
@@ -50,6 +63,7 @@ export function BotSettingsModal({
       }
       setConfig(result);
       setNameInput(result.name);
+      setAvatarInput(result.avatarUrl ?? "");
       setColorInput(result.primaryColor);
       setMessageInput(result.welcomeMessage ?? "");
     });
@@ -166,6 +180,33 @@ export function BotSettingsModal({
 
           {loadError && <p className="p-5 text-[13px] text-bad">{loadError}</p>}
 
+          {!config && !loadError && (
+            <div className="grid flex-1 grid-cols-1 gap-0 min-[720px]:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="flex min-w-0 flex-col gap-5 p-5">
+                <div>
+                  <Skeleton className="mb-1.5 h-3 w-14" />
+                  <Skeleton className="h-[42px] w-full" />
+                </div>
+                <div>
+                  <Skeleton className="mb-1.5 h-3 w-16" />
+                  <Skeleton className="h-[42px] w-full" />
+                </div>
+                <div>
+                  <Skeleton className="mb-1.5 h-3 w-24" />
+                  <Skeleton className="h-9 w-9 rounded-lg" />
+                </div>
+                <div>
+                  <Skeleton className="mb-1.5 h-3 w-36" />
+                  <Skeleton className="h-[60px] w-full" />
+                </div>
+              </div>
+              <div className="border-t border-line bg-[#0c0c0c] p-4 min-[720px]:border-l min-[720px]:border-t-0">
+                <Skeleton className="mb-2.5 h-3 w-24" />
+                <Skeleton style={{ height: 520 }} className="w-full rounded-2xl" />
+              </div>
+            </div>
+          )}
+
           {config && (
             <div className="grid flex-1 grid-cols-1 gap-0 overflow-y-auto min-[720px]:grid-cols-[minmax(0,1fr)_320px]">
               <div className="flex min-w-0 flex-col gap-5 p-5">
@@ -184,6 +225,38 @@ export function BotSettingsModal({
                         }}
                         className="w-full rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-2.5 text-[12.5px] text-text focus:border-orange-2/60 focus:outline-none"
                       />
+                    </div>
+
+                    <div>
+                      <label htmlFor="bot-avatar" className={labelClass()}>
+                        Profile image
+                      </label>
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-line-2 bg-card-2">
+                          {avatarInput ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL, not a local/optimizable asset
+                            <img src={avatarInput} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="text-[11px] font-bold text-muted">
+                              {(nameInput || "?").slice(0, 1).toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                        <input
+                          id="bot-avatar"
+                          value={avatarInput}
+                          onChange={(event) => {
+                            setAvatarInput(event.target.value);
+                            scheduleSave({ avatarUrl: event.target.value });
+                          }}
+                          placeholder="https://example.com/avatar.png"
+                          className="flex-1 rounded-[13px] border border-line-2 bg-card-2 px-3.5 py-2.5 text-[12.5px] text-text placeholder:text-[#5C5C5C] focus:border-orange-2/60 focus:outline-none"
+                        />
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-muted">
+                        Shown in the widget header and your bot list. Leave blank to use the
+                        default mark.
+                      </p>
                     </div>
 
                     <div>
@@ -241,6 +314,29 @@ export function BotSettingsModal({
                           }}
                           className="w-28 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2 font-mono text-[12.5px] text-text focus:border-orange-2/60 focus:outline-none"
                         />
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {THEME_PRESETS.map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            onClick={() => {
+                              setColorInput(preset.color);
+                              scheduleSave({ primaryColor: preset.color });
+                            }}
+                            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                              colorInput.toLowerCase() === preset.color.toLowerCase()
+                                ? "border-orange-2/50 bg-orange/10 text-text"
+                                : "border-line-2 bg-card-2 text-muted hover:text-text"
+                            }`}
+                          >
+                            <i
+                              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                              style={{ background: preset.color }}
+                            />
+                            {preset.name}
+                          </button>
+                        ))}
                       </div>
                     </div>
 

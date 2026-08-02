@@ -29,6 +29,7 @@ function newPublicKey(): string {
 
 export type EmbedConfig = {
   name: string;
+  avatarUrl: string | null;
   publicKey: string;
   primaryColor: string;
   welcomeMessage: string | null;
@@ -48,6 +49,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
     where: { id: botId },
     select: {
       name: true,
+      avatarUrl: true,
       primaryColor: true,
       welcomeMessage: true,
       widgetPosition: true,
@@ -66,6 +68,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
 
   return {
     name: full.name,
+    avatarUrl: full.avatarUrl,
     publicKey: apiKey.publicKey,
     primaryColor: full.primaryColor,
     welcomeMessage: full.welcomeMessage,
@@ -75,10 +78,13 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
   };
 }
 
+const HTTP_URL_RE = /^https?:\/\/.+/i;
+
 export async function updateWidgetSettings(
   botId: string,
   input: {
     name?: string;
+    avatarUrl?: string;
     primaryColor?: string;
     welcomeMessage?: string;
     widgetPosition?: "BOTTOM_LEFT" | "BOTTOM_RIGHT";
@@ -96,12 +102,18 @@ export async function updateWidgetSettings(
     return { error: "Name can't be empty." };
   }
 
+  const avatarUrl = input.avatarUrl?.trim();
+  if (avatarUrl && !HTTP_URL_RE.test(avatarUrl)) {
+    return { error: "Avatar must be a full image URL starting with http:// or https://." };
+  }
+
   const welcomeMessage = input.welcomeMessage?.trim();
 
   await prisma.bot.update({
     where: { id: botId },
     data: {
       ...(name ? { name } : {}),
+      ...(input.avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
       ...(input.primaryColor !== undefined ? { primaryColor: input.primaryColor } : {}),
       ...(input.welcomeMessage !== undefined ? { welcomeMessage: welcomeMessage || null } : {}),
       ...(input.widgetPosition !== undefined ? { widgetPosition: input.widgetPosition } : {}),

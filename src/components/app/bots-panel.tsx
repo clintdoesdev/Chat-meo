@@ -6,6 +6,7 @@ type BotSummary = {
   name: string;
   slug: string;
   status: "DRAFT" | "LIVE";
+  avatarUrl: string | null;
   conversationCount: number;
 };
 

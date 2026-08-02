@@ -36,7 +36,7 @@ export default async function WidgetPage({
     where: { publicKey },
     select: {
       bot: {
-        select: { name: true, status: true, primaryColor: true, welcomeMessage: true },
+        select: { name: true, status: true, primaryColor: true, avatarUrl: true, welcomeMessage: true },
       },
     },
   });
@@ -54,20 +54,25 @@ export default async function WidgetPage({
   return (
     <div className="cm-app" style={{ ["--cm-primary" as string]: primary, ["--cm-primary-2" as string]: primary2 }}>
       <div className="cm-header">
-        <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="cm-mark-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="var(--cm-primary-2)" />
-              <stop offset="1" stopColor="var(--cm-primary)" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M32 6C17 6 6 16.4 6 30c0 7.8 3.8 14.5 9.9 18.9-.4 3.2-1.7 6.3-4.2 8.7-.7.7-.2 1.9.8 1.8 5.4-.5 10.2-2.6 13.8-5 1.8.3 3.7.5 5.7.5 15 0 26-10.4 26-23.9S47 6 32 6z"
-            fill="url(#cm-mark-grad)"
-          />
-          <circle cx="24" cy="30" r="4.4" fill="#1a0b00" />
-          <circle cx="40" cy="30" r="4.4" fill="#1a0b00" />
-        </svg>
+        {apiKey.bot.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- arbitrary owner-supplied URL on a route that skips next/image's optimizer
+          <img src={apiKey.bot.avatarUrl} alt="" className="cm-header-avatar" />
+        ) : (
+          <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <linearGradient id="cm-mark-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="var(--cm-primary-2)" />
+                <stop offset="1" stopColor="var(--cm-primary)" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M32 6C17 6 6 16.4 6 30c0 7.8 3.8 14.5 9.9 18.9-.4 3.2-1.7 6.3-4.2 8.7-.7.7-.2 1.9.8 1.8 5.4-.5 10.2-2.6 13.8-5 1.8.3 3.7.5 5.7.5 15 0 26-10.4 26-23.9S47 6 32 6z"
+              fill="url(#cm-mark-grad)"
+            />
+            <circle cx="24" cy="30" r="4.4" fill="#1a0b00" />
+            <circle cx="40" cy="30" r="4.4" fill="#1a0b00" />
+          </svg>
+        )}
         <div>
           <div className="cm-header-name">{apiKey.bot.name}</div>
           <div className="cm-header-status">
