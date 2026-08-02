@@ -54,6 +54,27 @@ describe("resolveProviderConfig / getActiveProvider", () => {
     expect(config.model).toBe(PROVIDERS.openrouter.defaultModel);
   });
 
+  it("falls back to openrouter (not xai) when AI_PROVIDER is unset but only an OpenRouter key is configured", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveProviderConfig().provider.id).toBe("openrouter");
+  });
+
+  it("falls back to openrouter for an unrecognized AI_PROVIDER value too, when only an OpenRouter key is configured", () => {
+    process.env.AI_PROVIDER = "not-a-real-provider";
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveProviderConfig().provider.id).toBe("openrouter");
+  });
+
+  it("still falls back to xai when AI_PROVIDER is unset and both provider keys are configured", () => {
+    process.env.XAI_API_KEY = "xai-key";
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveProviderConfig().provider.id).toBe("xai");
+  });
+
+  it("still falls back to xai when AI_PROVIDER is unset and neither key is configured", () => {
+    expect(resolveProviderConfig().provider.id).toBe("xai");
+  });
+
   it("lets AI_MODEL override the provider's default model", () => {
     process.env.XAI_API_KEY = "test-key";
     process.env.AI_MODEL = "grok-custom";

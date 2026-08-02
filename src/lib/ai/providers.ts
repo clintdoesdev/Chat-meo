@@ -44,13 +44,23 @@ export type ProviderConfig = {
   apiKey: string | undefined;
 };
 
+/** Falls back to whichever provider actually has a key configured when AI_PROVIDER doesn't say
+ * (or doesn't name a real provider) — set up XAI_API_KEY only and it silently behaves as "xai";
+ * set up OPENROUTER_API_KEY only and it silently behaves as "openrouter". Existing xAI
+ * deployments (which normally have XAI_API_KEY and nothing else) still resolve to exactly the
+ * same provider they always did; xai only wins the final tie-break when either both keys are
+ * present or neither is — the same "default to xai" behavior as before this fallback existed. */
+function defaultProviderId(): ProviderId {
+  if (!process.env.XAI_API_KEY && process.env.OPENROUTER_API_KEY) return "openrouter";
+  return "xai";
+}
+
 /** Reads AI_PROVIDER/AI_MODEL fresh from process.env on every call — no caching — so a
  * provider switch (a new deploy, or a test toggling process.env) takes effect immediately
- * without stale state left over from an earlier resolution. Unset or unrecognized
- * AI_PROVIDER falls back to "xai" so existing deployments keep working untouched. */
+ * without stale state left over from an earlier resolution. */
 export function resolveProviderConfig(): ProviderConfig {
   const raw = process.env.AI_PROVIDER?.trim();
-  const providerId: ProviderId = raw && isProviderId(raw) ? raw : "xai";
+  const providerId: ProviderId = raw && isProviderId(raw) ? raw : defaultProviderId();
   const provider = PROVIDERS[providerId];
   const model = process.env.AI_MODEL?.trim() || provider.defaultModel;
   const apiKey = process.env[provider.apiKeyEnv];
