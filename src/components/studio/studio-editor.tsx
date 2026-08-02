@@ -21,6 +21,7 @@ import { DragGhost } from "@/components/studio/drag-ghost";
 import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
 import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
 import { FlowNodeView } from "@/components/studio/flow-node";
+import { MobileAddNodeButton, MobileNodePickerSheet } from "@/components/studio/mobile-node-picker";
 import { StudioNodeActionsContext } from "@/components/studio/node-actions-context";
 import { NodeInspector } from "@/components/studio/node-inspector";
 import { NodePalette } from "@/components/studio/node-palette";
@@ -199,8 +200,26 @@ function StudioCanvas({
       };
 
       setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat({ ...newNode, selected: true }));
+      // A node you just created (as opposed to one you tapped) is one you're about to fill
+      // in, so open its details right away rather than making that a second action.
+      setDetailsNodeId(id);
     },
     [screenToFlowPosition, setNodes],
+  );
+
+  const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
+
+  const handleMobileAddNode = useCallback(
+    (kind: FlowNodeKind) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const cascade = (nodes.length % 6) * 22;
+      const point = rect
+        ? { x: rect.left + rect.width / 2 + cascade, y: rect.top + rect.height / 2 + cascade }
+        : { x: 200, y: 200 };
+      createNodeAt(kind, point);
+      setMobilePickerOpen(false);
+    },
+    [createNodeAt, nodes.length],
   );
 
   const [paletteDrag, setPaletteDrag] = useState<{ kind: FlowNodeKind; x: number; y: number } | null>(null);
@@ -409,6 +428,7 @@ function StudioCanvas({
           {nodes.length === 1 && nodes[0].type === "start" && (
             <EmptyFlowHint startNode={nodes[0]} />
           )}
+          <MobileAddNodeButton onClick={() => setMobilePickerOpen(true)} />
         </div>
 
         <NodeInspector
@@ -427,6 +447,12 @@ function StudioCanvas({
           onCancel={() => setPendingDeleteId(null)}
         />
       )}
+
+      <MobileNodePickerSheet
+        open={mobilePickerOpen}
+        onClose={() => setMobilePickerOpen(false)}
+        onSelect={handleMobileAddNode}
+      />
 
       <TestDrawer
         open={testOpen}

@@ -16,7 +16,8 @@ export function EmptyFlowHint({ startNode }: { startNode: FlowNode }) {
       className="pointer-events-none absolute z-10 max-w-[180px] rounded-[13px] border border-orange-2/40 bg-card/95 px-3 py-2.5 text-[12px] leading-snug text-muted shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)]"
       style={{ left: screenX + NODE_WIDTH * zoom + 18, top: screenY }}
     >
-      Drag a node from the left to begin
+      <span className="min-[1020px]:hidden">Tap + to add a node</span>
+      <span className="hidden min-[1020px]:inline">Drag a node from the left to begin</span>
     </div>
   );
 }

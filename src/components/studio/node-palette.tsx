@@ -27,8 +27,8 @@ function PaletteChip({
 export function NodePalette({ dragCallbacks }: { dragCallbacks: PaletteDragCallbacks }) {
   return (
     <aside
-      className="flex shrink-0 gap-2 overflow-x-auto border-b border-line bg-[#111] p-3
-        min-[1020px]:w-[216px] min-[1020px]:flex-col min-[1020px]:gap-0 min-[1020px]:overflow-y-auto
+      className="hidden shrink-0 gap-2 border-b border-line bg-[#111] p-3
+        min-[1020px]:flex min-[1020px]:w-[216px] min-[1020px]:flex-col min-[1020px]:gap-0 min-[1020px]:overflow-y-auto
         min-[1020px]:overflow-x-hidden min-[1020px]:border-b-0 min-[1020px]:border-r min-[1020px]:p-3.5"
     >
       <div
