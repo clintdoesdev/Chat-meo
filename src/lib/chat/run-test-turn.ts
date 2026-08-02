@@ -1,6 +1,6 @@
 import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState, step } from "@/engine/executor";
-import { grokLlm } from "@/engine/llm";
+import { providerLlm } from "@/engine/llm";
 import { parseEngineState } from "@/engine/state-schema";
 import type { EngineState, Reply } from "@/engine/types";
 import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
@@ -35,7 +35,7 @@ export async function runTestTurn(params: RunTestTurnParams): Promise<RunTestTur
   const state = params.state ? parseEngineState(params.state, graph) : createInitialState(graph);
 
   const output = await step(graph, state, params.message, {
-    llm: grokLlm,
+    llm: providerLlm,
     fetch,
     logger: console,
     conversationId: params.sessionId ?? "test-session",

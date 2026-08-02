@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { createStreamingGrokLlm, grokLlm } from "@/engine/llm";
+import { createStreamingProviderLlm, providerLlm } from "@/engine/llm";
 import { BETA_LIMIT_REPLY, isBotOverMessageCap } from "@/lib/chat/beta-quota";
 import { corsHeaders } from "@/lib/chat/cors";
 import { isChatRequestAllowed, isOwnHost, resolveEmbedHostname } from "@/lib/chat/origin-check";
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   const streaming = request.nextUrl.searchParams.get("stream") === "1";
 
   if (!streaming) {
-    const result = await runChatTurn(parsed.data, { llm: grokLlm });
+    const result = await runChatTurn(parsed.data, { llm: providerLlm });
     if (result.kind === "not_found") {
       return NextResponse.json({ error: "Bot not found." }, { status: 404, headers: cors });
     }
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const llm = createStreamingGrokLlm((delta) =>
+        const llm = createStreamingProviderLlm((delta: string) =>
           controller.enqueue(sseFrame({ type: "chunk", content: delta })),
         );
         const result = await runChatTurn(parsed.data, { llm });

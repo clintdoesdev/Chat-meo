@@ -87,7 +87,13 @@ export type EngineState = {
   lastError?: string;
 };
 
-export type Reply = { content: string };
+export type Reply = {
+  content: string;
+  /** Only set for replies produced by an "ai" node whose LLM call reported usage — message
+   * nodes, condition nodes, etc. never have these. */
+  promptTokens?: number;
+  completionTokens?: number;
+};
 
 export type EngineOutput = {
   replies: Reply[];
@@ -96,12 +102,16 @@ export type EngineOutput = {
 
 export type LlmChatMessage = { role: "user" | "assistant"; content: string };
 
+export type LlmUsage = { promptTokens: number; completionTokens: number };
+
+export type LlmResult = { content: string; usage?: LlmUsage };
+
 export type LlmDep = (args: {
   systemPrompt: string;
   history: LlmChatMessage[];
   temperature: number;
   model: string;
-}) => Promise<string>;
+}) => Promise<LlmResult>;
 
 export type LoggerDep = {
   error: (message: string, meta?: unknown) => void;

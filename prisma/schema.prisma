@@ -90,30 +90,30 @@ model VerificationCode {
 }
 
 model Bot {
-  id              String         @id @default(cuid())
-  userId          String
-  name            String
-  slug            String         @unique
-  status          BotStatus      @default(DRAFT)
-  primaryColor    String         @default("#FF5C16")
+  id             String         @id @default(cuid())
+  userId         String
+  name           String
+  slug           String         @unique
+  status         BotStatus      @default(DRAFT)
+  primaryColor   String         @default("#FF5C16")
   /// Shown in the widget header and dashboard bot list in place of the default mark. Either a
   /// plain image URL, or a base64 data: URI from an in-app upload — no blob storage in this app,
   /// so an uploaded file's bytes live directly in this column (size-capped client-side).
-  avatarUrl       String?
+  avatarUrl      String?
   /// Which platform-styled treatment the widget's header/background/bubbles use. See the
   /// WidgetTheme enum doc for why this is independent of primaryColor.
-  theme           WidgetTheme    @default(DEFAULT)
-  welcomeMessage  String?
-  widgetPosition  WidgetPosition @default(BOTTOM_RIGHT)
+  theme          WidgetTheme    @default(DEFAULT)
+  welcomeMessage String?
+  widgetPosition WidgetPosition @default(BOTTOM_RIGHT)
   /// Permissive mode for the embeddable widget: while true, the origin allowlist check in
   /// src/lib/chat/origin-check.ts is skipped when BotApiKey.allowedDomains is still empty, so a
   /// bot owner can test the widget (e.g. on the dashboard preview or test-embed.html) before
   /// they've configured a real domain. Flipped off automatically the first time a domain is
   /// added (see addAllowedDomain in src/lib/actions/embed.ts) — from then on, an empty
   /// allowedDomains list means "no domain configured yet," not "anything goes."
-  testMode        Boolean        @default(true)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  testMode       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   flows         Flow[]
@@ -157,11 +157,15 @@ model Conversation {
 }
 
 model Message {
-  id             String      @id @default(cuid())
-  conversationId String
-  role           MessageRole
-  content        String      @db.Text
-  createdAt      DateTime    @default(now())
+  id               String      @id @default(cuid())
+  conversationId   String
+  role             MessageRole
+  content          String      @db.Text
+  /// Only set for BOT messages produced by an "ai" node whose provider reported token usage —
+  /// see src/engine/llm.ts. Null for message-node replies, USER messages, etc.
+  promptTokens     Int?
+  completionTokens Int?
+  createdAt        DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

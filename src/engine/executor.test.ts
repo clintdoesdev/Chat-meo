@@ -4,7 +4,7 @@ import type { EngineDeps, EngineState, FlowGraph } from "./types";
 
 function createDeps(overrides: Partial<EngineDeps> = {}): EngineDeps {
   return {
-    llm: vi.fn(async () => "mock ai reply"),
+    llm: vi.fn(async () => ({ content: "mock ai reply" })),
     fetch: vi.fn(async () => new Response("ok", { status: 200 })) as unknown as typeof fetch,
     logger: { error: vi.fn(), info: vi.fn() },
     conversationId: "conv-1",
@@ -279,7 +279,7 @@ describe("step: ai node", () => {
       ],
       edges: [{ id: "e1", source: "ai-1", target: "msg-1" }],
     };
-    const llmMock = vi.fn(async () => "Here's my answer.");
+    const llmMock = vi.fn(async () => ({ content: "Here's my answer." }));
     const deps = createDeps({ llm: llmMock });
     const state: EngineState = { currentNodeId: "ai-1", variables: { name: "Ada" }, status: "RUNNING" };
 
@@ -293,6 +293,23 @@ describe("step: ai node", () => {
       }),
     );
     expect(output.replies).toEqual([{ content: "Here's my answer." }, { content: "Anything else?" }]);
+  });
+
+  it("carries the LLM's token usage onto the reply when reported", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({
+      content: "Sure thing.",
+      usage: { promptTokens: 42, completionTokens: 7 },
+    }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, undefined, deps);
+
+    expect(output.replies).toEqual([{ content: "Sure thing.", promptTokens: 42, completionTokens: 7 }]);
   });
 
   it("falls back to a friendly reply instead of crashing when the LLM call throws", async () => {

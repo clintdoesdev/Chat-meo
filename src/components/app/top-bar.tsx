@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AiStatusIndicator } from "@/components/app/ai-status-indicator";
 import { AvatarMenu } from "@/components/app/avatar-menu";
 import { NavLinks } from "@/components/app/nav-links";
 import { NotificationsMenu, type NotificationItem } from "@/components/app/notifications-menu";
@@ -26,6 +27,7 @@ export function TopBar({ name, email, notifications }: TopBarProps) {
           </nav>
 
           <div className="flex items-center gap-2.5">
+            <AiStatusIndicator />
             <NotificationsMenu notifications={notifications} />
             <AvatarMenu name={name} email={email} />
           </div>

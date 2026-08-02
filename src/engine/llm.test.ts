@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createStreamingGrokLlm, grokLlm } from "./llm";
+import { createStreamingProviderLlm, providerLlm } from "./llm";
 
-describe("grokLlm / createStreamingGrokLlm without a configured key", () => {
+describe("providerLlm / createStreamingProviderLlm without a configured key", () => {
   const originalKey = process.env.XAI_API_KEY;
+  const originalProvider = process.env.AI_PROVIDER;
 
   beforeEach(() => {
     delete process.env.XAI_API_KEY;
+    delete process.env.AI_PROVIDER;
   });
 
   afterEach(() => {
@@ -14,17 +16,22 @@ describe("grokLlm / createStreamingGrokLlm without a configured key", () => {
     } else {
       process.env.XAI_API_KEY = originalKey;
     }
+    if (originalProvider === undefined) {
+      delete process.env.AI_PROVIDER;
+    } else {
+      process.env.AI_PROVIDER = originalProvider;
+    }
   });
 
-  it("grokLlm throws a descriptive error instead of silently returning a generic reply", async () => {
+  it("providerLlm throws a descriptive error instead of silently returning a generic reply", async () => {
     await expect(
-      grokLlm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
+      providerLlm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
     ).rejects.toThrow(/XAI_API_KEY is not configured/);
   });
 
-  it("createStreamingGrokLlm throws the same way, without ever invoking onChunk", async () => {
+  it("createStreamingProviderLlm throws the same way, without ever invoking onChunk", async () => {
     const chunks: string[] = [];
-    const llm = createStreamingGrokLlm((delta) => chunks.push(delta));
+    const llm = createStreamingProviderLlm((delta) => chunks.push(delta));
 
     await expect(
       llm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),

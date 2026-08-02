@@ -7,6 +7,7 @@ import type {
   FlowGraph,
   FlowNode,
   LlmChatMessage,
+  LlmUsage,
   Reply,
 } from "./types";
 
@@ -160,19 +161,25 @@ export async function step(
       case "ai": {
         const systemPrompt = interpolate(node.data.systemPrompt ?? "", variables);
         let content: string;
+        let usage: LlmUsage | undefined;
         try {
-          content = await deps.llm({
+          const result = await deps.llm({
             systemPrompt,
             history,
             temperature: node.data.temperature,
             model: node.data.model,
           });
+          content = result.content;
+          usage = result.usage;
         } catch (error) {
           deps.logger.error("[engine] LLM call failed", error);
           lastError = error instanceof Error ? error.message : String(error);
           content = "Sorry, I couldn't come up with a reply just now.";
         }
-        replies.push({ content });
+        replies.push({
+          content,
+          ...(usage ? { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens } : {}),
+        });
         history.push({ role: "assistant", content });
         const edge = nextEdge(graph, node.id);
         currentNodeId = edge?.target ?? null;
