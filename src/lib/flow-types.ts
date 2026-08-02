@@ -9,7 +9,12 @@ export type FlowNodeKind =
   | "webhook"
   | "handoff";
 
-export type AiModel = "grok-main" | "grok-fast";
+// Deliberately a plain string rather than a fixed union: which model ids are valid depends on
+// which AI provider is active (see src/lib/ai/providers.ts) — xAI's are a small fixed set, but
+// OpenRouter alone hosts hundreds of them. "grok-main"/"grok-fast" remain recognized as legacy
+// aliases for backward compatibility (see XAI_MODEL_MAP in src/engine/llm.ts); any other value
+// is passed through to the provider as-is.
+export type AiModel = string;
 export type WebhookMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type ConditionBranch = {

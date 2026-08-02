@@ -7,11 +7,10 @@ import OpenAI from "openai";
 import { getActiveProvider, type ActiveProvider } from "@/lib/ai/providers";
 import type { LlmChatMessage, LlmDep, LlmUsage } from "./types";
 
-// The Flow Studio's AI node only ever offers "grok-main"/"grok-fast" as model choices (see
-// AiModel in flow-types.ts), predating multi-provider support. Kept as a legacy mapping so a
-// flow built before this feature keeps resolving to the exact same xAI model id it always did,
-// as long as the active provider is still xai and nobody's set an explicit AI_MODEL override —
-// either of those means the provider-level model wins instead (see resolveModel below).
+// "grok-main"/"grok-fast" were the Flow Studio AI node's only model choices before multi-provider
+// support existed, and plenty of already-saved flows still carry one of those two values. Kept
+// as a legacy mapping so those flows keep resolving to the exact same xAI model id they always
+// did, as long as the active provider is still xai (see resolveModel below).
 const XAI_MODEL_MAP: Record<string, string> = {
   "grok-fast": "grok-4.1-fast",
   "grok-main": "grok-4.3",
@@ -27,15 +26,22 @@ function hasModelOverride(): boolean {
   return Boolean(process.env.AI_MODEL?.trim());
 }
 
-/** AI_MODEL, when set, always wins outright. Otherwise: the xai provider keeps its legacy
- * per-node grok-main/grok-fast mapping for backward compatibility; every other provider (and
- * any node model xai's map doesn't recognize) falls through to the active provider's own
- * resolved model. */
-function resolveModel(nodeModel: string, active: ActiveProvider): string {
-  if (active.provider.id === "xai" && !hasModelOverride()) {
-    return XAI_MODEL_MAP[nodeModel] ?? active.model;
+/** AI_MODEL, when set, always wins outright — a deployment-level pin overrides whatever any
+ * individual node asks for. Otherwise: xai's legacy "grok-main"/"grok-fast" node values map to
+ * their specific xAI model ids for backward compatibility; any other node-level model id (an
+ * OpenRouter slug, a different xAI model, etc.) is sent to the provider exactly as typed — this
+ * is what makes per-node model selection actually take effect instead of silently being
+ * discarded in favor of the provider's own default. Only an empty/unset node model falls back
+ * to that default. */
+// Exported for direct unit testing — the exact bug this function exists to prevent (a node's
+// chosen model silently being discarded in favor of the provider default) has no other cheap
+// way to catch in a test, since providerLlm itself needs a real API key and network access.
+export function resolveModel(nodeModel: string, active: ActiveProvider): string {
+  if (hasModelOverride()) return active.model;
+  if (active.provider.id === "xai" && nodeModel in XAI_MODEL_MAP) {
+    return XAI_MODEL_MAP[nodeModel];
   }
-  return active.model;
+  return nodeModel.trim() || active.model;
 }
 
 function toOpenAiMessages(

@@ -4,17 +4,23 @@ import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
 import { PillSelect } from "@/components/studio/pill-select";
 import {
   NODE_KIND_META,
-  type AiModel,
   type ConditionBranch,
   type FlowNode,
   type FlowNodeData,
   type WebhookMethod,
 } from "@/lib/flow-types";
 
-const MODEL_LABELS: Record<AiModel, string> = {
-  "grok-main": "Grok 4.3 (smart)",
-  "grok-fast": "Grok 4.1 Fast (fast)",
-};
+// Quick-pick shortcuts, not an exhaustive list — the field itself accepts any model id, since
+// which ones are valid depends on whichever AI provider is active server-side (AI_PROVIDER; see
+// src/lib/ai/providers.ts). xAI's two are a fixed, small set; the OpenRouter ones are just a
+// few commonly used slugs from its much larger catalog.
+const MODEL_PRESETS: { label: string; value: string }[] = [
+  { label: "Grok 4.3 (smart)", value: "grok-main" },
+  { label: "Grok 4.1 Fast (fast)", value: "grok-fast" },
+  { label: "DeepSeek V3 (free)", value: "deepseek/deepseek-chat-v3:free" },
+  { label: "Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
+  { label: "GPT-4o mini", value: "openai/gpt-4o-mini" },
+];
 
 function newBranchId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -22,7 +28,6 @@ function newBranchId(): string {
     : `branch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const MODELS: AiModel[] = ["grok-main", "grok-fast"];
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 type NodeInspectorProps = {
@@ -155,19 +160,33 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               <label htmlFor="field-model" className={labelClass()}>
                 Model
               </label>
-              <PillSelect
+              <input
                 id="field-model"
                 value={data.model ?? "grok-main"}
-                onChange={(event) =>
-                  onChange(node.id, { model: event.target.value as AiModel })
-                }
-              >
-                {MODELS.map((model) => (
-                  <option key={model} value={model}>
-                    {MODEL_LABELS[model]}
-                  </option>
+                onChange={(event) => onChange(node.id, { model: event.target.value })}
+                spellCheck={false}
+                placeholder="e.g. deepseek/deepseek-chat-v3:free"
+                className={`${fieldClass()} font-mono text-[12px]`}
+              />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {MODEL_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => onChange(node.id, { model: preset.value })}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                      (data.model ?? "grok-main") === preset.value
+                        ? "border-orange-2/50 bg-orange/10 text-text"
+                        : "border-line-2 bg-card-2 text-muted hover:text-text"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
                 ))}
-              </PillSelect>
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted">
+                Any model id your active AI provider supports — type one or tap a preset.
+              </p>
             </div>
             <div className="mb-3.5">
               <label
