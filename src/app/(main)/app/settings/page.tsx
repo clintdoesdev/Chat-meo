@@ -5,7 +5,9 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secret-crypto";
 import { totpAuthUrl } from "@/lib/totp";
+import { FeedbackSettings } from "@/components/app/feedback-settings";
 import { ProfileSettings } from "@/components/app/profile-settings";
+import { SettingsTabs } from "@/components/app/settings-tabs";
 import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 
 export const metadata: Metadata = {
@@ -51,14 +53,31 @@ export default async function SettingsPage() {
         <p className="mt-0.5 text-[12.5px] text-muted">Signed in as {user.email}</p>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <ProfileSettings name={user.name} email={user.email} />
-        <TwoFactorSettings
-          initialStatus={status}
-          hasPassword={Boolean(user.passwordHash)}
-          pendingTotp={pendingTotp}
-        />
-      </div>
+      <SettingsTabs
+        tabs={[
+          {
+            id: "profile",
+            label: "Profile",
+            content: <ProfileSettings name={user.name} email={user.email} />,
+          },
+          {
+            id: "security",
+            label: "Security",
+            content: (
+              <TwoFactorSettings
+                initialStatus={status}
+                hasPassword={Boolean(user.passwordHash)}
+                pendingTotp={pendingTotp}
+              />
+            ),
+          },
+          {
+            id: "feedback",
+            label: "Feedback",
+            content: <FeedbackSettings />,
+          },
+        ]}
+      />
     </div>
   );
 }

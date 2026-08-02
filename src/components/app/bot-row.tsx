@@ -1,9 +1,9 @@
 "use client";
 
-import { Code2 } from "lucide-react";
+import { Settings } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { GetEmbedModal } from "@/components/app/get-embed-modal";
+import { BotSettingsModal } from "@/components/app/bot-settings-modal";
 import { LongPressMenu } from "@/components/app/long-press-menu";
 import { MeoMark } from "@/components/meo-mark";
 import { deleteBot } from "@/lib/actions/bots";
@@ -20,7 +20,7 @@ export function BotRow({
   };
 }) {
   const [pending, startTransition] = useTransition();
-  const [embedOpen, setEmbedOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   function handleDelete() {
     if (!confirm(`Delete "${bot.name}"? This can't be undone.`)) return;
@@ -67,15 +67,17 @@ export function BotRow({
           <button
             type="button"
             data-fx-skip
-            onClick={() => setEmbedOpen(true)}
-            aria-label={`Get embed code for ${bot.name}`}
+            onClick={() => setSettingsOpen(true)}
+            aria-label={`Settings for ${bot.name}`}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-card-2 hover:text-text"
           >
-            <Code2 size={15} />
+            <Settings size={15} />
           </button>
         </div>
       </LongPressMenu>
-      {embedOpen && <GetEmbedModal botId={bot.id} botName={bot.name} onClose={() => setEmbedOpen(false)} />}
+      {settingsOpen && (
+        <BotSettingsModal botId={bot.id} botName={bot.name} onClose={() => setSettingsOpen(false)} />
+      )}
     </>
   );
 }

@@ -11,10 +11,10 @@ import {
   useReactFlow,
   type Connection,
 } from "@xyflow/react";
-import { ChevronLeft, Code2, Play } from "lucide-react";
+import { ChevronLeft, Play, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GetEmbedModal } from "@/components/app/get-embed-modal";
+import { BotSettingsModal } from "@/components/app/bot-settings-modal";
 import { MeoMark } from "@/components/meo-mark";
 import { ConfirmDeleteModal } from "@/components/studio/confirm-delete-modal";
 import { DragGhost } from "@/components/studio/drag-ghost";
@@ -361,8 +361,8 @@ function StudioCanvas({
           onClick={() => setEmbedOpen(true)}
           className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
         >
-          <Code2 size={13} />
-          Get embed
+          <Share2 size={13} />
+          Share
         </button>
 
         <button
@@ -462,7 +462,14 @@ function StudioCanvas({
       />
       {toastMessage && <Toast message={toastMessage} />}
       {paletteDrag && <DragGhost kind={paletteDrag.kind} x={paletteDrag.x} y={paletteDrag.y} />}
-      {embedOpen && <GetEmbedModal botId={bot.id} botName={bot.name} onClose={() => setEmbedOpen(false)} />}
+      {embedOpen && (
+        <BotSettingsModal
+          botId={bot.id}
+          botName={bot.name}
+          defaultTab="embed"
+          onClose={() => setEmbedOpen(false)}
+        />
+      )}
     </div>
   );
 }

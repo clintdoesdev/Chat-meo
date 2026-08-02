@@ -95,7 +95,7 @@ export default async function WidgetPage({
       >
         <WidgetChat
           botPublicKey={publicKey}
-          visitorId={visitorId || "anonymous"}
+          visitorId={visitorId || null}
           welcomeMessage={apiKey.bot.welcomeMessage}
         />
       </ErrorBoundary>

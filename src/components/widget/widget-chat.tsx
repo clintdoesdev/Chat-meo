@@ -43,11 +43,15 @@ function embedHostHeader(): Record<string, string> {
  */
 export function WidgetChat({
   botPublicKey,
-  visitorId,
+  visitorId: initialVisitorId,
   welcomeMessage,
 }: {
   botPublicKey: string;
-  visitorId: string;
+  /** Passed by the embed loader (widget.js), which persists its own per-host-page id in the
+   * parent page's localStorage. Direct visits to the standalone /widget/[publicKey] link (the
+   * "copy link" flow) don't have one — null here means "generate and remember one ourselves,"
+   * so two different people opening the same shared link don't land in the same conversation. */
+  visitorId: string | null;
   welcomeMessage: string | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,6 +59,7 @@ export function WidgetChat({
   const [input, setInput] = useState("");
   const [ended, setEnded] = useState(false);
   const [ready, setReady] = useState(false);
+  const [resolvedVisitorId, setResolvedVisitorId] = useState<string | null>(initialVisitorId);
   const listRef = useRef<HTMLDivElement>(null);
   const loadedOnce = useRef(false);
 
@@ -63,6 +68,27 @@ export function WidgetChat({
   }, [messages, sending]);
 
   useEffect(() => {
+    if (resolvedVisitorId) return;
+    const storageKey = `chatmeo_visitor_${botPublicKey}`;
+    let id: string | null = null;
+    try {
+      id = window.localStorage.getItem(storageKey);
+    } catch {
+      // Storage may be unavailable (private browsing, etc.) — fall through to an in-memory id.
+    }
+    if (!id) {
+      id = newId();
+      try {
+        window.localStorage.setItem(storageKey, id);
+      } catch {
+        // Nothing to persist to — the generated id still works for this page load.
+      }
+    }
+    setResolvedVisitorId(id);
+  }, [resolvedVisitorId, botPublicKey]);
+
+  useEffect(() => {
+    if (!resolvedVisitorId) return;
     if (loadedOnce.current) return;
     loadedOnce.current = true;
 
@@ -71,7 +97,7 @@ export function WidgetChat({
 
       try {
         const res = await fetch(
-          `/api/chat/history?botPublicKey=${encodeURIComponent(botPublicKey)}&visitorId=${encodeURIComponent(visitorId)}`,
+          `/api/chat/history?botPublicKey=${encodeURIComponent(botPublicKey)}&visitorId=${encodeURIComponent(resolvedVisitorId)}`,
           { headers: embedHostHeader() },
         );
         const data: HistoryResponse = await res.json();
@@ -91,9 +117,10 @@ export function WidgetChat({
       await sendTurn(undefined);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [resolvedVisitorId]);
 
   async function sendTurn(userMessage: string | undefined) {
+    if (!resolvedVisitorId) return;
     setSending(true);
     if (userMessage) {
       setMessages((prev) => [...prev, { id: newId(), role: "user", content: userMessage }]);
@@ -103,7 +130,7 @@ export function WidgetChat({
       const res = await fetch("/api/chat?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...embedHostHeader() },
-        body: JSON.stringify({ botPublicKey, visitorId, message: userMessage }),
+        body: JSON.stringify({ botPublicKey, visitorId: resolvedVisitorId, message: userMessage }),
       });
 
       // Rejections (bot not found, origin not allowed, rate limited) are decided before the

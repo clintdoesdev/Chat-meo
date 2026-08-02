@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { BETA_BOT_CAP } from "@/lib/beta-limits";
+import { isValidHexColor } from "@/lib/color";
 import { prisma } from "@/lib/prisma";
 
 function slugify(name: string): string {
@@ -15,12 +16,19 @@ function slugify(name: string): string {
   return base || "bot";
 }
 
-export async function createBot(formData: FormData): Promise<{ error: string | null }> {
+export async function createBot(formData: FormData): Promise<{ error: string | null; slug?: string }> {
   const session = await auth();
   if (!session?.user) redirect("/signin");
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: null };
+
+  const primaryColor = String(formData.get("primaryColor") ?? "").trim();
+  if (primaryColor && !isValidHexColor(primaryColor)) {
+    return { error: "Color must be a hex value like #FF5C16." };
+  }
+
+  const welcomeMessage = String(formData.get("welcomeMessage") ?? "").trim();
 
   const existingCount = await prisma.bot.count({ where: { userId: session.user.id } });
   if (existingCount >= BETA_BOT_CAP) {
@@ -38,11 +46,17 @@ export async function createBot(formData: FormData): Promise<{ error: string | n
   }
 
   await prisma.bot.create({
-    data: { userId: session.user.id, name, slug },
+    data: {
+      userId: session.user.id,
+      name,
+      slug,
+      ...(primaryColor ? { primaryColor } : {}),
+      ...(welcomeMessage ? { welcomeMessage } : {}),
+    },
   });
 
   revalidatePath("/app");
-  return { error: null };
+  return { error: null, slug };
 }
 
 export async function deleteBot(formData: FormData) {

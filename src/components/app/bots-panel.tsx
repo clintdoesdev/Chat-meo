@@ -1,5 +1,5 @@
 import { BotRow } from "@/components/app/bot-row";
-import { NewBotForm } from "@/components/app/new-bot-form";
+import { CreateBotButton } from "@/components/app/create-bot-modal";
 
 type BotSummary = {
   id: string;
@@ -14,7 +14,7 @@ export function BotsPanel({ bots }: { bots: BotSummary[] }) {
     <div className="rounded-2xl border border-line bg-card p-[18px]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <b className="text-sm font-semibold">Your bots</b>
-        <NewBotForm />
+        <CreateBotButton />
       </div>
 
       {bots.length === 0 ? (

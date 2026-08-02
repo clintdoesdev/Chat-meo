@@ -5,6 +5,7 @@ import { useState } from "react";
 import { linkify } from "@/components/linkify";
 import { MeoMark } from "@/components/meo-mark";
 import { getConversationMessages, type ConversationDetail } from "@/lib/actions/inbox";
+import { timeAgo } from "@/lib/time";
 
 export type ConversationSummary = {
   id: string;
@@ -26,18 +27,6 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "OPEN", label: "Active" },
   { value: "RESOLVED", label: "Resolved" },
 ];
-
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 function StatusBadge({ status }: { status: ConversationSummary["status"] }) {
   const config = {

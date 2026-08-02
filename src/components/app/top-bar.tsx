@@ -1,15 +1,16 @@
-import { Bell } from "lucide-react";
 import Link from "next/link";
 import { AvatarMenu } from "@/components/app/avatar-menu";
 import { NavLinks } from "@/components/app/nav-links";
+import { NotificationsMenu, type NotificationItem } from "@/components/app/notifications-menu";
 import { MeoMark } from "@/components/meo-mark";
 
 type TopBarProps = {
   name: string;
   email: string;
+  notifications: NotificationItem[];
 };
 
-export function TopBar({ name, email }: TopBarProps) {
+export function TopBar({ name, email, notifications }: TopBarProps) {
   return (
     <>
       <header className="sticky top-0 z-[60] border-b border-line bg-bg/85 backdrop-blur-md">
@@ -25,14 +26,7 @@ export function TopBar({ name, email }: TopBarProps) {
           </nav>
 
           <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              aria-label="Notifications"
-              data-fx-skip
-              className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-line-2 text-muted transition-colors hover:text-text hover:border-orange-2/50"
-            >
-              <Bell size={16} />
-            </button>
+            <NotificationsMenu notifications={notifications} />
             <AvatarMenu name={name} email={email} />
           </div>
         </div>

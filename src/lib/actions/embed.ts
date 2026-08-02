@@ -3,9 +3,9 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
+import { isValidHexColor } from "@/lib/color";
 import { prisma } from "@/lib/prisma";
 
-const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 // Bare hostname, optionally with a leading "*." wildcard for subdomains — matches the shape
 // isOriginAllowed() already expects (see src/lib/chat/origin-check.ts).
 const DOMAIN_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
@@ -28,6 +28,7 @@ function newPublicKey(): string {
 }
 
 export type EmbedConfig = {
+  name: string;
   publicKey: string;
   primaryColor: string;
   welcomeMessage: string | null;
@@ -46,6 +47,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
   const full = await prisma.bot.findUniqueOrThrow({
     where: { id: botId },
     select: {
+      name: true,
       primaryColor: true,
       welcomeMessage: true,
       widgetPosition: true,
@@ -63,6 +65,7 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
   }
 
   return {
+    name: full.name,
     publicKey: apiKey.publicKey,
     primaryColor: full.primaryColor,
     welcomeMessage: full.welcomeMessage,
@@ -74,13 +77,23 @@ export async function getEmbedConfig(botId: string): Promise<EmbedConfig | { err
 
 export async function updateWidgetSettings(
   botId: string,
-  input: { primaryColor?: string; welcomeMessage?: string; widgetPosition?: "BOTTOM_LEFT" | "BOTTOM_RIGHT" },
+  input: {
+    name?: string;
+    primaryColor?: string;
+    welcomeMessage?: string;
+    widgetPosition?: "BOTTOM_LEFT" | "BOTTOM_RIGHT";
+  },
 ): Promise<{ error: string | null }> {
   const bot = await requireBotOwnership(botId);
   if (!bot) return { error: "Bot not found." };
 
-  if (input.primaryColor !== undefined && !HEX_COLOR_RE.test(input.primaryColor)) {
+  if (input.primaryColor !== undefined && !isValidHexColor(input.primaryColor)) {
     return { error: "Color must be a hex value like #FF5C16." };
+  }
+
+  const name = input.name?.trim();
+  if (input.name !== undefined && !name) {
+    return { error: "Name can't be empty." };
   }
 
   const welcomeMessage = input.welcomeMessage?.trim();
@@ -88,6 +101,7 @@ export async function updateWidgetSettings(
   await prisma.bot.update({
     where: { id: botId },
     data: {
+      ...(name ? { name } : {}),
       ...(input.primaryColor !== undefined ? { primaryColor: input.primaryColor } : {}),
       ...(input.welcomeMessage !== undefined ? { welcomeMessage: welcomeMessage || null } : {}),
       ...(input.widgetPosition !== undefined ? { widgetPosition: input.widgetPosition } : {}),
@@ -95,6 +109,8 @@ export async function updateWidgetSettings(
   });
 
   revalidatePath(`/app/studio/${bot.slug}`);
+  revalidatePath("/app/studio");
+  revalidatePath("/app");
   return { error: null };
 }
 

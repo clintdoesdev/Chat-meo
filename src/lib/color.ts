@@ -1,5 +1,9 @@
 const HEX_RE = /^#([0-9a-f]{6})$/i;
 
+export function isValidHexColor(value: string): boolean {
+  return HEX_RE.test(value);
+}
+
 /** Lightens a hex color toward white by `amount` (0-1) — used to derive the widget's gradient
  * highlight shade from a single owner-picked primaryColor. Falls back to the input unchanged
  * for anything that isn't a clean 6-digit hex, so a bad value degrades to "flat color" instead
