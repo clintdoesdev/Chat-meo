@@ -30,7 +30,7 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
   },
 };
 
-function isProviderId(value: string): value is ProviderId {
+export function isProviderId(value: string): value is ProviderId {
   return value === "xai" || value === "openrouter";
 }
 
@@ -38,9 +38,9 @@ export type ProviderConfig = {
   provider: Provider;
   model: string;
   /** undefined when the provider's key env var isn't set — callers that need to actually talk
-   * to the provider should go through getActiveProvider() instead, which turns that into a
-   * thrown error; this shape exists for callers (the status endpoint) that need to report a
-   * missing key rather than crash on it. */
+   * to the provider should go through getActiveProvider()/getProvider() instead, which turn
+   * that into a thrown error; this shape exists for callers (the status endpoint, the models
+   * route) that need to report a missing key rather than crash on it. */
   apiKey: string | undefined;
 };
 
@@ -55,17 +55,26 @@ function defaultProviderId(): ProviderId {
   return "xai";
 }
 
+/** Resolves a *specific* provider id's config — the model (AI_MODEL override, else that
+ * provider's own default) and whether its key env var is set. Reads process.env fresh on every
+ * call, same reasoning as resolveProviderConfig() below. This is what per-node provider
+ * selection (the AI node's Provider setting) and the live models endpoint go through, since
+ * they need a named provider's config rather than the deployment's env-resolved default. */
+export function resolveProvider(id: ProviderId): ProviderConfig {
+  const provider = PROVIDERS[id];
+  const model = process.env.AI_MODEL?.trim() || provider.defaultModel;
+  const apiKey = process.env[provider.apiKeyEnv];
+
+  return { provider, model, apiKey: apiKey || undefined };
+}
+
 /** Reads AI_PROVIDER/AI_MODEL fresh from process.env on every call — no caching — so a
  * provider switch (a new deploy, or a test toggling process.env) takes effect immediately
  * without stale state left over from an earlier resolution. */
 export function resolveProviderConfig(): ProviderConfig {
   const raw = process.env.AI_PROVIDER?.trim();
   const providerId: ProviderId = raw && isProviderId(raw) ? raw : defaultProviderId();
-  const provider = PROVIDERS[providerId];
-  const model = process.env.AI_MODEL?.trim() || provider.defaultModel;
-  const apiKey = process.env[provider.apiKeyEnv];
-
-  return { provider, model, apiKey: apiKey || undefined };
+  return resolveProvider(providerId);
 }
 
 export type ActiveProvider = {
@@ -74,15 +83,25 @@ export type ActiveProvider = {
   apiKey: string;
 };
 
-/** Same resolution as resolveProviderConfig(), but throws a clear, actionable error instead
- * of returning an undefined key — this is what the engine itself calls before making a real
- * API request, where a missing key can't be worked around. */
-export function getActiveProvider(): ActiveProvider {
-  const config = resolveProviderConfig();
+function requireApiKey(config: ProviderConfig): ActiveProvider {
   if (!config.apiKey) {
     throw new Error(
       `${config.provider.apiKeyEnv} is not configured — required for the "${config.provider.id}" AI provider.`,
     );
   }
   return { provider: config.provider, model: config.model, apiKey: config.apiKey };
+}
+
+/** Same resolution as resolveProvider(id), but throws a clear, actionable error instead of
+ * returning an undefined key — this is what an AI node with an explicit per-node provider
+ * override calls before making a real API request. */
+export function getProvider(id: ProviderId): ActiveProvider {
+  return requireApiKey(resolveProvider(id));
+}
+
+/** Same resolution as resolveProviderConfig(), but throws a clear, actionable error instead
+ * of returning an undefined key — this is what the engine itself calls before making a real
+ * API request, where a missing key can't be worked around. */
+export function getActiveProvider(): ActiveProvider {
+  return requireApiKey(resolveProviderConfig());
 }

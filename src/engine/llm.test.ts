@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PROVIDERS, type ActiveProvider } from "@/lib/ai/providers";
-import { createStreamingProviderLlm, providerLlm, resolveModel } from "./llm";
+import { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel } from "./llm";
 
 const XAI: ActiveProvider = { provider: PROVIDERS.xai, model: PROVIDERS.xai.defaultModel, apiKey: "k" };
 const OPENROUTER: ActiveProvider = {
@@ -87,5 +87,54 @@ describe("providerLlm / createStreamingProviderLlm without a configured key", ()
       llm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
     ).rejects.toThrow(/XAI_API_KEY is not configured/);
     expect(chunks).toEqual([]);
+  });
+});
+
+describe("providerLlm with a per-node provider override", () => {
+  const originalXai = process.env.XAI_API_KEY;
+  const originalOpenrouter = process.env.OPENROUTER_API_KEY;
+  const originalProvider = process.env.AI_PROVIDER;
+
+  beforeEach(() => {
+    process.env.XAI_API_KEY = "xai-key";
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.AI_PROVIDER;
+  });
+
+  afterEach(() => {
+    if (originalXai === undefined) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = originalXai;
+    if (originalOpenrouter === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenrouter;
+    if (originalProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = originalProvider;
+  });
+
+  it("honors an explicit node-level provider override instead of the env-resolved default", async () => {
+    // The deployment default resolves to xai (XAI_API_KEY is the only key configured), but this
+    // node asks for openrouter specifically — it should try THAT provider (and fail on its
+    // missing key), proving the override actually took effect rather than silently using xai.
+    await expect(
+      providerLlm({
+        systemPrompt: "Be helpful.",
+        history: [],
+        temperature: 0.3,
+        model: "deepseek/deepseek-chat-v3:free",
+        provider: "openrouter",
+      }),
+    ).rejects.toThrow(/OPENROUTER_API_KEY is not configured/);
+  });
+
+  it("falls back to the env-resolved default provider when the node's provider is unrecognized", () => {
+    expect(resolveActiveProvider("not-a-real-provider").provider.id).toBe("xai");
+  });
+
+  it("falls back to the env-resolved default provider when the node has no provider set", () => {
+    expect(resolveActiveProvider(undefined).provider.id).toBe("xai");
+  });
+
+  it("honors a valid override over the env-resolved default", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveActiveProvider("openrouter").provider.id).toBe("openrouter");
   });
 });

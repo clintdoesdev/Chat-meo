@@ -11,6 +11,9 @@ const FlowNodeDataSchema = z.object({
   label: z.string(),
   text: z.string().optional(),
   systemPrompt: z.string().optional(),
+  // Same "permissive plain string" reasoning as model below — see AiNode.data.provider in
+  // flow-types.ts.
+  provider: z.string().optional(),
   // Deliberately a plain string, not an enum of today's model ids: the Studio's inspector UI
   // is what constrains which values get *written* going forward (see AiModel in flow-types.ts).
   // Keeping this permissive means graphs saved under an older or future model roster still

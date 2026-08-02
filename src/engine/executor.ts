@@ -168,6 +168,7 @@ export async function step(
             history,
             temperature: node.data.temperature,
             model: node.data.model,
+            provider: node.data.provider,
           });
           content = result.content;
           usage = result.usage;

@@ -29,6 +29,11 @@ export type FlowNodeData = {
   text?: string;
   // ai
   systemPrompt?: string;
+  // A ProviderId ("xai" | "openrouter") from src/lib/ai/providers.ts, kept as a plain string
+  // here for the same reason model is: this file stays free of a hard dependency on that
+  // module's types. Unset means "use the deployment's default provider" (see
+  // src/lib/ai/providers.ts's env-based fallback).
+  provider?: string;
   model?: AiModel;
   temperature?: number;
   // condition

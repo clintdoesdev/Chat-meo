@@ -22,7 +22,9 @@ export type MessageNode = {
 export type AiNode = {
   id: string;
   type: "ai";
-  data: { systemPrompt: string; model: string; temperature: number };
+  /** provider is a ProviderId (see src/lib/ai/providers.ts) as a plain string, same reasoning
+   * as flow-types.ts's FlowNodeData.provider — undefined means "use the deployment default". */
+  data: { systemPrompt: string; model: string; temperature: number; provider?: string };
 };
 
 export type ConditionNode = {
@@ -111,6 +113,9 @@ export type LlmDep = (args: {
   history: LlmChatMessage[];
   temperature: number;
   model: string;
+  /** A ProviderId as a plain string (see AiNode.data.provider above). Unrecognized or
+   * undefined falls back to whichever provider the deployment resolves as active by default. */
+  provider?: string;
 }) => Promise<LlmResult>;
 
 export type LoggerDep = {

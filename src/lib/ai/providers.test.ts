@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getActiveProvider, PROVIDERS, resolveProviderConfig } from "./providers";
+import {
+  getActiveProvider,
+  getProvider,
+  isProviderId,
+  PROVIDERS,
+  resolveProvider,
+  resolveProviderConfig,
+} from "./providers";
 
 const ENV_KEYS = ["AI_PROVIDER", "AI_MODEL", "XAI_API_KEY", "OPENROUTER_API_KEY"] as const;
 type EnvSnapshot = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -100,5 +107,58 @@ describe("resolveProviderConfig / getActiveProvider", () => {
     const active = getActiveProvider();
     expect(active.apiKey).toBe("test-key");
     expect(active.provider.id).toBe("xai");
+  });
+});
+
+describe("isProviderId", () => {
+  it("recognizes exactly the two registered provider ids", () => {
+    expect(isProviderId("xai")).toBe(true);
+    expect(isProviderId("openrouter")).toBe(true);
+    expect(isProviderId("anthropic")).toBe(false);
+    expect(isProviderId("")).toBe(false);
+  });
+});
+
+describe("resolveProvider / getProvider (per-id resolution)", () => {
+  let original: EnvSnapshot;
+
+  beforeEach(() => {
+    original = snapshotEnv();
+    for (const key of ENV_KEYS) delete process.env[key];
+  });
+
+  afterEach(() => {
+    restoreEnv(original);
+  });
+
+  it("resolves a specific provider's config regardless of AI_PROVIDER", () => {
+    process.env.AI_PROVIDER = "xai";
+    process.env.OPENROUTER_API_KEY = "or-key";
+    const config = resolveProvider("openrouter");
+    expect(config.provider.id).toBe("openrouter");
+    expect(config.apiKey).toBe("or-key");
+    expect(config.model).toBe(PROVIDERS.openrouter.defaultModel);
+  });
+
+  it("still honors AI_MODEL as an override for a specifically requested provider", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    process.env.AI_MODEL = "custom/model";
+    expect(resolveProvider("openrouter").model).toBe("custom/model");
+  });
+
+  it("reports apiKey undefined for a specific provider whose key isn't configured", () => {
+    expect(resolveProvider("openrouter").apiKey).toBeUndefined();
+  });
+
+  it("getProvider throws a clear, provider-specific error when that provider's key is missing", () => {
+    expect(() => getProvider("openrouter")).toThrow(/OPENROUTER_API_KEY is not configured/);
+  });
+
+  it("getProvider resolves normally once that provider's key is present, independent of AI_PROVIDER", () => {
+    process.env.AI_PROVIDER = "openrouter";
+    process.env.XAI_API_KEY = "xai-key";
+    const active = getProvider("xai");
+    expect(active.provider.id).toBe("xai");
+    expect(active.apiKey).toBe("xai-key");
   });
 });

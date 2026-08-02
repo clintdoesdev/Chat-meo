@@ -4,7 +4,7 @@
 // types.ts/executor.ts stay free of.
 
 import OpenAI from "openai";
-import { getActiveProvider, type ActiveProvider } from "@/lib/ai/providers";
+import { getActiveProvider, getProvider, isProviderId, type ActiveProvider } from "@/lib/ai/providers";
 import type { LlmChatMessage, LlmDep, LlmUsage } from "./types";
 
 // "grok-main"/"grok-fast" were the Flow Studio AI node's only model choices before multi-provider
@@ -42,6 +42,17 @@ export function resolveModel(nodeModel: string, active: ActiveProvider): string 
     return XAI_MODEL_MAP[nodeModel];
   }
   return nodeModel.trim() || active.model;
+}
+
+/** Resolves the provider to actually talk to for one AI node execution: an explicit, valid
+ * per-node provider override wins; anything else (unset, or an unrecognized string — e.g. a
+ * flow saved before this node had a provider field) falls back to the deployment's env-based
+ * default, exactly as before per-node provider selection existed. Exported for direct unit
+ * testing — like resolveModel, verifying the fallback branch through providerLlm itself would
+ * mean actually reaching the network. */
+export function resolveActiveProvider(nodeProvider: string | undefined): ActiveProvider {
+  if (nodeProvider && isProviderId(nodeProvider)) return getProvider(nodeProvider);
+  return getActiveProvider();
 }
 
 function toOpenAiMessages(
@@ -92,8 +103,8 @@ function describeError(error: unknown, providerName: string): string {
  * error) reaches executor.ts's own try/catch — which logs it AND records it on
  * EngineState.lastError, where the Studio Test drawer's Debug panel can actually show it to
  * whoever's testing the bot. */
-export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, model }) => {
-  const active = getActiveProvider();
+export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, model, provider }) => {
+  const active = resolveActiveProvider(provider);
   const client = getClient(active);
 
   try {
@@ -119,8 +130,8 @@ export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, 
  * use `providerLlm` directly. Throws on failure for the same reason providerLlm does — see its
  * doc comment. */
 export function createStreamingProviderLlm(onChunk: (delta: string) => void): LlmDep {
-  return async ({ systemPrompt, history, temperature, model }) => {
-    const active = getActiveProvider();
+  return async ({ systemPrompt, history, temperature, model, provider }) => {
+    const active = resolveActiveProvider(provider);
     const client = getClient(active);
 
     try {

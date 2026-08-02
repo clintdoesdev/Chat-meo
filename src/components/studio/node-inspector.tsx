@@ -1,7 +1,9 @@
 import { ActionsCloseIcon, ActionsPlusIcon, ActionsTrashIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
+import { ModelPicker } from "@/components/studio/model-picker";
 import { PillSelect } from "@/components/studio/pill-select";
+import { isProviderId, PROVIDERS, type ProviderId } from "@/lib/ai/providers";
 import {
   NODE_KIND_META,
   type ConditionBranch,
@@ -10,17 +12,12 @@ import {
   type WebhookMethod,
 } from "@/lib/flow-types";
 
-// Quick-pick shortcuts, not an exhaustive list — the field itself accepts any model id, since
-// which ones are valid depends on whichever AI provider is active server-side (AI_PROVIDER; see
-// src/lib/ai/providers.ts). xAI's two are a fixed, small set; the OpenRouter ones are just a
-// few commonly used slugs from its much larger catalog.
-const MODEL_PRESETS: { label: string; value: string }[] = [
-  { label: "Grok 4.3 (smart)", value: "grok-main" },
-  { label: "Grok 4.1 Fast (fast)", value: "grok-fast" },
-  { label: "DeepSeek V3 (free)", value: "deepseek/deepseek-chat-v3:free" },
-  { label: "Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
-  { label: "GPT-4o mini", value: "openai/gpt-4o-mini" },
-];
+/** The AI node's provider setting defaults to xai visually until a value is explicitly saved —
+ * same tie-break defaultProviderId() in src/lib/ai/providers.ts uses when AI_PROVIDER is unset,
+ * so an untouched node's picker matches what it'd actually resolve to at runtime. */
+function effectiveProviderId(raw: string | undefined): ProviderId {
+  return raw && isProviderId(raw) ? raw : "xai";
+}
 
 function newBranchId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -157,35 +154,41 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               />
             </div>
             <div className="mb-3.5">
+              <label className={labelClass()}>Provider</label>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.values(PROVIDERS).map((provider) => {
+                  const active = effectiveProviderId(data.provider) === provider.id;
+                  return (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      onClick={() =>
+                        onChange(node.id, { provider: provider.id, model: provider.defaultModel })
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                        active
+                          ? "border-orange-2/50 bg-orange/10 text-text"
+                          : "border-line-2 bg-card-2 text-muted hover:text-text"
+                      }`}
+                    >
+                      {provider.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mb-3.5">
               <label htmlFor="field-model" className={labelClass()}>
                 Model
               </label>
-              <input
+              <ModelPicker
                 id="field-model"
-                value={data.model ?? "grok-main"}
-                onChange={(event) => onChange(node.id, { model: event.target.value })}
-                spellCheck={false}
-                placeholder="e.g. deepseek/deepseek-chat-v3:free"
-                className={`${fieldClass()} font-mono text-[12px]`}
+                provider={effectiveProviderId(data.provider)}
+                value={data.model ?? ""}
+                onChange={(modelId) => onChange(node.id, { model: modelId })}
               />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {MODEL_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => onChange(node.id, { model: preset.value })}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                      (data.model ?? "grok-main") === preset.value
-                        ? "border-orange-2/50 bg-orange/10 text-text"
-                        : "border-line-2 bg-card-2 text-muted hover:text-text"
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
               <p className="mt-1.5 text-[11px] text-muted">
-                Any model id your active AI provider supports — type one or tap a preset.
+                Live models for the selected provider — search to filter, or type a custom model id.
               </p>
             </div>
             <div className="mb-3.5">

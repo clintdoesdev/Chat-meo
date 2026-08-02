@@ -21,6 +21,7 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           systemPrompt: data.systemPrompt ?? "",
           model: data.model ?? "grok-main",
           temperature: data.temperature ?? 0.35,
+          provider: data.provider,
         },
       };
     case "condition":
