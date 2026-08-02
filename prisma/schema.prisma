@@ -112,6 +112,10 @@ model Bot {
   /// added (see addAllowedDomain in src/lib/actions/embed.ts) — from then on, an empty
   /// allowedDomains list means "no domain configured yet," not "anything goes."
   testMode       Boolean        @default(true)
+  /// Whether the Flow Studio saves this bot's flow automatically (debounced, ~1.2s after each
+  /// edit) or only when the author explicitly clicks Save. Defaults to true so existing bots and
+  /// new ones keep today's autosave behavior unless the author opts into manual saves.
+  studioAutosave Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

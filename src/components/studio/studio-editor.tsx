@@ -14,8 +14,9 @@ import {
 import { ChevronLeft, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStore } from "zustand";
 import { BotSettingsModal } from "@/components/app/bot-settings-modal";
-import { CanvasPlayIcon } from "@/components/icons";
+import { ActionsRedoIcon, ActionsUndoIcon, CanvasPlayIcon, CanvasSaveIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { ConfirmDeleteModal } from "@/components/studio/confirm-delete-modal";
 import { DragGhost } from "@/components/studio/drag-ghost";
@@ -31,7 +32,7 @@ import { Toast } from "@/components/studio/toast";
 import type { PaletteDragPoint } from "@/components/studio/use-palette-drag-handle";
 import { ValidationBanner } from "@/components/studio/validation-banner";
 import { ZoomPill } from "@/components/studio/zoom-pill";
-import { publishFlow, saveFlow } from "@/lib/actions/flow";
+import { publishFlow, saveFlow, updateStudioAutosave } from "@/lib/actions/flow";
 import {
   NODE_KIND_META,
   type FlowEdge,
@@ -51,9 +52,15 @@ const nodeTypes = {
   handoff: FlowNodeView,
 };
 
-type BotSummary = { id: string; name: string; slug: string; status: "DRAFT" | "LIVE" };
+type BotSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  status: "DRAFT" | "LIVE";
+  studioAutosave: boolean;
+};
 
-type SaveStatus = "saved" | "saving";
+type SaveStatus = "saved" | "saving" | "dirty" | "error";
 
 const HISTORY_BURST_MS = 600;
 
@@ -72,6 +79,30 @@ function serializeGraph(nodes: FlowNode[], edges: FlowEdge[]): string {
     target: edge.target,
   }));
   return JSON.stringify({ nodes: cleanNodes, edges: cleanEdges });
+}
+
+function saveStatusLabel(status: SaveStatus): string {
+  switch (status) {
+    case "saved":
+      return "All changes saved";
+    case "saving":
+      return "Saving…";
+    case "dirty":
+      return "Unsaved changes";
+    case "error":
+      return "Couldn't save — try again";
+  }
+}
+
+function saveStatusClass(status: SaveStatus): string {
+  switch (status) {
+    case "saved":
+      return "text-ok";
+    case "error":
+      return "text-bad";
+    default:
+      return "text-muted";
+  }
 }
 
 /** The start node is the flow's single entry point and can never be removed by the user. */
@@ -125,6 +156,7 @@ function StudioCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>(initialGraph.edges);
   const [status, setStatus] = useState<BotSummary["status"]>(bot.status);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [autosave, setAutosave] = useState(bot.studioAutosave);
   const [testOpen, setTestOpen] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const { screenToFlowPosition, deleteElements } = useReactFlow<FlowNode, FlowEdge>();
@@ -248,19 +280,71 @@ function StudioCanvas({
     [createNodeAt],
   );
 
-  // Autosave: debounce 1200ms after the graph actually changes.
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
+
+  function showToast(message: string) {
+    setToastMessage(message);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 4000);
+  }
+
+  const persistGraph = useCallback(
+    async (snapshot: string) => {
+      const result = await saveFlow(bot.id, flowId, { nodes, edges });
+      if (result.error) {
+        setSaveStatus("error");
+        showToast(result.error);
+        return;
+      }
+      lastSavedRef.current = snapshot;
+      setSaveStatus("saved");
+    },
+    [nodes, edges, flowId, bot.id],
+  );
+
+  const handleManualSave = useCallback(async () => {
+    const snapshot = serializeGraph(nodes, edges);
+    if (snapshot === lastSavedRef.current) return;
+    setSaveStatus("saving");
+    await persistGraph(snapshot);
+  }, [nodes, edges, persistGraph]);
+
+  // Autosave: debounce 1200ms after the graph actually changes. When autosave is off, this only
+  // flags the graph as dirty — saving is left entirely to handleManualSave (button or Cmd/Ctrl+S).
   useEffect(() => {
     const snapshot = serializeGraph(nodes, edges);
     if (snapshot === lastSavedRef.current) return;
 
+    if (!autosave) {
+      setSaveStatus("dirty");
+      return;
+    }
+
     setSaveStatus("saving");
-    const timer = setTimeout(async () => {
-      await saveFlow(bot.id, flowId, { nodes, edges });
-      lastSavedRef.current = snapshot;
-      setSaveStatus("saved");
+    const timer = setTimeout(() => {
+      void persistGraph(snapshot);
     }, 1200);
     return () => clearTimeout(timer);
-  }, [nodes, edges, flowId, bot.id]);
+  }, [nodes, edges, autosave, persistGraph]);
+
+  // Warn before leaving the tab with unsaved changes in manual-save mode — autosave mode never
+  // has anything worth warning about, since a save is always in flight or just finished.
+  useEffect(() => {
+    if (autosave || saveStatus !== "dirty") return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [autosave, saveStatus]);
+
+  async function handleToggleAutosave() {
+    const next = !autosave;
+    setAutosave(next);
+    await updateStudioAutosave(bot.id, next);
+  }
 
   // Undo history: on the first meaningful change after a quiet period, record the state as it
   // was right before that change. Further changes within the same burst (typing, dragging)
@@ -287,102 +371,172 @@ function StudioCanvas({
     }, HISTORY_BURST_MS);
   }, [nodes, edges, historyStore]);
 
+  const canUndo = useStore(historyStore, (state) => state.past.length > 0);
+  const canRedo = useStore(historyStore, (state) => state.future.length > 0);
+
   const handleUndo = useCallback(() => {
-    const previous = historyStore.getState().popPrevious();
+    const previous = historyStore.getState().undo({ nodes, edges });
     if (!previous) return;
     isRestoringRef.current = true;
     inBurstRef.current = false;
     clearTimeout(burstTimerRef.current);
     setNodes(previous.nodes);
     setEdges(previous.edges);
-  }, [historyStore, setNodes, setEdges]);
+  }, [historyStore, nodes, edges, setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    const next = historyStore.getState().redo({ nodes, edges });
+    if (!next) return;
+    isRestoringRef.current = true;
+    inBurstRef.current = false;
+    clearTimeout(burstTimerRef.current);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+  }, [historyStore, nodes, edges, setNodes, setEdges]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z";
-      if (!isUndo) return;
       const target = event.target as HTMLElement | null;
       const isEditableField =
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       if (isEditableField) return;
-      event.preventDefault();
-      handleUndo();
+      if (!(event.metaKey || event.ctrlKey)) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && event.shiftKey) {
+        event.preventDefault();
+        handleRedo();
+      } else if (key === "z") {
+        event.preventDefault();
+        handleUndo();
+      } else if (key === "y") {
+        event.preventDefault();
+        handleRedo();
+      } else if (key === "s") {
+        event.preventDefault();
+        if (!autosave) void handleManualSave();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleUndo]);
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
+  }, [handleUndo, handleRedo, handleManualSave, autosave]);
 
   async function handlePublish() {
     const result = await publishFlow(bot.id);
     if (!result.error) {
       setStatus("LIVE");
-      setToastMessage("Flow published");
-      clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToastMessage(null), 3000);
+      showToast("Flow published");
     }
   }
 
   return (
     <div>
-      <header className="mb-4 flex flex-wrap items-center gap-3">
-        <Link
-          href="/app"
-          aria-label="Back to dashboard"
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-line-2 text-muted transition hover:border-orange-2/50 hover:text-text"
-        >
-          <ChevronLeft size={16} strokeWidth={2.5} />
-        </Link>
-        <MeoMark size={28} />
-        <div className="mr-auto min-w-0">
-          <h1 className="truncate text-[15px] font-bold leading-tight">{bot.name}</h1>
-          <div
-            className={`text-[11.5px] font-medium ${saveStatus === "saved" ? "text-ok" : "text-muted"}`}
+      <header className="mb-4 flex flex-col gap-3 min-[860px]:flex-row min-[860px]:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href="/app"
+            aria-label="Back to dashboard"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-line-2 text-muted transition hover:border-orange-2/50 hover:text-text"
           >
-            {saveStatus === "saved" ? "All changes saved" : "Saving…"}
+            <ChevronLeft size={16} strokeWidth={2.5} />
+          </Link>
+          <MeoMark size={28} />
+          <div className="min-w-0">
+            <h1 className="truncate text-[15px] font-bold leading-tight">{bot.name}</h1>
+            <div className={`text-[11.5px] font-medium ${saveStatusClass(saveStatus)}`}>
+              {saveStatusLabel(saveStatus)}
+            </div>
           </div>
+          <span
+            className={`flex-shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold ${
+              status === "LIVE"
+                ? "border-ok/30 bg-ok/10 text-ok"
+                : "border-line-2 bg-card-2 text-muted"
+            }`}
+          >
+            {status === "LIVE" ? "Live" : "Draft"}
+          </span>
         </div>
 
-        <span
-          className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
-            status === "LIVE"
-              ? "border-ok/30 bg-ok/10 text-ok"
-              : "border-line-2 bg-card-2 text-muted"
-          }`}
-        >
-          {status === "LIVE" ? "Live" : "Draft"}
-        </span>
+        <div className="flex flex-wrap items-center gap-2 min-[860px]:ml-auto">
+          <div className="flex items-center gap-1 rounded-full border border-line-2 bg-card-2 p-1">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              aria-label="Undo"
+              title="Undo (Ctrl/Cmd+Z)"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ActionsUndoIcon size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={!canRedo}
+              aria-label="Redo"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ActionsRedoIcon size={14} />
+            </button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setEmbedOpen(true)}
-          className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
-        >
-          <Share2 size={13} />
-          Share
-        </button>
+          <button
+            type="button"
+            onClick={handleToggleAutosave}
+            title="Toggle autosave"
+            aria-pressed={autosave}
+            className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+              autosave
+                ? "border-orange-2/50 bg-orange/10 text-text"
+                : "border-line-2 bg-card-2 text-muted hover:text-text"
+            }`}
+          >
+            Autosave {autosave ? "on" : "off"}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setTestOpen(true)}
-          className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
-        >
-          <CanvasPlayIcon size={12} />
-          Test
-        </button>
+          {!autosave && (
+            <button
+              type="button"
+              onClick={handleManualSave}
+              disabled={saveStatus === "saved" || saveStatus === "saving"}
+              title="Save (Ctrl/Cmd+S)"
+              className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              <CanvasSaveIcon size={13} />
+              Save
+            </button>
+          )}
 
-        <button
-          type="button"
-          onClick={handlePublish}
-          disabled={status === "LIVE"}
-          className="rounded-full bg-grad-orange px-4 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] disabled:opacity-50"
-        >
-          {status === "LIVE" ? "Published" : "Publish"}
-        </button>
+          <button
+            type="button"
+            onClick={() => setEmbedOpen(true)}
+            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+          >
+            <Share2 size={13} />
+            Share
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTestOpen(true)}
+            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+          >
+            <CanvasPlayIcon size={12} />
+            Test
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={status === "LIVE"}
+            className="rounded-full bg-grad-orange px-4 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] disabled:opacity-50"
+          >
+            {status === "LIVE" ? "Published" : "Publish"}
+          </button>
+        </div>
       </header>
 
       <div

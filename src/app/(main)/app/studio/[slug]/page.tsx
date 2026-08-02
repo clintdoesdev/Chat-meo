@@ -56,7 +56,13 @@ export default async function StudioBotPage({
       }
     >
       <StudioEditor
-        bot={{ id: bot.id, name: bot.name, slug: bot.slug, status: bot.status }}
+        bot={{
+          id: bot.id,
+          name: bot.name,
+          slug: bot.slug,
+          status: bot.status,
+          studioAutosave: bot.studioAutosave,
+        }}
         flowId={flow.id}
         initialGraph={graph}
       />

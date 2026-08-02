@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { extractText, UnsupportedFileTypeError } from "@/lib/documents/extract-text";
 import { prisma } from "@/lib/prisma";
@@ -14,32 +13,34 @@ export type AiNodeDocumentSummary = {
   createdAt: string;
 };
 
-async function requireFlowOwnership(flowId: string) {
+async function isFlowOwner(flowId: string): Promise<boolean> {
   const session = await auth();
-  if (!session?.user) return null;
+  if (!session?.user) return false;
 
   const flow = await prisma.flow.findUnique({
     where: { id: flowId },
-    select: { id: true, bot: { select: { userId: true, slug: true } } },
+    select: { bot: { select: { userId: true } } },
   });
-  if (!flow || flow.bot.userId !== session.user.id) return null;
-
-  return { botSlug: flow.bot.slug };
+  return Boolean(flow && flow.bot.userId === session.user.id);
 }
 
 export async function listAiNodeDocuments(
   flowId: string,
   nodeId: string,
 ): Promise<AiNodeDocumentSummary[]> {
-  const owned = await requireFlowOwnership(flowId);
-  if (!owned) return [];
+  try {
+    if (!(await isFlowOwner(flowId))) return [];
 
-  const docs = await prisma.aiNodeDocument.findMany({
-    where: { flowId, nodeId },
-    select: { id: true, fileName: true, charCount: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-  return docs.map((doc) => ({ ...doc, createdAt: doc.createdAt.toISOString() }));
+    const docs = await prisma.aiNodeDocument.findMany({
+      where: { flowId, nodeId },
+      select: { id: true, fileName: true, charCount: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return docs.map((doc) => ({ ...doc, createdAt: doc.createdAt.toISOString() }));
+  } catch (error) {
+    console.error("[actions/ai-documents] listAiNodeDocuments failed", error);
+    return [];
+  }
 }
 
 export async function uploadAiNodeDocument(
@@ -56,42 +57,48 @@ export async function uploadAiNodeDocument(
     return { error: "File is too large (max 10MB)." };
   }
 
-  const owned = await requireFlowOwnership(flowId);
-  if (!owned) return { error: "Flow not found." };
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  let content: string;
   try {
-    content = await extractText(file.name, buffer);
+    if (!(await isFlowOwner(flowId))) return { error: "Flow not found." };
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    let content: string;
+    try {
+      content = await extractText(file.name, buffer);
+    } catch (error) {
+      if (error instanceof UnsupportedFileTypeError) return { error: error.message };
+      return { error: "Couldn't read that file." };
+    }
+
+    if (!content) return { error: "That file doesn't contain any readable text." };
+
+    const doc = await prisma.aiNodeDocument.create({
+      data: { flowId, nodeId, fileName: file.name, content, charCount: content.length },
+      select: { id: true, fileName: true, charCount: true, createdAt: true },
+    });
+
+    return { error: null, document: { ...doc, createdAt: doc.createdAt.toISOString() } };
   } catch (error) {
-    if (error instanceof UnsupportedFileTypeError) return { error: error.message };
-    return { error: "Couldn't read that file." };
+    console.error("[actions/ai-documents] uploadAiNodeDocument failed", error);
+    return { error: "Upload failed — a temporary connection issue. Please try again." };
   }
-
-  if (!content) return { error: "That file doesn't contain any readable text." };
-
-  const doc = await prisma.aiNodeDocument.create({
-    data: { flowId, nodeId, fileName: file.name, content, charCount: content.length },
-    select: { id: true, fileName: true, charCount: true, createdAt: true },
-  });
-
-  revalidatePath(`/app/studio/${owned.botSlug}`);
-  return { error: null, document: { ...doc, createdAt: doc.createdAt.toISOString() } };
 }
 
 export async function deleteAiNodeDocument(documentId: string): Promise<{ error: string | null }> {
-  const session = await auth();
-  if (!session?.user) return { error: "Not signed in." };
+  try {
+    const session = await auth();
+    if (!session?.user) return { error: "Not signed in." };
 
-  const doc = await prisma.aiNodeDocument.findUnique({
-    where: { id: documentId },
-    select: { flowId: true, flow: { select: { bot: { select: { userId: true, slug: true } } } } },
-  });
-  if (!doc || doc.flow.bot.userId !== session.user.id) return { error: "Document not found." };
+    const doc = await prisma.aiNodeDocument.findUnique({
+      where: { id: documentId },
+      select: { flow: { select: { bot: { select: { userId: true } } } } },
+    });
+    if (!doc || doc.flow.bot.userId !== session.user.id) return { error: "Document not found." };
 
-  await prisma.aiNodeDocument.delete({ where: { id: documentId } });
-
-  revalidatePath(`/app/studio/${doc.flow.bot.slug}`);
-  return { error: null };
+    await prisma.aiNodeDocument.delete({ where: { id: documentId } });
+    return { error: null };
+  } catch (error) {
+    console.error("[actions/ai-documents] deleteAiNodeDocument failed", error);
+    return { error: "Couldn't remove that document — please try again." };
+  }
 }
