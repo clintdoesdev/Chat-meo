@@ -30,35 +30,59 @@ export function KnowledgeUpload({ flowId, nodeId }: { flowId: string; nodeId: st
   useEffect(() => {
     setDocs(null);
     setError(null);
-    listAiNodeDocuments(flowId, nodeId).then(setDocs);
+    // .catch, not just .then: listAiNodeDocuments itself never throws (see actions/ai-documents.ts),
+    // but a request that never reaches the server at all (offline, a proxy/CDN error page instead
+    // of JSON, etc.) still rejects this promise — without a handler that becomes an unhandled
+    // rejection instead of the empty doc list + inline "couldn't load" state this shows instead.
+    listAiNodeDocuments(flowId, nodeId)
+      .then(setDocs)
+      .catch(() => {
+        setDocs([]);
+        setError("Couldn't load documents — try reopening this node.");
+      });
   }, [flowId, nodeId]);
 
+  // Every server action call below is wrapped in try/catch even though the actions themselves
+  // always resolve to a { error } shape rather than throwing: a Server Action call is still an
+  // HTTP round trip under the hood, and a failure at that transport layer (offline, a timeout, a
+  // proxy returning something that isn't the expected response) rejects the promise instead of
+  // resolving it. Left unguarded inside startTransition, that rejection would surface as an
+  // uncaught error and take down the whole Studio (this is what "file upload isn't working" was
+  // — an upload failing this way, not the app-level {error} case, which was already handled).
   function handleFileChosen(file: File) {
     setError(null);
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set("flowId", flowId);
-      formData.set("nodeId", nodeId);
-      formData.set("file", file);
-      const result = await uploadAiNodeDocument(formData);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      if (result.document) {
-        setDocs((prev) => [...(prev ?? []), result.document!]);
+      try {
+        const formData = new FormData();
+        formData.set("flowId", flowId);
+        formData.set("nodeId", nodeId);
+        formData.set("file", file);
+        const result = await uploadAiNodeDocument(formData);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        if (result.document) {
+          setDocs((prev) => [...(prev ?? []), result.document!]);
+        }
+      } catch {
+        setError("Upload failed — a connection issue. Please try again.");
       }
     });
   }
 
   function handleDelete(docId: string) {
     startTransition(async () => {
-      const result = await deleteAiNodeDocument(docId);
-      if (result.error) {
-        setError(result.error);
-        return;
+      try {
+        const result = await deleteAiNodeDocument(docId);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        setDocs((prev) => (prev ?? []).filter((doc) => doc.id !== docId));
+      } catch {
+        setError("Couldn't remove that document — a connection issue. Please try again.");
       }
-      setDocs((prev) => (prev ?? []).filter((doc) => doc.id !== docId));
     });
   }
 
