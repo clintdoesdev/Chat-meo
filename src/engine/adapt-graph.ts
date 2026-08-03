@@ -49,6 +49,19 @@ function adaptNode(node: PersistedNode): FlowNode | null {
         type: "webhook",
         data: { url: data.url ?? "", method: data.method ?? "POST" },
       };
+    case "logic":
+      return {
+        id: node.id,
+        type: "logic",
+        data: {
+          rules: (data.rules ?? []).map((rule) => ({
+            id: rule.id,
+            label: rule.label,
+            triggers: rule.triggers,
+            reply: rule.reply,
+          })),
+        },
+      };
     case "handoff":
       return { id: node.id, type: "handoff", data: { note: data.note } };
     case "link":

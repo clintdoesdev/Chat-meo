@@ -64,4 +64,71 @@ describe("formatMessage", () => {
   it("leaves an unmatched single asterisk alone rather than crashing", () => {
     expect(render("This * is not emphasis.")).toBe("This * is not emphasis.");
   });
+
+  it("renders ~~strikethrough~~ as <s>", () => {
+    const html = render("That's ~~cancelled~~ postponed.");
+    expect(html).toContain("<s>cancelled</s>");
+    expect(html).not.toContain("~");
+  });
+
+  it("renders a markdown [text](url) link with the given text, not the raw url", () => {
+    const html = render("Here's your link: [Pay now](https://pay.example.com)");
+    expect(html).toContain('href="https://pay.example.com"');
+    expect(html).toContain(">Pay now</a>");
+    expect(html).not.toContain("[Pay now]");
+  });
+
+  it("wraps links in a small preview chip showing the hostname", () => {
+    const html = render("See https://example.com/pricing for details.");
+    expect(html).toContain("example.com");
+    // the raw path shouldn't leak into the preview chip's own visible text
+    expect(html).not.toMatch(/>\/pricing</);
+  });
+
+  it("renders a #hashtag as a styled inline span, not raw text", () => {
+    const html = render("Ask about our #blackfriday deal.");
+    expect(html).toMatch(/<span[^>]*>#blackfriday<\/span>/);
+  });
+
+  it("does not treat a mid-word # as a hashtag", () => {
+    const html = render("Support for C#3 isn't a hashtag.");
+    expect(html).not.toMatch(/<span[^>]*>#3<\/span>/);
+  });
+
+  it("renders a heading line as bold, larger text with the # markers stripped", () => {
+    const html = render("# Big news\nEverything shipped.");
+    expect(html).toContain("Big news");
+    expect(html).not.toContain("#");
+    expect(html).toMatch(/font-weight:\s*800/);
+  });
+
+  it("renders a bulleted list as a real <ul><li>", () => {
+    const html = render("Choose one:\n- Basic\n- Pro\n- Enterprise");
+    expect(html).toContain("<ul");
+    expect(html).toContain("<li>Basic</li>");
+    expect(html).toContain("<li>Pro</li>");
+    expect(html).toContain("<li>Enterprise</li>");
+  });
+
+  it("renders a numbered list as a real <ol><li>, with the digits stripped", () => {
+    const html = render("1. First step\n2. Second step");
+    expect(html).toContain("<ol");
+    expect(html).toContain("<li>First step</li>");
+    expect(html).toContain("<li>Second step</li>");
+  });
+
+  it("renders a blockquote line as <blockquote>", () => {
+    const html = render("> Somebody said this");
+    expect(html).toContain("<blockquote");
+    expect(html).toContain("Somebody said this");
+  });
+
+  it("renders a horizontal rule as <hr>", () => {
+    const html = render("Above\n---\nBelow");
+    expect(html).toContain("<hr");
+  });
+
+  it("keeps a single plain line with no block syntax completely unwrapped", () => {
+    expect(render("Nothing special here.")).toBe("Nothing special here.");
+  });
 });

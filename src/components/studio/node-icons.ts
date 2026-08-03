@@ -5,6 +5,7 @@ import {
   NodesAiIcon,
   NodesConditionIcon,
   NodesHandoffIcon,
+  NodesLogicIcon,
   NodesMessageIcon,
   NodesQuestionIcon,
   type IconProps,
@@ -22,4 +23,5 @@ export const NODE_KIND_ICON: Record<FlowNodeKind, ComponentType<IconProps>> = {
   webhook: NodesActionIcon,
   handoff: NodesHandoffIcon,
   link: ActionsLinkIcon,
+  logic: NodesLogicIcon,
 };

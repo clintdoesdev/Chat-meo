@@ -10,6 +10,7 @@ import {
   useNodesState,
   useReactFlow,
   type Connection,
+  type FinalConnectionState,
 } from "@xyflow/react";
 import { ChevronLeft, Share2 } from "lucide-react";
 import Link from "next/link";
@@ -19,6 +20,7 @@ import { BotSettingsModal } from "@/components/app/bot-settings-modal";
 import { ActionsRedoIcon, ActionsUndoIcon, CanvasPlayIcon, CanvasSaveIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { ConfirmDeleteModal } from "@/components/studio/confirm-delete-modal";
+import { ConnectionNodePicker } from "@/components/studio/connection-node-picker";
 import { DragGhost } from "@/components/studio/drag-ghost";
 import { EmptyFlowHint } from "@/components/studio/empty-flow-hint";
 import { createFlowHistoryStore, type FlowSnapshot } from "@/components/studio/flow-history";
@@ -36,11 +38,13 @@ import { ZoomPill } from "@/components/studio/zoom-pill";
 import { publishFlow, saveFlow, updateStudioAutosave } from "@/lib/actions/flow";
 import {
   NODE_KIND_META,
+  PALETTE_KINDS,
   type FlowEdge,
   type FlowGraph,
   type FlowNode,
   type FlowNodeData,
   type FlowNodeKind,
+  type NodeKindMeta,
 } from "@/lib/flow-types";
 
 const nodeTypes = {
@@ -52,6 +56,7 @@ const nodeTypes = {
   webhook: FlowNodeView,
   handoff: FlowNodeView,
   link: FlowNodeView,
+  logic: FlowNodeView,
 };
 
 type BotSummary = {
@@ -192,6 +197,11 @@ function computeNodeIssues(nodes: FlowNode[], edges: FlowEdge[]): NodeIssue[] {
           issues.push({ nodeId: node.id, message: "Missing a URL" });
         }
         break;
+      case "logic":
+        if ((node.data.rules ?? []).length === 0) {
+          issues.push({ nodeId: node.id, message: "No rules set" });
+        }
+        break;
       case "link":
         if (!isRealUrl(node.data.url)) {
           issues.push({ nodeId: node.id, message: "Missing a URL" });
@@ -283,6 +293,19 @@ function StudioCanvas({
     [setEdges],
   );
 
+  // An AI node's dedicated "logic" handle only ever makes sense wired to a Logic node — block
+  // anything else so a stray connection can't silently do nothing at runtime.
+  const isValidConnection = useCallback(
+    (connection: Connection | FlowEdge) => {
+      if (connection.sourceHandle !== "logic") return true;
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      if (sourceNode?.type !== "ai") return true;
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      return targetNode?.type === "logic";
+    },
+    [nodes],
+  );
+
   const updateNodeData = useCallback(
     (id: string, patch: Partial<FlowNodeData>) => {
       setNodes((nds) =>
@@ -315,6 +338,75 @@ function StudioCanvas({
       setDetailsNodeId(id);
     },
     [screenToFlowPosition, setNodes],
+  );
+
+  // Dragging a connection off a handle and releasing over empty canvas (rather than onto
+  // another node) pops a small picker at the drop point instead of just cancelling the drag —
+  // picking a kind creates that node right there, pre-wired to the handle that was dragged.
+  const [connectionPicker, setConnectionPicker] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
+    handleId: string | null;
+    handleType: "source" | "target";
+    kinds: NodeKindMeta[];
+  } | null>(null);
+
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+    if (connectionState.toNode || !connectionState.fromNode || !connectionState.fromHandle) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    if (!point) return;
+
+    const fromNode = connectionState.fromNode;
+    const fromHandle = connectionState.fromHandle;
+    // Mirrors isValidConnection: an AI node's "logic" dot can only ever lead to a Logic node, so
+    // that's the only option worth offering. Everything else can lead anywhere in the palette.
+    const kinds =
+      fromHandle.type === "source" && fromHandle.id === "logic" && fromNode.type === "ai"
+        ? [NODE_KIND_META.logic]
+        : PALETTE_KINDS;
+
+    setConnectionPicker({
+      x: point.clientX,
+      y: point.clientY,
+      nodeId: fromNode.id,
+      handleId: fromHandle.id ?? null,
+      handleType: fromHandle.type as "source" | "target",
+      kinds,
+    });
+  }, []);
+
+  const handleConnectionPickerSelect = useCallback(
+    (kind: FlowNodeKind) => {
+      if (!connectionPicker) return;
+      const meta = NODE_KIND_META[kind];
+      if (!meta) return;
+
+      const position = screenToFlowPosition({ x: connectionPicker.x, y: connectionPicker.y });
+      idCounter.current += 1;
+      const id = `${kind}-${Date.now()}-${idCounter.current}`;
+      const newNode: FlowNode = { id, type: kind, position, data: { ...meta.defaultData }, deletable: true };
+      const newEdge: FlowEdge =
+        connectionPicker.handleType === "target"
+          ? {
+              id: `e-${id}`,
+              source: id,
+              target: connectionPicker.nodeId,
+              targetHandle: connectionPicker.handleId ?? undefined,
+            }
+          : {
+              id: `e-${id}`,
+              source: connectionPicker.nodeId,
+              target: id,
+              sourceHandle: connectionPicker.handleId ?? undefined,
+            };
+
+      setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat({ ...newNode, selected: true }));
+      setEdges((eds) => eds.concat(newEdge));
+      setDetailsNodeId(id);
+      setConnectionPicker(null);
+    },
+    [connectionPicker, screenToFlowPosition, setNodes, setEdges],
   );
 
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
@@ -651,6 +743,8 @@ function StudioCanvas({
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectEnd={onConnectEnd}
+                isValidConnection={isValidConnection}
                 nodeTypes={nodeTypes}
                 colorMode="dark"
                 fitView
@@ -694,6 +788,16 @@ function StudioCanvas({
         onClose={() => setMobilePickerOpen(false)}
         onSelect={handleMobileAddNode}
       />
+
+      {connectionPicker && (
+        <ConnectionNodePicker
+          x={connectionPicker.x}
+          y={connectionPicker.y}
+          kinds={connectionPicker.kinds}
+          onSelect={handleConnectionPickerSelect}
+          onClose={() => setConnectionPicker(null)}
+        />
+      )}
 
       <TestDrawer
         open={testOpen}

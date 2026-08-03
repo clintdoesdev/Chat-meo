@@ -9,6 +9,7 @@ import {
   type ConditionBranch,
   type FlowNode,
   type FlowNodeData,
+  type LogicRule,
   type WebhookMethod,
 } from "@/lib/flow-types";
 
@@ -34,6 +35,12 @@ function newBranchId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `branch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function newRuleId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -238,6 +245,89 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               />
             </div>
             <KnowledgeUpload flowId={flowId} nodeId={node.id} />
+          </>
+        )}
+
+        {node.type === "logic" && (
+          <>
+            <p className="mb-3 rounded-lg border border-line-2 bg-card-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              Attach this to an AI node&apos;s bottom dot. Each turn, if the visitor&apos;s message
+              matches a rule&apos;s triggers, that rule&apos;s reply is sent (and the AI is skipped
+              entirely) — connect a rule&apos;s dot to route the conversation elsewhere afterward,
+              or leave it unwired to just reply and keep chatting. A rule with no triggers matches
+              anything, so it&apos;s a good catch-all.
+            </p>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className={labelClass().replace("mb-1.5 ", "")}>Rules</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next: LogicRule[] = [
+                    ...(data.rules ?? []),
+                    { id: newRuleId(), label: "New rule", triggers: "", reply: "" },
+                  ];
+                  onChange(node.id, { rules: next });
+                }}
+                className="flex items-center gap-1 rounded-full border border-line-2 px-2.5 py-1 text-[10.5px] font-semibold text-muted transition hover:border-orange-2/50 hover:text-text"
+              >
+                <ActionsPlusIcon size={11} />
+                Add
+              </button>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {(data.rules ?? []).map((rule, index) => (
+                <div key={rule.id} className="relative rounded-[12px] border border-line-2 bg-card-2 p-2.5 pr-8">
+                  <input
+                    aria-label={`Rule ${index + 1} label`}
+                    value={rule.label}
+                    onChange={(event) => {
+                      const next: LogicRule[] = [...(data.rules ?? [])];
+                      next[index] = { ...rule, label: event.target.value };
+                      onChange(node.id, { rules: next });
+                    }}
+                    placeholder="Rule label"
+                    className="mb-1.5 w-full bg-transparent text-[12.5px] font-medium text-text placeholder:text-[#5C5C5C] focus:outline-none"
+                  />
+                  <input
+                    aria-label={`Rule ${index + 1} triggers`}
+                    value={rule.triggers}
+                    onChange={(event) => {
+                      const next: LogicRule[] = [...(data.rules ?? [])];
+                      next[index] = { ...rule, triggers: event.target.value };
+                      onChange(node.id, { rules: next });
+                    }}
+                    placeholder="Triggers, comma separated (blank = anything)"
+                    className="mb-1.5 w-full bg-transparent text-[11.5px] text-muted placeholder:text-[#5C5C5C] focus:outline-none"
+                  />
+                  <textarea
+                    aria-label={`Rule ${index + 1} reply`}
+                    value={rule.reply}
+                    onChange={(event) => {
+                      const next: LogicRule[] = [...(data.rules ?? [])];
+                      next[index] = { ...rule, reply: event.target.value };
+                      onChange(node.id, { rules: next });
+                    }}
+                    placeholder="Reply to send (blank = just route, no reply)"
+                    rows={2}
+                    className="w-full resize-y bg-transparent text-[11.5px] text-text placeholder:text-[#5C5C5C] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = (data.rules ?? []).filter((r) => r.id !== rule.id);
+                      onChange(node.id, { rules: next });
+                    }}
+                    aria-label={`Remove rule ${index + 1}`}
+                    className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-bad"
+                  >
+                    <ActionsCloseIcon size={12} />
+                  </button>
+                </div>
+              ))}
+              {(data.rules ?? []).length === 0 && (
+                <p className="text-[11.5px] text-muted">No rules yet — add one above.</p>
+              )}
+            </div>
           </>
         )}
 

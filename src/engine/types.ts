@@ -7,6 +7,13 @@ export type ConditionBranch = {
   value: string;
 };
 
+export type LogicRule = {
+  id: string;
+  label: string;
+  triggers: string;
+  reply: string;
+};
+
 export type StartNode = {
   id: string;
   type: "start";
@@ -31,6 +38,16 @@ export type ConditionNode = {
   id: string;
   type: "condition";
   data: { variable: string; branches: ConditionBranch[] };
+};
+
+/** Business rules meant to be attached to an AI node (via an edge from that node's dedicated
+ * "logic" source handle) — checked against the visitor's message before the LLM is called, so a
+ * matched rule's reply/routing pre-empts the LLM entirely for that turn. Can also be wired
+ * directly into the main flow like a Condition node; see the "logic" case in executor.ts. */
+export type LogicNode = {
+  id: string;
+  type: "logic";
+  data: { rules: LogicRule[] };
 };
 
 export type CaptureNode = {
@@ -69,7 +86,8 @@ export type FlowNode =
   | CaptureNode
   | WebhookNode
   | HandoffNode
-  | LinkNode;
+  | LinkNode
+  | LogicNode;
 
 export type FlowNodeKind = FlowNode["type"];
 

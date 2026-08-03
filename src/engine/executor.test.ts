@@ -560,3 +560,171 @@ describe("step: guards", () => {
     expect(output).toEqual({ replies: [], state: handoffState });
   });
 });
+
+describe("step: logic node (standalone)", () => {
+  const graph: FlowGraph = {
+    nodes: [
+      {
+        id: "logic-1",
+        type: "logic",
+        data: {
+          rules: [
+            {
+              id: "rule-pay",
+              label: "Payment link",
+              triggers: "payment, invoice",
+              reply: "Here's your payment link: https://pay.example.com",
+            },
+            { id: "rule-else", label: "Anything else", triggers: "", reply: "" },
+          ],
+        },
+      },
+      { id: "pay-node", type: "message", data: { text: "Anything else?" } },
+      { id: "fallback-node", type: "message", data: { text: "Let me get a human." } },
+    ],
+    edges: [
+      { id: "e1", source: "logic-1", target: "pay-node", sourceHandle: "rule-pay" },
+      { id: "e2", source: "logic-1", target: "fallback-node", sourceHandle: "rule-else" },
+    ],
+  };
+
+  it("sends the matched rule's reply and routes to its branch", async () => {
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, "Can I get an invoice?", createDeps());
+
+    expect(output.replies).toEqual([
+      { content: "Here's your payment link: https://pay.example.com" },
+      { content: "Anything else?" },
+    ]);
+    expect(output.state.status).toBe("ENDED");
+  });
+
+  it("falls through to the empty-triggers rule when nothing else matches", async () => {
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, "what's the weather like", createDeps());
+
+    expect(output.replies).toEqual([{ content: "Let me get a human." }]);
+  });
+
+  it("ends without a reply when there's no visitor message to match against", async () => {
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([]);
+    expect(output.state.status).toBe("ENDED");
+  });
+
+  it("ends as a dead end when no rule matches and there's no catch-all", async () => {
+    const noElseGraph: FlowGraph = {
+      nodes: [
+        {
+          id: "logic-1",
+          type: "logic",
+          data: { rules: [{ id: "rule-pay", label: "Payment", triggers: "payment", reply: "Sure!" }] },
+        },
+      ],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(noElseGraph, state, "hello there", createDeps());
+
+    expect(output.replies).toEqual([]);
+    expect(output.state.status).toBe("ENDED");
+  });
+});
+
+describe("step: logic node attached to an AI node", () => {
+  function buildGraph(): FlowGraph {
+    return {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Payment link",
+                triggers: "payment, invoice",
+                reply: "Here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+        { id: "handoff-1", type: "handoff", data: {} },
+      ],
+      edges: [
+        { id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" },
+        { id: "e-route", source: "logic-1", target: "handoff-1", sourceHandle: "rule-pay" },
+      ],
+    };
+  }
+
+  it("short-circuits the LLM entirely when a rule matches, replying and routing instead", async () => {
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, "Can you send me an invoice?", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([
+      { content: "Here's your payment link: https://pay.example.com" },
+      { content: "Your message is being sent to a live team to assist you." },
+    ]);
+    expect(output.state.status).toBe("HANDOFF");
+  });
+
+  it("stays open on the AI node when a matched rule has no route wired", async () => {
+    const graph = buildGraph();
+    graph.edges = graph.edges.filter((edge) => edge.sourceHandle !== "rule-pay");
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "I need an invoice", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
+  });
+
+  it("falls through to the LLM as normal when no rule matches", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, "What are your hours?", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+  });
+
+  it("never fires rules on the unprompted first turn (no visitor message yet)", async () => {
+    const llmMock = vi.fn(async () => ({ content: "Hey there!" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, undefined, deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Hey there!" }]);
+  });
+
+  it("only treats the sourceHandle:\"logic\" edge as the attachment, regardless of edge order", async () => {
+    // A plain edge (no sourceHandle) listed *before* the real logic edge shouldn't be mistaken
+    // for the logic attachment — the lookup must filter on sourceHandle, not just grab the
+    // first outgoing edge from the AI node.
+    const graph = buildGraph();
+    graph.edges.unshift({ id: "e-next", source: "ai-1", target: "handoff-1" });
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "send me an invoice please", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
+  });
+});

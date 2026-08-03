@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useNodeConnections, type NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import { StatusWarningIcon } from "@/components/icons";
 import { NODE_KIND_ICON } from "@/components/studio/node-icons";
@@ -7,6 +7,7 @@ import { useNodeIssue } from "@/components/studio/node-issues-context";
 import { NODE_KIND_META, type FlowNode, type FlowNodeData, type FlowNodeKind } from "@/lib/flow-types";
 
 const HANDLE_COLOR = "#FF5C16";
+const LOGIC_HANDLE_COLOR = "#B98CFF";
 const HANDLE_CLASS = "!h-[9px] !w-[9px] !border-2 !border-[#0C0C0C]";
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
@@ -38,11 +39,29 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   }
 }
 
+type BranchItem = { id: string; label: string };
+
+function branchItemsFor(data: FlowNodeData, kind?: FlowNodeKind): BranchItem[] {
+  if (kind === "condition") {
+    return (data.branches ?? []).map((branch) => ({ id: branch.id, label: branch.label || "Untitled branch" }));
+  }
+  if (kind === "logic") {
+    return (data.rules ?? []).map((rule) => ({
+      id: rule.id,
+      label: rule.label || (rule.triggers.trim() === "" ? "Anything else" : "Untitled rule"),
+    }));
+  }
+  return [];
+}
+
 export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) {
   const meta = type ? NODE_KIND_META[type] : undefined;
   const color = meta?.color ?? "#FF5C16";
   const Icon = NODE_KIND_ICON[type ?? "message"];
-  const branches = type === "condition" ? (data.branches ?? []) : [];
+  const branchItems = branchItemsFor(data, type);
+  const hasBranchHandles = type === "condition" || type === "logic";
+  const logicConnections = useNodeConnections({ id, handleType: "source", handleId: "logic" });
+  const hasLogicAttached = type === "ai" && logicConnections.length > 0;
   const issue = useNodeIssue(id);
   const { openDetails } = useStudioNodeActions();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -236,21 +255,23 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         <span className="truncate">{data.label || meta?.label}</span>
       </div>
 
-      {type === "condition" ? (
+      {hasBranchHandles ? (
         <div className="mt-1.5 flex flex-col gap-1.5">
-          {branches.length === 0 && <p className="text-[11px] text-muted">No branches set</p>}
-          {branches.map((branch) => (
+          {branchItems.length === 0 && (
+            <p className="text-[11px] text-muted">{type === "logic" ? "No rules set" : "No branches set"}</p>
+          )}
+          {branchItems.map((item) => (
             <div
-              key={branch.id}
+              key={item.id}
               className="relative flex items-center justify-between gap-2 rounded-[8px] bg-white/[.04] py-1 pl-2 pr-3 text-[11px]"
             >
-              <span className="truncate text-muted">{branch.label || "Untitled branch"}</span>
+              <span className="truncate text-muted">{item.label}</span>
               <Handle
                 type="source"
                 position={Position.Right}
-                id={branch.id}
+                id={item.id}
                 className={`${HANDLE_CLASS} !right-[-17px] !top-1/2 !-translate-y-1/2`}
-                style={{ background: HANDLE_COLOR, position: "absolute" }}
+                style={{ background: type === "logic" ? LOGIC_HANDLE_COLOR : HANDLE_COLOR, position: "absolute" }}
               />
             </div>
           ))}
@@ -259,12 +280,40 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         <p className="line-clamp-2 text-[11px] text-muted">{previewText(data, type)}</p>
       )}
 
-      {type !== "handoff" && type !== "condition" && (
+      {type === "ai" && (
+        <div
+          className="mt-1.5 flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[10.5px] font-medium"
+          style={{
+            background: hasLogicAttached ? "rgba(185,140,255,.14)" : "rgba(255,255,255,.04)",
+            color: hasLogicAttached ? LOGIC_HANDLE_COLOR : undefined,
+          }}
+        >
+          <span
+            className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+            style={{ background: hasLogicAttached ? LOGIC_HANDLE_COLOR : "rgba(255,255,255,.25)" }}
+          />
+          <span className={hasLogicAttached ? "" : "text-muted"}>
+            {hasLogicAttached ? "Logic attached" : "Drag bottom dot to attach Logic"}
+          </span>
+        </div>
+      )}
+
+      {type !== "handoff" && !hasBranchHandles && (
         <Handle
           type="source"
           position={Position.Right}
           className={HANDLE_CLASS}
           style={{ background: HANDLE_COLOR }}
+        />
+      )}
+
+      {type === "ai" && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="logic"
+          className={`${HANDLE_CLASS} !bottom-[-6px] !left-1/2 !-translate-x-1/2`}
+          style={{ background: LOGIC_HANDLE_COLOR }}
         />
       )}
     </div>

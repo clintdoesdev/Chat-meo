@@ -7,6 +7,13 @@ const ConditionBranchSchema = z.object({
   value: z.string(),
 });
 
+const LogicRuleSchema = z.object({
+  id: z.string().min(1),
+  label: z.string(),
+  triggers: z.string(),
+  reply: z.string(),
+});
+
 const FlowNodeDataSchema = z.object({
   label: z.string(),
   text: z.string().optional(),
@@ -22,6 +29,7 @@ const FlowNodeDataSchema = z.object({
   temperature: z.number().min(0).max(1).optional(),
   variable: z.string().optional(),
   branches: z.array(ConditionBranchSchema).optional(),
+  rules: z.array(LogicRuleSchema).optional(),
   question: z.string().optional(),
   variableName: z.string().optional(),
   url: z.string().optional(),
@@ -32,7 +40,7 @@ const FlowNodeDataSchema = z.object({
 
 const FlowNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["start", "message", "ai", "condition", "capture", "webhook", "handoff", "link"]),
+  type: z.enum(["start", "message", "ai", "condition", "capture", "webhook", "handoff", "link", "logic"]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: FlowNodeDataSchema,
   deletable: z.boolean().optional(),

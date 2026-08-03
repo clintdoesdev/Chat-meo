@@ -8,7 +8,8 @@ export type FlowNodeKind =
   | "capture"
   | "webhook"
   | "handoff"
-  | "link";
+  | "link"
+  | "logic";
 
 // Deliberately a plain string rather than a fixed union: which model ids are valid depends on
 // which AI provider is active (see src/lib/ai/providers.ts) — xAI's are a small fixed set, but
@@ -22,6 +23,18 @@ export type ConditionBranch = {
   id: string;
   label: string;
   value: string;
+};
+
+export type LogicRule = {
+  id: string;
+  label: string;
+  // Comma-separated keywords/phrases matched (case-insensitively, contains-match) against the
+  // visitor's message that triggered this turn. Empty means "anything else" — a catch-all,
+  // same convention as ConditionBranch's empty value.
+  triggers: string;
+  // Sent verbatim (after {{variable}} interpolation) when this rule fires — supports markdown
+  // links, e.g. "Here's the link: [Pay now](https://...)". Empty means "route only, no reply".
+  reply: string;
 };
 
 export type FlowNodeData = {
@@ -40,6 +53,8 @@ export type FlowNodeData = {
   // condition
   variable?: string;
   branches?: ConditionBranch[];
+  // logic
+  rules?: LogicRule[];
   // capture
   question?: string;
   variableName?: string;
@@ -99,7 +114,32 @@ export const NODE_KINDS: NodeKindMeta[] = [
     },
     inPalette: true,
     description:
-      "Lets the AI write a reply based on a system prompt you set, the conversation so far, and any documents you upload for it to reference.",
+      "Lets the AI write a reply based on a system prompt you set, the conversation so far, and any " +
+      "documents you upload for it to reference. Drag from its bottom dot to attach a Logic node for " +
+      "hard rules the AI should always follow.",
+  },
+  {
+    kind: "logic",
+    label: "Logic",
+    color: "#B98CFF",
+    defaultData: {
+      label: "Logic",
+      rules: [
+        {
+          id: "rule-1",
+          label: "Asks for a payment link",
+          triggers: "payment, invoice, pay now, checkout",
+          reply: "Sure — here's your payment link: [Pay now](https://example.com/pay)",
+        },
+        { id: "rule-2", label: "Anything else", triggers: "", reply: "" },
+      ],
+    },
+    inPalette: true,
+    description:
+      "Drag this off an AI node's bottom dot to give it hard rules to check before it replies — " +
+      "\"if they ask for a payment link, send this\", \"if they say X, route to Y instead.\" A rule " +
+      "can send a canned reply, jump the conversation to another node, or both. Anything that " +
+      "doesn't match falls through to the AI as normal.",
   },
   {
     kind: "condition",

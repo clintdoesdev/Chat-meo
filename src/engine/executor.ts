@@ -8,6 +8,7 @@ import type {
   FlowNode,
   LlmChatMessage,
   LlmUsage,
+  LogicRule,
   Reply,
 } from "./types";
 
@@ -56,6 +57,24 @@ function matchBranch(branches: ConditionBranch[], rawValue: string): ConditionBr
     branches.find((branch) => branch.value === "") ??
     branches[0]
   );
+}
+
+/** Same contains-match idea as matchBranch, but for Logic rules: comma-separated keywords
+ * checked against the visitor's raw message, with an empty-triggers rule acting as the
+ * catch-all (same convention as ConditionBranch's empty value). Unlike matchBranch, a Logic
+ * node with nothing that matches and no catch-all rule returns undefined rather than falling
+ * back to the first rule — "no rule applies" needs to be distinguishable from "the first rule
+ * applies", since the former means "let the AI handle it" when attached to an AI node. */
+function matchLogicRule(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
+  const message = rawMessage.toLowerCase();
+  const explicit = rules.find((rule) => {
+    const keywords = rule.triggers
+      .split(",")
+      .map((keyword) => keyword.trim().toLowerCase())
+      .filter(Boolean);
+    return keywords.length > 0 && keywords.some((keyword) => message.includes(keyword));
+  });
+  return explicit ?? rules.find((rule) => rule.triggers.trim() === "");
 }
 
 async function callWebhook(
@@ -167,6 +186,39 @@ export async function step(
       }
 
       case "ai": {
+        // A Logic node wired off this AI node's dedicated "logic" source handle gets first look
+        // at the visitor's message — a matched rule pre-empts the LLM entirely for this turn
+        // (reply and/or reroute), same as the standalone "logic" case below. Only ever consulted
+        // when there's an actual visitor message driving this turn, so it can't fire on the
+        // very first (unprompted) greeting.
+        const logicEdge = graph.edges.find(
+          (edge) => edge.source === node.id && edge.sourceHandle === "logic",
+        );
+        const logicNode = logicEdge ? findNode(graph, logicEdge.target) : undefined;
+        const matchedRule =
+          input !== undefined && logicNode?.type === "logic"
+            ? matchLogicRule(logicNode.data.rules, input)
+            : undefined;
+
+        if (matchedRule) {
+          if (matchedRule.reply.trim()) {
+            const text = interpolate(matchedRule.reply, variables);
+            replies.push({ content: text });
+            history.push({ role: "assistant", content: text });
+          }
+          const branchEdge = edgeForBranch(graph, logicNode!.id, matchedRule.id);
+          if (branchEdge) {
+            currentNodeId = branchEdge.target;
+          } else {
+            // No route wired for this rule: same "nothing wired after this AI node" behavior as
+            // below — stay put and keep the conversation open rather than ending it.
+            status = "AWAITING_INPUT";
+            currentNodeId = node.id;
+            walking = false;
+          }
+          break;
+        }
+
         const systemPrompt = interpolate(node.data.systemPrompt ?? "", variables);
         let content: string;
         let usage: LlmUsage | undefined;
@@ -201,6 +253,27 @@ export async function step(
           status = "AWAITING_INPUT";
           currentNodeId = node.id;
           walking = false;
+        }
+        break;
+      }
+
+      case "logic": {
+        // Reached directly (rather than as an AI node's attachment, see the "ai" case above) —
+        // behaves like a Condition node keyed off the visitor's message instead of a stored
+        // variable, with an optional canned reply per matched rule.
+        const matched = input !== undefined ? matchLogicRule(node.data.rules, input) : undefined;
+        if (matched) {
+          if (matched.reply.trim()) {
+            const text = interpolate(matched.reply, variables);
+            replies.push({ content: text });
+            history.push({ role: "assistant", content: text });
+          }
+          const edge = edgeForBranch(graph, node.id, matched.id);
+          currentNodeId = edge?.target ?? null;
+          if (!edge) status = "ENDED";
+        } else {
+          status = "ENDED";
+          currentNodeId = null;
         }
         break;
       }

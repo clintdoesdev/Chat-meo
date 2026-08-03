@@ -1214,6 +1214,28 @@ export function NodesConditionIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function NodesLogicIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="9" y="7" width="46" height="50" rx="9" fill="none" stroke="currentColor" strokeWidth="4.5" />
+      <path
+        d="M18 22h20M18 32h28M18 42h16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function NodesDelayIcon({ size = 16, className }: IconProps) {
   return (
     <svg
