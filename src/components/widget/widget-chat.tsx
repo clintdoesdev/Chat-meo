@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CommsSendIcon } from "@/components/icons";
-import { linkify } from "@/components/linkify";
+import { formatMessage } from "@/components/format-message";
 
 type ChatMessage = { id: string; role: "user" | "bot"; content: string };
 
@@ -208,7 +208,7 @@ export function WidgetChat({
                 <MeoDot />
               </span>
             )}
-            <div className={`cm-bubble cm-${message.role}`}>{linkify(message.content, "cm-link")}</div>
+            <div className={`cm-bubble cm-${message.role}`}>{formatMessage(message.content, "cm-link")}</div>
           </div>
         ))}
         {sending && (

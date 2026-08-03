@@ -238,7 +238,7 @@ export async function step(
       case "link": {
         const url = interpolate(node.data.url, variables);
         const linkText = node.data.linkText ? interpolate(node.data.linkText, variables) : "";
-        // On its own line so the widget's existing URL auto-linking (see linkify.tsx) turns it
+        // On its own line so the widget's existing URL auto-linking (see format-message.tsx) turns it
         // into a real clickable link without this node needing its own reply/message schema.
         const text = linkText ? `${linkText}\n${url}` : url;
         replies.push({ content: text });

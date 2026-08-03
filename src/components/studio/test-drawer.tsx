@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActionsCloseIcon, ActionsUndoIcon, CommsSendIcon } from "@/components/icons";
-import { linkify } from "@/components/linkify";
+import { formatMessage } from "@/components/format-message";
 import { MeoMark } from "@/components/meo-mark";
 import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 import type { EngineState } from "@/engine/types";
@@ -199,7 +199,7 @@ export function TestDrawer({
                       : "rounded-bl-md bg-card-2 text-text"
                   }`}
                 >
-                  {linkify(message.content, "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100")}
+                  {formatMessage(message.content, "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100")}
                 </div>
               </div>
             ))}

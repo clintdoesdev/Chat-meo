@@ -2,7 +2,7 @@
 
 import { ActionsCloseIcon, AnimatedSpinnerIcon, NodesMessageIcon } from "@/components/icons";
 import { useState } from "react";
-import { linkify } from "@/components/linkify";
+import { formatMessage } from "@/components/format-message";
 import { MeoMark } from "@/components/meo-mark";
 import { getConversationMessages, type ConversationDetail } from "@/lib/actions/inbox";
 import { timeAgo } from "@/lib/time";
@@ -214,7 +214,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
                         : "rounded-bl-md bg-card-2 text-text"
                     }`}
                   >
-                    {linkify(
+                    {formatMessage(
                       message.content,
                       "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
                     )}

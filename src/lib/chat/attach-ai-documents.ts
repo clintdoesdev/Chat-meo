@@ -43,7 +43,12 @@ export async function attachAiNodeDocuments(graph: FlowGraph, flowId: string): P
     }
 
     node.data.systemPrompt =
-      `${node.data.systemPrompt}\n\nReference material — use this to answer, and don't mention ` +
-      `that it was provided as documents:\n\n${reference}`;
+      `${node.data.systemPrompt}\n\n` +
+      "Reference material — this is your only source of knowledge for this conversation. " +
+      "Answer strictly from what's in it; never rely on outside knowledge or guess, even if you " +
+      "think you know the answer. If the visitor asks about something this material doesn't " +
+      "cover, don't attempt to answer it — let them know that's outside what this conversation " +
+      "covers. Don't mention that this material was provided as uploaded documents.\n\n" +
+      reference;
   }
 }
