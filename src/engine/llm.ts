@@ -24,9 +24,9 @@ const MAX_HISTORY_MESSAGES = 12;
 // models, e.g. DeepSeek R1/QwQ) spend a chunk of the token budget on hidden "thinking" tokens
 // before ever emitting visible content, and a full reply for those routinely blew straight
 // through 400 — the model would hit the cap mid-thought and return an empty message with
-// finish_reason "length". 1024 gives real replies (and that hidden reasoning) enough headroom
+// finish_reason "length". 1400 gives real replies (and that hidden reasoning) more headroom
 // while still bounding cost/latency.
-const MAX_TOKENS = 1024;
+const MAX_TOKENS = 1400;
 const MAX_EMPTY_REPLY_ATTEMPTS = 2;
 
 function hasModelOverride(): boolean {
