@@ -45,6 +45,14 @@ export type WebhookNode = {
   data: { url: string; method: string };
 };
 
+export type LinkNode = {
+  id: string;
+  type: "link";
+  /** `linkText` is the label shown above the URL (e.g. "Book a call") — optional, since a bare
+   * URL is still a valid reply. */
+  data: { url: string; linkText?: string };
+};
+
 export type HandoffNode = {
   id: string;
   type: "handoff";
@@ -60,7 +68,8 @@ export type FlowNode =
   | ConditionNode
   | CaptureNode
   | WebhookNode
-  | HandoffNode;
+  | HandoffNode
+  | LinkNode;
 
 export type FlowNodeKind = FlowNode["type"];
 

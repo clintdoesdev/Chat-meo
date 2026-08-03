@@ -7,7 +7,8 @@ export type FlowNodeKind =
   | "condition"
   | "capture"
   | "webhook"
-  | "handoff";
+  | "handoff"
+  | "link";
 
 // Deliberately a plain string rather than a fixed union: which model ids are valid depends on
 // which AI provider is active (see src/lib/ai/providers.ts) — xAI's are a small fixed set, but
@@ -42,9 +43,11 @@ export type FlowNodeData = {
   // capture
   question?: string;
   variableName?: string;
-  // webhook
+  // webhook / link
   url?: string;
   method?: WebhookMethod;
+  // link — the label shown above the URL, e.g. "Book a call" or "View pricing"
+  linkText?: string;
   // handoff
   note?: string;
 };
@@ -130,6 +133,15 @@ export const NODE_KINDS: NodeKindMeta[] = [
     defaultData: { label: "Webhook", url: "https://", method: "POST" },
     inPalette: true,
     description: "Calls an external URL (your own API, Zapier, etc.) while the conversation is running.",
+  },
+  {
+    kind: "link",
+    label: "Send link",
+    color: "#4EC5D8",
+    defaultData: { label: "Send link", linkText: "Learn more", url: "https://" },
+    inPalette: true,
+    description:
+      "Shares a clickable link — pricing pages, booking pages, docs, anything visitors need to click through to.",
   },
   {
     kind: "handoff",

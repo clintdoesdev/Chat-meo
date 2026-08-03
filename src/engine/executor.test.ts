@@ -102,6 +102,70 @@ describe("step: linear flow", () => {
   });
 });
 
+describe("step: link node", () => {
+  it("sends the link text and URL on separate lines so the widget can auto-link the URL", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "link-1", type: "link", data: { url: "https://example.com/pricing", linkText: "View pricing" } }],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "link-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([{ content: "View pricing\nhttps://example.com/pricing" }]);
+    expect(output.state.status).toBe("ENDED");
+  });
+
+  it("sends just the bare URL when no link text is set", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "link-1", type: "link", data: { url: "https://example.com" } }],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "link-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([{ content: "https://example.com" }]);
+  });
+
+  it("interpolates {{variables}} into both the link text and the URL", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        {
+          id: "link-1",
+          type: "link",
+          data: { url: "https://example.com/u/{{userId}}", linkText: "View {{name}}'s profile" },
+        },
+      ],
+      edges: [],
+    };
+    const state: EngineState = {
+      currentNodeId: "link-1",
+      variables: { userId: "42", name: "Ada" },
+      status: "RUNNING",
+    };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([{ content: "View Ada's profile\nhttps://example.com/u/42" }]);
+  });
+
+  it("continues to the next node like a message node", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "link-1", type: "link", data: { url: "https://example.com" } },
+        { id: "msg-1", type: "message", data: { text: "Anything else?" } },
+      ],
+      edges: [{ id: "e1", source: "link-1", target: "msg-1" }],
+    };
+    const state: EngineState = { currentNodeId: "link-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([
+      { content: "https://example.com" },
+      { content: "Anything else?" },
+    ]);
+    expect(output.state.status).toBe("ENDED");
+  });
+});
+
 describe("step: capture pause/resume", () => {
   const graph: FlowGraph = {
     nodes: [

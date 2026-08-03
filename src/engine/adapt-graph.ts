@@ -51,6 +51,8 @@ function adaptNode(node: PersistedNode): FlowNode | null {
       };
     case "handoff":
       return { id: node.id, type: "handoff", data: { note: data.note } };
+    case "link":
+      return { id: node.id, type: "link", data: { url: data.url ?? "", linkText: data.linkText } };
     default:
       return null;
   }

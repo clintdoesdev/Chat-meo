@@ -26,6 +26,7 @@ import { FlowNodeView } from "@/components/studio/flow-node";
 import { MobileAddNodeButton, MobileNodePickerSheet } from "@/components/studio/mobile-node-picker";
 import { StudioNodeActionsContext } from "@/components/studio/node-actions-context";
 import { NodeInspector } from "@/components/studio/node-inspector";
+import { NodeIssuesContext } from "@/components/studio/node-issues-context";
 import { NodePalette } from "@/components/studio/node-palette";
 import { TestDrawer } from "@/components/studio/test-drawer";
 import { Toast } from "@/components/studio/toast";
@@ -50,6 +51,7 @@ const nodeTypes = {
   capture: FlowNodeView,
   webhook: FlowNodeView,
   handoff: FlowNodeView,
+  link: FlowNodeView,
 };
 
 type BotSummary = {
@@ -110,8 +112,21 @@ function withDeletable(nodes: FlowNode[]): FlowNode[] {
   return nodes.map((node) => ({ ...node, deletable: node.type !== "start" }));
 }
 
-/** Nodes unreachable from Start (via edges), and AI nodes with no system prompt set. */
-function computeFlowIssues(nodes: FlowNode[], edges: FlowEdge[]): string[] {
+type NodeIssue = { nodeId: string; message: string };
+
+/** A URL field that's still just the placeholder scheme (or blank) isn't a real destination —
+ * same bar for both webhook and link nodes. */
+function isRealUrl(url: string | undefined): boolean {
+  const trimmed = (url ?? "").trim();
+  return trimmed.length > 0 && trimmed !== "https://" && trimmed !== "http://";
+}
+
+/** One issue per node that isn't actually usable yet, so the flow author can see — right on the
+ * node itself, via NodeIssuesContext, as well as summarized in the top banner — exactly what's
+ * missing instead of discovering it only when a real visitor hits a dead end. A node unreachable
+ * from Start only reports that one issue; its other fields might also be incomplete, but wiring
+ * it in is the more useful first fix to surface. */
+function computeNodeIssues(nodes: FlowNode[], edges: FlowEdge[]): NodeIssue[] {
   const startNode = nodes.find((node) => node.type === "start");
   const reachable = new Set<string>();
   if (startNode) {
@@ -128,19 +143,76 @@ function computeFlowIssues(nodes: FlowNode[], edges: FlowEdge[]): string[] {
     }
   }
 
-  const orphanCount = nodes.filter((node) => node.type !== "start" && !reachable.has(node.id)).length;
-  const emptyPromptCount = nodes.filter(
-    (node) => node.type === "ai" && !(node.data.systemPrompt ?? "").trim(),
-  ).length;
+  const issues: NodeIssue[] = [];
+  for (const node of nodes) {
+    if (node.type !== "start" && !reachable.has(node.id)) {
+      issues.push({ nodeId: node.id, message: "Not connected to Start" });
+      continue;
+    }
 
-  const issues: string[] = [];
-  if (orphanCount > 0) {
-    issues.push(`${orphanCount} node${orphanCount > 1 ? "s" : ""} not connected to Start`);
-  }
-  if (emptyPromptCount > 0) {
-    issues.push(`${emptyPromptCount} AI node${emptyPromptCount > 1 ? "s" : ""} missing a prompt`);
+    switch (node.type) {
+      case "message":
+        if (!(node.data.text ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "No message text set" });
+        }
+        break;
+      case "ai":
+        if (!(node.data.systemPrompt ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "Missing a system prompt" });
+        } else if (!(node.data.model ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "Missing a model" });
+        }
+        break;
+      case "condition": {
+        const branches = node.data.branches ?? [];
+        if (branches.length === 0) {
+          issues.push({ nodeId: node.id, message: "No branches set" });
+        } else {
+          const unwired = branches.filter(
+            (branch) => !edges.some((edge) => edge.source === node.id && edge.sourceHandle === branch.id),
+          );
+          if (unwired.length > 0) {
+            issues.push({
+              nodeId: node.id,
+              message: `${unwired.length} branch${unwired.length > 1 ? "es" : ""} not connected to anything`,
+            });
+          }
+        }
+        break;
+      }
+      case "capture":
+        if (!(node.data.question ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "Missing a question" });
+        } else if (!(node.data.variableName ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "Missing a variable name" });
+        }
+        break;
+      case "webhook":
+        if (!isRealUrl(node.data.url)) {
+          issues.push({ nodeId: node.id, message: "Missing a URL" });
+        }
+        break;
+      case "link":
+        if (!isRealUrl(node.data.url)) {
+          issues.push({ nodeId: node.id, message: "Missing a URL" });
+        }
+        break;
+      default:
+        break;
+    }
   }
   return issues;
+}
+
+/** Groups computeNodeIssues' output for the top banner, which shows a short summary rather than
+ * one line per node — the per-node badge (see NodeIssuesContext) is what identifies *which*
+ * node. */
+function summarizeIssues(nodeIssues: NodeIssue[]): string[] {
+  const counts = new Map<string, number>();
+  for (const issue of nodeIssues) counts.set(issue.message, (counts.get(issue.message) ?? 0) + 1);
+  return [...counts.entries()].map(([message, count]) =>
+    count > 1 ? `${count} nodes: ${message}` : message,
+  );
 }
 
 function StudioCanvas({
@@ -190,7 +262,12 @@ function StudioCanvas({
     setPendingDeleteId(null);
   }, [pendingDeleteId, detailsNodeId, deleteElements]);
 
-  const issues = useMemo(() => computeFlowIssues(nodes, edges), [nodes, edges]);
+  const nodeIssues = useMemo(() => computeNodeIssues(nodes, edges), [nodes, edges]);
+  const nodeIssueMap = useMemo(
+    () => Object.fromEntries(nodeIssues.map((issue) => [issue.nodeId, issue.message])),
+    [nodeIssues],
+  );
+  const issues = useMemo(() => summarizeIssues(nodeIssues), [nodeIssues]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const lastIssueSignatureRef = useRef("");
   useEffect(() => {
@@ -551,6 +628,13 @@ function StudioCanvas({
         />
 
         <div ref={canvasRef} className="studio-flow-canvas relative min-h-[380px] flex-1 bg-[#0C0C0C]">
+          {paletteDrag && (
+            <div className="pointer-events-none absolute inset-2 z-10 flex items-start justify-center rounded-[14px] border-2 border-dashed border-orange-2/60 bg-orange-2/5 pt-4">
+              <span className="rounded-full border border-orange-2/40 bg-[#1c1c1c]/90 px-3 py-1.5 text-[12px] font-semibold text-orange-2 shadow-[0_12px_30px_-10px_rgba(0,0,0,.9)]">
+                Drop here to add
+              </span>
+            </div>
+          )}
           <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
             <defs>
               <linearGradient id="studio-edge-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -560,21 +644,23 @@ function StudioCanvas({
             </defs>
           </svg>
           <StudioNodeActionsContext.Provider value={nodeActions}>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              nodeTypes={nodeTypes}
-              colorMode="dark"
-              fitView
-              fitViewOptions={{ maxZoom: 1 }}
-              proOptions={{ hideAttribution: true }}
-              deleteKeyCode={["Backspace", "Delete"]}
-            >
-              <Background gap={24} color="rgba(255,255,255,.06)" />
-            </ReactFlow>
+            <NodeIssuesContext.Provider value={nodeIssueMap}>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                nodeTypes={nodeTypes}
+                colorMode="dark"
+                fitView
+                fitViewOptions={{ maxZoom: 1 }}
+                proOptions={{ hideAttribution: true }}
+                deleteKeyCode={["Backspace", "Delete"]}
+              >
+                <Background gap={24} color="rgba(255,255,255,.06)" />
+              </ReactFlow>
+            </NodeIssuesContext.Provider>
           </StudioNodeActionsContext.Provider>
           <ZoomPill />
           {!bannerDismissed && (

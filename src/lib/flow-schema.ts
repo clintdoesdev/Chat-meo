@@ -26,12 +26,13 @@ const FlowNodeDataSchema = z.object({
   variableName: z.string().optional(),
   url: z.string().optional(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+  linkText: z.string().optional(),
   note: z.string().optional(),
 });
 
 const FlowNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["start", "message", "ai", "condition", "capture", "webhook", "handoff"]),
+  type: z.enum(["start", "message", "ai", "condition", "capture", "webhook", "handoff", "link"]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: FlowNodeDataSchema,
   deletable: z.boolean().optional(),

@@ -1,7 +1,9 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
+import { StatusWarningIcon } from "@/components/icons";
 import { NODE_KIND_ICON } from "@/components/studio/node-icons";
 import { useStudioNodeActions } from "@/components/studio/node-actions-context";
+import { useNodeIssue } from "@/components/studio/node-issues-context";
 import { NODE_KIND_META, type FlowNode, type FlowNodeData, type FlowNodeKind } from "@/lib/flow-types";
 
 const HANDLE_COLOR = "#FF5C16";
@@ -9,6 +11,12 @@ const HANDLE_CLASS = "!h-[9px] !w-[9px] !border-2 !border-[#0C0C0C]";
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
 const WOBBLE_MS = 400;
+// A short tap that releases before the long-press timer fires just wobbles the node — on its
+// own that's an easy signal to miss. Two or more of those in quick succession means someone's
+// actually trying (and failing) to open the node, so that's the cue to spell it out.
+const RAPID_TAP_WINDOW_MS = 900;
+const RAPID_TAP_THRESHOLD = 2;
+const TAP_HINT_VISIBLE_MS = 1800;
 
 function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
   switch (kind) {
@@ -23,6 +31,8 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
       return data.url ? `${data.method ?? "POST"} ${data.url}` : "No URL set";
     case "handoff":
       return data.note || "No note set";
+    case "link":
+      return data.url ? (data.linkText ? `${data.linkText} → ${data.url}` : data.url) : "No link set";
     default:
       return "";
   }
@@ -33,6 +43,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
   const color = meta?.color ?? "#FF5C16";
   const Icon = NODE_KIND_ICON[type ?? "message"];
   const branches = type === "condition" ? (data.branches ?? []) : [];
+  const issue = useNodeIssue(id);
   const { openDetails } = useStudioNodeActions();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,6 +51,10 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const firedRef = useRef(false);
   const [wobbling, setWobbling] = useState(false);
+  const rapidTapCountRef = useRef(0);
+  const rapidTapResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showTapHint, setShowTapHint] = useState(false);
 
   function clearPressTimer() {
     if (pressTimerRef.current) {
@@ -52,6 +67,21 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
     setWobbling(true);
     if (wobbleTimerRef.current) clearTimeout(wobbleTimerRef.current);
     wobbleTimerRef.current = setTimeout(() => setWobbling(false), WOBBLE_MS);
+  }
+
+  function registerRapidTap() {
+    rapidTapCountRef.current += 1;
+    if (rapidTapResetTimerRef.current) clearTimeout(rapidTapResetTimerRef.current);
+    rapidTapResetTimerRef.current = setTimeout(() => {
+      rapidTapCountRef.current = 0;
+    }, RAPID_TAP_WINDOW_MS);
+
+    if (rapidTapCountRef.current >= RAPID_TAP_THRESHOLD) {
+      rapidTapCountRef.current = 0;
+      setShowTapHint(true);
+      if (tapHintTimerRef.current) clearTimeout(tapHintTimerRef.current);
+      tapHintTimerRef.current = setTimeout(() => setShowTapHint(false), TAP_HINT_VISIBLE_MS);
+    }
   }
 
   // React Flow's own pointer handling on the node wrapper calls stopPropagation() on the
@@ -82,6 +112,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
       // A short tap that released before the long-press timer fired: just a wobble, no panel.
       if (wasPending && !firedRef.current) {
         triggerWobble();
+        registerRapidTap();
       }
     }
 
@@ -133,6 +164,8 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
     return () => {
       clearPressTimer();
       if (wobbleTimerRef.current) clearTimeout(wobbleTimerRef.current);
+      if (rapidTapResetTimerRef.current) clearTimeout(rapidTapResetTimerRef.current);
+      if (tapHintTimerRef.current) clearTimeout(tapHintTimerRef.current);
       node.removeEventListener("touchstart", handleTouchStart, { capture: true });
       node.removeEventListener("mousedown", handleMouseDown, { capture: true });
       window.removeEventListener("touchmove", handleWindowTouchMove, { capture: true });
@@ -147,7 +180,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
   return (
     <div
       ref={rootRef}
-      className={`w-[186px] rounded-[14px] border bg-[#161616] p-3 text-[12px] shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)] ${
+      className={`relative w-[186px] rounded-[14px] border bg-[#161616] p-3 text-[12px] shadow-[0_16px_40px_-18px_rgba(0,0,0,.9)] ${
         wobbling ? "node-wobble" : ""
       }`}
       style={{
@@ -161,6 +194,25 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         openDetails(id);
       }}
     >
+      {issue && (
+        <span
+          title={issue}
+          aria-label={`Needs attention: ${issue}`}
+          className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#161616] bg-orange-2 text-[#1A1108] shadow-[0_2px_6px_rgba(0,0,0,.5)]"
+        >
+          <StatusWarningIcon size={11} />
+        </span>
+      )}
+
+      {showTapHint && (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-20 w-max max-w-[160px] -translate-x-1/2 rounded-[10px] border border-line-2 bg-[#1c1c1c] px-2.5 py-1.5 text-center text-[10.5px] font-medium leading-snug text-text shadow-[0_12px_30px_-10px_rgba(0,0,0,.9)]"
+        >
+          Long-press (or right-click) to edit
+        </div>
+      )}
+
       {type !== "start" && (
         <Handle
           type="target"

@@ -19,6 +19,17 @@ function effectiveProviderId(raw: string | undefined): ProviderId {
   return raw && isProviderId(raw) ? raw : "xai";
 }
 
+// Catches prompts that have a fake transcript pasted into them (often copied from another
+// platform's template) — the engine already feeds real conversation history to the model as
+// separate messages (see toOpenAiMessages in src/engine/llm.ts), so a hardcoded "User: ...
+// Bot: ..." block in the system prompt itself is always redundant, wastes tokens, and can even
+// nudge the model to echo that exact scripted exchange back to real visitors.
+const TRANSCRIPT_PATTERN = /current conversation:|^\s*(user|visitor|customer)\s*:/im;
+
+function looksLikeHardcodedTranscript(prompt: string): boolean {
+  return TRANSCRIPT_PATTERN.test(prompt);
+}
+
 function newBranchId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -152,6 +163,18 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 rows={5}
                 className={`${fieldClass()} resize-y font-mono text-[13px] leading-relaxed`}
               />
+              {looksLikeHardcodedTranscript(data.systemPrompt ?? "") ? (
+                <p className="mt-1.5 text-[11px] text-orange-2">
+                  This looks like it has a fake conversation pasted in — the actual conversation
+                  is already sent to the AI automatically, so you can remove that part. Leaving it
+                  in wastes tokens and can make the AI repeat that exact scripted exchange.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-muted">
+                  Just describe how the AI should behave — the real conversation so far is
+                  included automatically, so there&apos;s no need to write it into this prompt.
+                </p>
+              )}
             </div>
             <div className="mb-3.5">
               <label className={labelClass()}>Provider</label>
@@ -351,6 +374,35 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               </label>
               <input
                 id="field-url"
+                value={data.url ?? ""}
+                onChange={(event) => onChange(node.id, { url: event.target.value })}
+                placeholder="https://"
+                className={fieldClass()}
+              />
+            </div>
+          </>
+        )}
+
+        {node.type === "link" && (
+          <>
+            <div className="mb-3.5">
+              <label htmlFor="field-link-text" className={labelClass()}>
+                Link text
+              </label>
+              <input
+                id="field-link-text"
+                value={data.linkText ?? ""}
+                onChange={(event) => onChange(node.id, { linkText: event.target.value })}
+                placeholder="e.g. Book a call"
+                className={fieldClass()}
+              />
+            </div>
+            <div className="mb-3.5">
+              <label htmlFor="field-link-url" className={labelClass()}>
+                URL
+              </label>
+              <input
+                id="field-link-url"
                 value={data.url ?? ""}
                 onChange={(event) => onChange(node.id, { url: event.target.value })}
                 placeholder="https://"
