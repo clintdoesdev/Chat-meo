@@ -10,6 +10,9 @@ const BodySchema = z.object({
   message: z.string().max(4000).optional(),
   sessionId: z.string().optional(),
   flowId: z.string().optional(),
+  priorHistory: z
+    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
+    .optional(),
 });
 
 /** Studio "Test" drawer only — runs the editor's current unsaved graph against the real

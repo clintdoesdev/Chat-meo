@@ -102,20 +102,28 @@ export async function step(
   let lastError: string | undefined;
 
   if (state.status === "AWAITING_INPUT") {
-    const captureNode = findNode(graph, currentNodeId);
-    if (!captureNode || captureNode.type !== "capture") {
+    const waitingNode = findNode(graph, currentNodeId);
+    // Capture nodes wait to store the answer into a variable and move on; AI nodes with
+    // nowhere to go next (see the "ai" case below) wait to keep the conversation itself going —
+    // the visitor's next message just re-runs the same AI node with the reply already in
+    // history. Anything else waiting is unexpected persisted state; end rather than loop.
+    if (!waitingNode || (waitingNode.type !== "capture" && waitingNode.type !== "ai")) {
       return { replies: [], state: { ...state, status: "ENDED" } };
     }
     if (input === undefined) {
       return { replies: [], state };
     }
-    variables[captureNode.data.variableName] = input;
     history.push({ role: "user", content: input });
-    const edge = nextEdge(graph, captureNode.id);
-    if (!edge) {
-      return { replies: [], state: { currentNodeId: null, variables, status: "ENDED" } };
+    if (waitingNode.type === "capture") {
+      variables[waitingNode.data.variableName] = input;
+      const edge = nextEdge(graph, waitingNode.id);
+      if (!edge) {
+        return { replies: [], state: { currentNodeId: null, variables, status: "ENDED" } };
+      }
+      currentNodeId = edge.target;
+    } else {
+      currentNodeId = waitingNode.id;
     }
-    currentNodeId = edge.target;
   } else if (input !== undefined) {
     history.push({ role: "user", content: input });
   }
@@ -183,8 +191,17 @@ export async function step(
         });
         history.push({ role: "assistant", content });
         const edge = nextEdge(graph, node.id);
-        currentNodeId = edge?.target ?? null;
-        if (!edge) status = "ENDED";
+        if (edge) {
+          currentNodeId = edge.target;
+        } else {
+          // Nothing wired after this AI node: stay here and keep the conversation open rather
+          // than ending it — an AI node replies automatically and keeps chatting by default,
+          // only actually ending when something explicitly routes it elsewhere (a condition to
+          // Handoff, a dead-end Message node, etc.).
+          status = "AWAITING_INPUT";
+          currentNodeId = node.id;
+          walking = false;
+        }
         break;
       }
 

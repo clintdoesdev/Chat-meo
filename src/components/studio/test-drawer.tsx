@@ -23,6 +23,7 @@ async function postTestTurn(body: {
   message?: string;
   sessionId: string;
   flowId?: string;
+  priorHistory?: { role: "user" | "assistant"; content: string }[];
 }): Promise<{ replies: { content: string }[]; state: EngineState } | null> {
   const res = await fetch("/api/chat/test", {
     method: "POST",
@@ -69,6 +70,14 @@ export function TestDrawer({
 
   async function sendTurn(userMessage: string | undefined) {
     setSending(true);
+    // Read before appending this turn's own message below, same reasoning as runChatTurn's
+    // priorMessages fetch — the Test drawer has no Message table to reload from (see
+    // runTestTurn's priorHistory doc comment), so this client-side transcript is the only
+    // memory an AI node has of anything before the current turn.
+    const priorHistory = messages.map((message) => ({
+      role: (message.role === "user" ? "user" : "assistant") as "user" | "assistant",
+      content: message.content,
+    }));
     if (userMessage) {
       setMessages((prev) => [...prev, { id: newId(), role: "user", content: userMessage }]);
     }
@@ -78,6 +87,7 @@ export function TestDrawer({
       message: userMessage,
       sessionId,
       flowId,
+      priorHistory,
     });
     setSending(false);
 

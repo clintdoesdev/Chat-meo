@@ -391,8 +391,89 @@ describe("step: ai node", () => {
 
     expect(result.replies).toHaveLength(1);
     expect(result.replies[0].content).not.toBe("");
-    expect(result.state.status).toBe("ENDED");
+    // Dead-end AI node: even after a fallback reply, the conversation stays open rather than
+    // ending — see "step: ai node with no outgoing edge" below.
+    expect(result.state.status).toBe("AWAITING_INPUT");
+    expect(result.state.currentNodeId).toBe("ai-1");
     expect(result.state.lastError).toBe("upstream 500");
+  });
+});
+
+describe("step: ai node with no outgoing edge stays open for more chatting", () => {
+  const graph: FlowGraph = {
+    nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } }],
+    edges: [],
+  };
+
+  it("replies and waits for more input instead of ending the conversation", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "Hi", deps);
+
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+    expect(output.state).toEqual({
+      currentNodeId: "ai-1",
+      variables: {},
+      status: "AWAITING_INPUT",
+    });
+  });
+
+  it("is a no-op when awaiting more input but none is supplied yet", async () => {
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const awaiting: EngineState = { currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" };
+
+    const output = await step(graph, awaiting, undefined, deps);
+
+    expect(output.replies).toEqual([]);
+    expect(output.state).toEqual(awaiting);
+    expect(llmMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps replying across many turns, feeding each new message to the same AI node", async () => {
+    const llmMock = vi
+      .fn()
+      .mockResolvedValueOnce({ content: "Hi! What's up?" })
+      .mockResolvedValueOnce({ content: "Nice to hear!" })
+      .mockResolvedValueOnce({ content: "Anytime." });
+    const deps = createDeps({ llm: llmMock });
+
+    let state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+    const turn1 = await step(graph, state, "Hi", deps);
+    expect(turn1.replies).toEqual([{ content: "Hi! What's up?" }]);
+    state = turn1.state;
+
+    const turn2 = await step(graph, state, "All good, thanks", deps);
+    expect(turn2.replies).toEqual([{ content: "Nice to hear!" }]);
+    state = turn2.state;
+
+    const turn3 = await step(graph, state, "Thanks for your help", deps);
+    expect(turn3.replies).toEqual([{ content: "Anytime." }]);
+
+    expect(llmMock).toHaveBeenCalledTimes(3);
+    // Every call still targets the same never-ending AI node.
+    expect(state.currentNodeId).toBe("ai-1");
+    expect(state.status).toBe("AWAITING_INPUT");
+  });
+
+  it("still ends normally when routed to a real dead end (e.g. a Message node with no edge)", async () => {
+    const messageDeadEnd: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        { id: "msg-1", type: "message", data: { text: "Bye!" } },
+      ],
+      edges: [{ id: "e1", source: "ai-1", target: "msg-1" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "One sec." }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(messageDeadEnd, state, "bye", deps);
+
+    expect(output.replies).toEqual([{ content: "One sec." }, { content: "Bye!" }]);
+    expect(output.state.status).toBe("ENDED");
   });
 });
 
