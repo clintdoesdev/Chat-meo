@@ -16,7 +16,7 @@ function formatSize(charCount: number): string {
 }
 
 /**
- * Lets a flow author attach reference documents (txt/md/pdf) to an AI node — their extracted
+ * Lets a flow author attach reference documents (txt/md/pdf/docx) to an AI node — their extracted
  * text gets appended to the node's system prompt at conversation time (see
  * src/lib/chat/attach-ai-documents.ts), so the model can answer from them without the author
  * having to paste everything into the prompt by hand.
@@ -90,7 +90,7 @@ export function KnowledgeUpload({ flowId, nodeId }: { flowId: string; nodeId: st
     <div className="mb-3.5">
       <label className="mb-1.5 block text-xs font-semibold text-muted">Knowledge</label>
       <p className="mb-2 text-[11px] leading-relaxed text-muted">
-        Upload docs (.txt, .md, .pdf) for this AI to reference when it replies.
+        Upload docs (.txt, .md, .pdf, .docx) for this AI to reference when it replies.
       </p>
 
       <div className="mb-2 flex flex-col gap-1.5">
@@ -127,7 +127,7 @@ export function KnowledgeUpload({ flowId, nodeId }: { flowId: string; nodeId: st
       <input
         ref={fileInputRef}
         type="file"
-        accept=".txt,.md,.pdf"
+        accept=".txt,.md,.pdf,.docx"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
