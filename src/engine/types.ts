@@ -158,6 +158,13 @@ export type EngineChannel = "web" | "webhook";
 
 export type EngineDeps = {
   llm: LlmDep;
+  /** A separate, non-conversational LLM call used to decide whether the visitor's message
+   * matches a Logic rule *by meaning* rather than by literal keyword — see matchLogicRule's
+   * keyword pass in executor.ts, which this only runs after. Deliberately not the same
+   * dependency as `llm`: that one always gets the bot persona's instructions appended (see
+   * PERSONA_GUARD in engine/llm.ts), which would corrupt a classification prompt that needs a
+   * bare rule id back, not a conversational reply. */
+  classify: LlmDep;
   fetch: typeof fetch;
   logger: LoggerDep;
   /** Passed through to webhook node payloads; not otherwise used by the engine. */

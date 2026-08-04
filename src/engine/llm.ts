@@ -77,6 +77,22 @@ function toOpenAiMessages(
   ];
 }
 
+// A classification prompt needs the model to answer with a bare rule id (or "NONE") — appending
+// PERSONA_GUARD's "reply as the bot persona, stay conversational" would actively fight that, so
+// this sends systemPrompt completely as-is instead of routing through toOpenAiMessages.
+function toClassifierMessages(
+  systemPrompt: string,
+  history: LlmChatMessage[],
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  return [
+    { role: "system", content: systemPrompt },
+    ...history.map((message): OpenAI.Chat.ChatCompletionMessageParam => ({
+      role: message.role,
+      content: message.content,
+    })),
+  ];
+}
+
 let cachedClient: OpenAI | null = null;
 let cachedBaseURL: string | null = null;
 
@@ -167,6 +183,34 @@ export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, 
   } catch (error) {
     const message = describeError(error, active.provider.name);
     console.error(`[providerLlm:${active.provider.id}] request failed:`, message);
+    throw new Error(message);
+  }
+};
+
+// A bare rule id (or "NONE") back is at most a few tokens — this just bounds a misbehaving
+// model's output rather than genuinely needing headroom the way a real reply does.
+const CLASSIFIER_MAX_TOKENS = 20;
+
+/** Powers Logic rules' semantic-match fallback (see matchLogicRule/classifySemanticMatch in
+ * executor.ts): given a short classification prompt and the visitor's message, expects a bare
+ * rule id back. No persona guard, no retry-on-empty (an empty/unparseable reply just means "no
+ * match" to the caller, which already treats a thrown error the same way) — this is a small,
+ * single-purpose call, not a conversational one. */
+export const classifierLlm: LlmDep = async ({ systemPrompt, history, temperature, model, provider }) => {
+  const active = resolveActiveProvider(provider);
+  const client = getClient(active);
+  try {
+    const completion = await client.chat.completions.create({
+      model: resolveModel(model, active),
+      messages: toClassifierMessages(systemPrompt, history),
+      temperature,
+      max_tokens: CLASSIFIER_MAX_TOKENS,
+    });
+    const choice = completion.choices[0];
+    return { content: choice?.message?.content?.trim() ?? "", usage: usageFrom(completion.usage) };
+  } catch (error) {
+    const message = describeError(error, active.provider.name);
+    console.error(`[classifierLlm:${active.provider.id}] request failed:`, message);
     throw new Error(message);
   }
 };

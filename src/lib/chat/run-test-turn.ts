@@ -1,6 +1,6 @@
 import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState, step } from "@/engine/executor";
-import { providerLlm } from "@/engine/llm";
+import { classifierLlm, providerLlm } from "@/engine/llm";
 import { parseEngineState } from "@/engine/state-schema";
 import type { EngineState, LlmChatMessage, LlmDep, Reply } from "@/engine/types";
 import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
@@ -49,6 +49,7 @@ export async function runTestTurn(params: RunTestTurnParams): Promise<RunTestTur
 
   const output = await step(graph, state, params.message, {
     llm,
+    classify: classifierLlm,
     fetch,
     logger: console,
     conversationId: params.sessionId ?? "test-session",

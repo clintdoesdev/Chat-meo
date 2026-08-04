@@ -17,6 +17,7 @@ export type RunTurnParams = {
 
 export type RunTurnDeps = {
   llm: LlmDep;
+  classify: LlmDep;
 };
 
 export type RunTurnResult =
@@ -128,6 +129,9 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
 
   const engineDeps: EngineDeps = {
     llm: (args) => deps.llm({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) }),
+    // Classification is a one-off "does this message mean X" call, not a conversational turn —
+    // it never needs prior message history mixed in the way the real reply does above.
+    classify: deps.classify,
     fetch,
     logger: console,
     conversationId: conversation.id,

@@ -63,22 +63,81 @@ function matchBranch(branches: ConditionBranch[], rawValue: string): ConditionBr
   );
 }
 
-/** Same contains-match idea as matchBranch, but for Logic rules: comma-separated keywords
- * checked against the visitor's raw message, with an empty-triggers rule acting as the
- * catch-all (same convention as ConditionBranch's empty value). Unlike matchBranch, a Logic
- * node with nothing that matches and no catch-all rule returns undefined rather than falling
- * back to the first rule — "no rule applies" needs to be distinguishable from "the first rule
- * applies", since the former means "let the AI handle it" when attached to an AI node. */
-function matchLogicRule(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
+/** Contains-match against a Logic rule's comma-separated keywords — the free, instant first
+ * pass. Deliberately excludes the empty-triggers catch-all (see catchAllRule below); the "ai"
+ * case only falls back to that after also trying a semantic match, so the two need to stay
+ * separate rather than one function silently covering both. */
+function matchLogicKeyword(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
   const message = rawMessage.toLowerCase();
-  const explicit = rules.find((rule) => {
+  return rules.find((rule) => {
     const keywords = rule.triggers
       .split(",")
       .map((keyword) => keyword.trim().toLowerCase())
       .filter(Boolean);
     return keywords.length > 0 && keywords.some((keyword) => message.includes(keyword));
   });
-  return explicit ?? rules.find((rule) => rule.triggers.trim() === "");
+}
+
+function catchAllRule(rules: LogicRule[]): LogicRule | undefined {
+  return rules.find((rule) => rule.triggers.trim() === "");
+}
+
+/** Keyword match, falling back to the catch-all rule (same convention as ConditionBranch's
+ * empty value) — used by the standalone "logic" case, which (unlike an AI-attached Logic node,
+ * see classifySemanticMatch) has no LLM of its own to run a semantic pass with. Unlike
+ * matchBranch, a Logic node with nothing that matches and no catch-all rule returns undefined
+ * rather than falling back to the first rule — "no rule applies" needs to be distinguishable
+ * from "the first rule applies". */
+function matchLogicRule(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
+  return matchLogicKeyword(rules, rawMessage) ?? catchAllRule(rules);
+}
+
+const NONE_TOKEN = "NONE";
+
+function buildClassifierPrompt(rules: LogicRule[]): string {
+  const lines = rules.map(
+    (rule) => `- id: ${rule.id} — matches messages similar in meaning to: "${rule.triggers}"`,
+  );
+  return (
+    "You are an intent classifier for a customer support chat bot. Decide whether the " +
+    "customer's latest message matches any of the rules below BY MEANING, not exact wording — " +
+    "customers phrase the same request many different ways.\n\n" +
+    `Rules:\n${lines.join("\n")}\n\n` +
+    `Respond with ONLY the matching rule's id exactly as written above, or the single word ` +
+    `${NONE_TOKEN} if none clearly applies. No punctuation, no explanation, nothing else.`
+  );
+}
+
+/** Semantic fallback for matchLogicRule's keyword pass, used only when attached to an AI node
+ * (see the "ai" case) — only called once the keyword pass finds nothing, and only against rules
+ * that actually have triggers text to compare meaning against (an empty-triggers catch-all is
+ * unconditional and needs no classifying). Never throws: a classifier failure — bad key,
+ * network error, a garbled response — just means "no semantic match", falling through exactly
+ * like a keyword miss would rather than breaking the turn. */
+async function classifySemanticMatch(
+  rules: LogicRule[],
+  message: string,
+  deps: EngineDeps,
+  model: string,
+  provider: string | undefined,
+): Promise<LogicRule | undefined> {
+  const candidates = rules.filter((rule) => rule.triggers.trim() !== "");
+  if (candidates.length === 0) return undefined;
+
+  try {
+    const result = await deps.classify({
+      systemPrompt: buildClassifierPrompt(candidates),
+      history: [{ role: "user", content: message }],
+      temperature: 0,
+      model,
+      provider,
+    });
+    const answer = result.content.trim();
+    return candidates.find((rule) => rule.id === answer);
+  } catch (error) {
+    deps.logger.error("[engine] Logic rule classification failed", error);
+    return undefined;
+  }
 }
 
 async function callWebhook(
@@ -192,17 +251,25 @@ export async function step(
       case "ai": {
         // A Logic node wired off this AI node's dedicated "logic" source handle gets first look
         // at the visitor's message — a matched rule pre-empts the LLM entirely for this turn
-        // (reply and/or reroute), same as the standalone "logic" case below. Only ever consulted
-        // when there's an actual visitor message driving this turn, so it can't fire on the
-        // very first (unprompted) greeting.
+        // (reply and/or reroute). Only ever consulted when there's an actual visitor message
+        // driving this turn, so it can't fire on the very first (unprompted) greeting.
         const logicEdge = graph.edges.find(
           (edge) => edge.source === node.id && edge.sourceHandle === "logic",
         );
         const logicNode = logicEdge ? findNode(graph, logicEdge.target) : undefined;
-        const candidateRule =
-          input !== undefined && logicNode?.type === "logic"
-            ? matchLogicRule(logicNode.data.rules, input)
-            : undefined;
+        const logicRules = logicNode?.type === "logic" ? logicNode.data.rules : undefined;
+
+        // Three passes, cheapest first: literal keywords (free, instant) → semantic similarity
+        // via a small classification call (only when keywords found nothing, and only against
+        // rules that actually have trigger text to compare meaning against) → the empty-triggers
+        // catch-all, if the author has one, as the final fallback.
+        let candidateRule: LogicRule | undefined;
+        if (input !== undefined && logicRules) {
+          candidateRule =
+            matchLogicKeyword(logicRules, input) ??
+            (await classifySemanticMatch(logicRules, input, deps, node.data.model, node.data.provider)) ??
+            catchAllRule(logicRules);
+        }
         const candidateBranchEdge = candidateRule ? edgeForBranch(graph, logicNode!.id, candidateRule.id) : undefined;
         // A rule with no reply and no route configured is a no-op — most often the default,
         // still-blank "Anything else" catch-all — so it must NOT preempt the LLM. Only an

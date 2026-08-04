@@ -251,12 +251,15 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
         {node.type === "logic" && (
           <>
             <p className="mb-3 rounded-lg border border-line-2 bg-card-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
-              Attach this to an AI node&apos;s bottom dot. Each turn, if the visitor&apos;s message
-              matches a rule that has a reply and/or a route, the AI is skipped entirely — that
-              reply is sent, and a wired dot routes the conversation elsewhere afterward. A rule
-              with no triggers matches anything, so it&apos;s a good catch-all — but leave both its
-              reply and route blank and it&apos;s a no-op, so the AI still handles that turn
-              normally.
+              Attach this to an AI node&apos;s bottom dot. Each turn, the visitor&apos;s message is
+              checked against your rules&apos; triggers — first for a literal match, then, if
+              nothing hits, the AI checks whether it means the same thing even if it&apos;s
+              worded completely differently. So &quot;I have made payments&quot; as a trigger will
+              also catch &quot;just sent the money over&quot; — you don&apos;t need to list every
+              phrasing. A rule that has a reply and/or a route wins and skips the AI for that
+              turn; a rule with no triggers matches anything, so it&apos;s a good catch-all — but
+              leave both its reply and route blank and it&apos;s a no-op, so the AI still handles
+              that turn normally.
             </p>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={labelClass().replace("mb-1.5 ", "")}>Rules</span>
@@ -297,7 +300,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                       next[index] = { ...rule, triggers: event.target.value };
                       onChange(node.id, { rules: next });
                     }}
-                    placeholder="Triggers, comma separated (blank = anything)"
+                    placeholder="e.g. I have made payments (similar phrasing counts too; blank = anything)"
                     className="mb-1.5 w-full bg-transparent text-[11.5px] text-muted placeholder:text-[#5C5C5C] focus:outline-none"
                   />
                   <textarea

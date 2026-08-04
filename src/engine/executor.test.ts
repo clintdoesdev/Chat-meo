@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInitialState, step } from "./executor";
-import type { EngineDeps, EngineState, FlowGraph } from "./types";
+import type { EngineDeps, EngineState, FlowGraph, LlmDep } from "./types";
 
 function createDeps(overrides: Partial<EngineDeps> = {}): EngineDeps {
   return {
     llm: vi.fn(async () => ({ content: "mock ai reply" })),
+    // Defaults to "no semantic match" so tests that don't care about classification (most of
+    // them) get the same fall-through behavior as if no classifier existed.
+    classify: vi.fn(async () => ({ content: "NONE" })),
     fetch: vi.fn(async () => new Response("ok", { status: 200 })) as unknown as typeof fetch,
     logger: { error: vi.fn(), info: vi.fn() },
     conversationId: "conv-1",
@@ -769,5 +772,131 @@ describe("step: logic node attached to an AI node", () => {
 
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
+  });
+});
+
+describe("step: logic node semantic (AI) matching", () => {
+  function buildGraph(): FlowGraph {
+    return {
+      nodes: [
+        {
+          id: "ai-1",
+          type: "ai",
+          data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, provider: "xai" },
+        },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Confirms payment",
+                triggers: "I have made payments",
+                reply: "Thanks — I've marked your payment as received!",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+  }
+
+  it("falls back to the classifier when no keyword literally matches, and fires the rule it names", async () => {
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const classifyMock = vi.fn(async () => ({ content: "rule-pay" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    // Nothing here literally contains "I have made payments" — only the classifier can catch it.
+    const output = await step(buildGraph(), state, "just sent the money over, should be there now", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Thanks — I've marked your payment as received!" }]);
+  });
+
+  it("calls the classifier with the attached AI node's own model/provider and no persona framing", async () => {
+    const classifyMock = vi.fn<LlmDep>(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    await step(buildGraph(), state, "hello there", deps);
+
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    const call = classifyMock.mock.calls[0][0];
+    expect(call.model).toBe("grok-main");
+    expect(call.provider).toBe("xai");
+    expect(call.temperature).toBe(0);
+    expect(call.history).toEqual([{ role: "user", content: "hello there" }]);
+    expect(call.systemPrompt).toContain("rule-pay");
+  });
+
+  it("skips the classifier entirely once a keyword already matched (no wasted call)", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, "I have made payments already", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Thanks — I've marked your payment as received!" }]);
+  });
+
+  it("skips the classifier when there are no rules with real trigger text to compare against", async () => {
+    const graph = buildGraph();
+    graph.nodes[1] = {
+      id: "logic-1",
+      type: "logic",
+      data: { rules: [{ id: "rule-else", label: "Anything else", triggers: "", reply: "" }] },
+    };
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hello there", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+  });
+
+  it("treats an unrecognized classifier response as no match and falls through to the LLM", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "some rambling non-id response" }));
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, "what's the weather like", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+  });
+
+  it("treats a classifier failure as no match instead of breaking the turn", async () => {
+    const classifyMock = vi.fn(async () => {
+      throw new Error("upstream 500");
+    });
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(buildGraph(), state, "what's the weather like", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+    expect(deps.logger.error).toHaveBeenCalled();
+  });
+
+  it("never calls the classifier on the unprompted first turn (no visitor message yet)", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    await step(buildGraph(), state, undefined, deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
   });
 });

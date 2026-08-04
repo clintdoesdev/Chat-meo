@@ -28,8 +28,11 @@ export type ConditionBranch = {
 export type LogicRule = {
   id: string;
   label: string;
-  // Comma-separated keywords/phrases matched (case-insensitively, contains-match) against the
-  // visitor's message that triggered this turn. Empty means "anything else" — a catch-all,
+  // Comma-separated keywords/phrases checked against the visitor's message that triggered this
+  // turn — first literally (case-insensitive, contains-match), then, only when attached to an
+  // AI node and nothing literally matched, by an AI classification pass that checks whether the
+  // message means the same thing (see classifySemanticMatch in engine/executor.ts), so authors
+  // don't have to enumerate every possible phrasing. Empty means "anything else" — a catch-all,
   // same convention as ConditionBranch's empty value.
   triggers: string;
   // Sent verbatim (after {{variable}} interpolation) when this rule fires — supports markdown
@@ -137,9 +140,11 @@ export const NODE_KINDS: NodeKindMeta[] = [
     inPalette: true,
     description:
       "Drag this off an AI node's bottom dot to give it hard rules to check before it replies — " +
-      "\"if they ask for a payment link, send this\", \"if they say X, route to Y instead.\" A rule " +
-      "can send a canned reply, jump the conversation to another node, or both. Anything that " +
-      "doesn't match falls through to the AI as normal.",
+      "\"if they ask for a payment link, send this\", \"if they say X, route to Y instead.\" Triggers " +
+      "don't need to be exact — the AI catches similar phrasing too, so \"I have made payments\" as " +
+      "a trigger also matches \"just sent the money over.\" A rule can send a canned reply, jump the " +
+      "conversation to another node, or both. Anything that doesn't match falls through to the AI as " +
+      "normal.",
   },
   {
     kind: "condition",
