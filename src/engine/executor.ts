@@ -96,15 +96,18 @@ const NONE_TOKEN = "NONE";
 
 function buildClassifierPrompt(rules: LogicRule[]): string {
   const lines = rules.map(
-    (rule) => `- id: ${rule.id} — matches messages similar in meaning to: "${rule.triggers}"`,
+    (rule) => `- id: ${rule.id} — matches messages that express the same specific request as: "${rule.triggers}"`,
   );
   return (
-    "You are an intent classifier for a customer support chat bot. Decide whether the " +
-    "customer's latest message matches any of the rules below BY MEANING, not exact wording — " +
-    "customers phrase the same request many different ways.\n\n" +
+    "You are a strict intent classifier for a customer support chat bot. Decide whether the " +
+    "customer's latest message expresses the SAME SPECIFIC REQUEST as one of the rules below — " +
+    "different wording is fine (customers phrase the same request many different ways), but the " +
+    "underlying request must genuinely be the same one, not just related or on the same topic.\n\n" +
     `Rules:\n${lines.join("\n")}\n\n` +
     `Respond with ONLY the matching rule's id exactly as written above, or the single word ` +
-    `${NONE_TOKEN} if none clearly applies. No punctuation, no explanation, nothing else.`
+    `${NONE_TOKEN} if none clearly and specifically applies. When in doubt, respond ${NONE_TOKEN} — ` +
+    "a missed match just means the AI answers normally, but a wrong match sends the customer an " +
+    "incorrect canned reply. No punctuation, no explanation, nothing else."
   );
 }
 

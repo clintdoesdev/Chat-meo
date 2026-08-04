@@ -831,6 +831,11 @@ describe("step: logic node semantic (AI) matching", () => {
     expect(call.temperature).toBe(0);
     expect(call.history).toEqual([{ role: "user", content: "hello there" }]);
     expect(call.systemPrompt).toContain("rule-pay");
+    // Guards against a classifier that fires too eagerly on merely-related messages: the prompt
+    // must tell it to require the same specific request, not just shared topic/wording, and to
+    // default to no match when it isn't sure.
+    expect(call.systemPrompt).toMatch(/same specific request/i);
+    expect(call.systemPrompt).toMatch(/when in doubt.*NONE/i);
   });
 
   it("skips the classifier entirely once a keyword already matched (no wasted call)", async () => {
