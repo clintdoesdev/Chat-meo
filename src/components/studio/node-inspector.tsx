@@ -252,10 +252,11 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
           <>
             <p className="mb-3 rounded-lg border border-line-2 bg-card-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
               Attach this to an AI node&apos;s bottom dot. Each turn, if the visitor&apos;s message
-              matches a rule&apos;s triggers, that rule&apos;s reply is sent (and the AI is skipped
-              entirely) — connect a rule&apos;s dot to route the conversation elsewhere afterward,
-              or leave it unwired to just reply and keep chatting. A rule with no triggers matches
-              anything, so it&apos;s a good catch-all.
+              matches a rule that has a reply and/or a route, the AI is skipped entirely — that
+              reply is sent, and a wired dot routes the conversation elsewhere afterward. A rule
+              with no triggers matches anything, so it&apos;s a good catch-all — but leave both its
+              reply and route blank and it&apos;s a no-op, so the AI still handles that turn
+              normally.
             </p>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={labelClass().replace("mb-1.5 ", "")}>Rules</span>

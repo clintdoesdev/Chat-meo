@@ -39,9 +39,13 @@ function findNode(graph: FlowGraph, id: string | null): FlowNode | undefined {
   return graph.nodes.find((node) => node.id === id);
 }
 
-/** The single outgoing edge for any node type except condition (which uses branch handles). */
+/** The single "what comes next in the conversation" outgoing edge for any node type except
+ * condition (which uses branch handles). Explicitly excludes an AI node's "logic" handle edge —
+ * that one only ever points at an attached Logic node's rule-matching, never at the next
+ * conversational step, so it must never be mistaken for one here (the "ai" case already
+ * consults it directly, before this is called). */
 function nextEdge(graph: FlowGraph, nodeId: string): FlowEdge | undefined {
-  return graph.edges.find((edge) => edge.source === nodeId);
+  return graph.edges.find((edge) => edge.source === nodeId && edge.sourceHandle !== "logic");
 }
 
 function edgeForBranch(graph: FlowGraph, nodeId: string, branchId: string): FlowEdge | undefined {
@@ -195,10 +199,16 @@ export async function step(
           (edge) => edge.source === node.id && edge.sourceHandle === "logic",
         );
         const logicNode = logicEdge ? findNode(graph, logicEdge.target) : undefined;
-        const matchedRule =
+        const candidateRule =
           input !== undefined && logicNode?.type === "logic"
             ? matchLogicRule(logicNode.data.rules, input)
             : undefined;
+        const candidateBranchEdge = candidateRule ? edgeForBranch(graph, logicNode!.id, candidateRule.id) : undefined;
+        // A rule with no reply and no route configured is a no-op — most often the default,
+        // still-blank "Anything else" catch-all — so it must NOT preempt the LLM. Only an
+        // author-configured rule (a reply, a route, or both) actually pre-empts this turn.
+        const matchedRule =
+          candidateRule && (candidateRule.reply.trim() || candidateBranchEdge) ? candidateRule : undefined;
 
         if (matchedRule) {
           if (matchedRule.reply.trim()) {
@@ -206,9 +216,8 @@ export async function step(
             replies.push({ content: text });
             history.push({ role: "assistant", content: text });
           }
-          const branchEdge = edgeForBranch(graph, logicNode!.id, matchedRule.id);
-          if (branchEdge) {
-            currentNodeId = branchEdge.target;
+          if (candidateBranchEdge) {
+            currentNodeId = candidateBranchEdge.target;
           } else {
             // No route wired for this rule: same "nothing wired after this AI node" behavior as
             // below — stay put and keep the conversation open rather than ending it.

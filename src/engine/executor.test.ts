@@ -690,7 +690,7 @@ describe("step: logic node attached to an AI node", () => {
     expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
   });
 
-  it("falls through to the LLM as normal when no rule matches", async () => {
+  it("falls through to the LLM as normal when no rule matches, and stays open afterward", async () => {
     const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
     const deps = createDeps({ llm: llmMock });
     const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
@@ -699,6 +699,49 @@ describe("step: logic node attached to an AI node", () => {
 
     expect(llmMock).toHaveBeenCalledTimes(1);
     expect(output.replies).toEqual([{ content: "How can I help?" }]);
+    // Regression check: the AI node's only outgoing edge is its "logic" attachment (no plain
+    // next edge in buildGraph()) — after the LLM replies, the engine must NOT mistake that
+    // logic edge for "what comes next" and wander into the Logic node a second time. It should
+    // behave exactly like an AI node with no outgoing edge at all: stay open on itself.
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
+  });
+
+  it("stays open (not ENDED) when attached to a Logic node with an unwired catch-all rule and no plain next edge", async () => {
+    // Mirrors exactly what dragging a Logic node off an AI node's dot produces by default (see
+    // NODE_KINDS' "logic" defaultData): a keyword rule plus an "Anything else" catch-all with no
+    // route and no reply. Before the nextEdge fix, a message matching neither rule made the
+    // engine wander into the Logic node via nextEdge (which didn't filter out the "logic"
+    // handle), hit that unwired catch-all a second time, and end the conversation outright.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-1",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Sure — here's your payment link: https://pay.example.com",
+              },
+              { id: "rule-2", label: "Anything else", triggers: "", reply: "" },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Hi Dave! I'm Meo. What can I help you with?" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "Dave", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Hi Dave! I'm Meo. What can I help you with?" }]);
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
   });
 
   it("never fires rules on the unprompted first turn (no visitor message yet)", async () => {
