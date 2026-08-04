@@ -46,10 +46,13 @@ export async function runTestTurn(params: RunTestTurnParams): Promise<RunTestTur
   const priorHistory = params.priorHistory ?? [];
   const llm: LlmDep = (args) =>
     providerLlm({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) });
+  // Same history-merging as `llm` above — see run-turn.ts's identical comment.
+  const classify: LlmDep = (args) =>
+    classifierLlm({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) });
 
   const output = await step(graph, state, params.message, {
     llm,
-    classify: classifierLlm,
+    classify,
     fetch,
     logger: console,
     conversationId: params.sessionId ?? "test-session",

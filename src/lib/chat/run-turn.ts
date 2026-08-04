@@ -129,9 +129,10 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
 
   const engineDeps: EngineDeps = {
     llm: (args) => deps.llm({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) }),
-    // Classification is a one-off "does this message mean X" call, not a conversational turn —
-    // it never needs prior message history mixed in the way the real reply does above.
-    classify: deps.classify,
+    // Same history-merging as `llm` above — a short, context-dependent reply ("done", "yes")
+    // can only be classified correctly with the same conversation the AI itself would see.
+    classify: (args) =>
+      deps.classify({ ...args, history: [...priorHistory, ...args.history].slice(-MAX_HISTORY_MESSAGES) }),
     fetch,
     logger: console,
     conversationId: conversation.id,

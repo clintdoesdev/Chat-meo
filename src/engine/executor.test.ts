@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInitialState, step } from "./executor";
-import type { EngineDeps, EngineState, FlowGraph, LlmDep } from "./types";
+import type { EngineDeps, EngineState, FlowGraph, LlmChatMessage, LlmDep } from "./types";
 
 function createDeps(overrides: Partial<EngineDeps> = {}): EngineDeps {
   return {
@@ -56,6 +56,23 @@ describe("step: linear flow", () => {
 
     expect(output.replies).toEqual([{ content: "Hello!" }, { content: "How can I help?" }]);
     expect(output.state).toEqual({ currentNodeId: null, variables: {}, status: "ENDED" });
+  });
+
+  it("sends the Start node's own greeting text, not just whatever comes after it", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "start-1", type: "start", data: { text: "Hey, I'm Meo. What can I help with?" } },
+        { id: "capture-1", type: "capture", data: { question: "What's your name?", variableName: "name" } },
+      ],
+      edges: [{ id: "e1", source: "start-1", target: "capture-1" }],
+    };
+    const state = createInitialState(graph);
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([
+      { content: "Hey, I'm Meo. What can I help with?" },
+      { content: "What's your name?" },
+    ]);
   });
 
   it("interpolates {{variables}} into message text", async () => {
@@ -803,6 +820,43 @@ describe("step: logic node semantic (AI) matching", () => {
     };
   }
 
+  it("does not treat a trigger word as a literal match just because it's a substring of a larger word", async () => {
+    // Regression: "payment" is a substring of "payments", so a naive .includes() check would
+    // wrongly fire the "asks for a payment link" rule for someone saying they've ALREADY paid —
+    // the opposite intent. Word-boundary matching must reject this and let the classifier (which
+    // correctly sees these as different specific requests) decide instead.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-link",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Sure — here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Great, thanks for letting me know!" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "I've made payments", deps);
+
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Great, thanks for letting me know!" }]);
+  });
+
   it("falls back to the classifier when no keyword literally matches, and fires the rule it names", async () => {
     const llmMock = vi.fn(async () => ({ content: "unused" }));
     const classifyMock = vi.fn(async () => ({ content: "rule-pay" }));
@@ -818,7 +872,14 @@ describe("step: logic node semantic (AI) matching", () => {
   });
 
   it("calls the classifier with the attached AI node's own model/provider and no persona framing", async () => {
-    const classifyMock = vi.fn<LlmDep>(async () => ({ content: "NONE" }));
+    // The executor's `history` array is the same object reference throughout the turn and gets
+    // mutated later (once the LLM reply comes back), so it has to be copied here at call time —
+    // reading it off classifyMock.mock.calls afterward would reflect those later mutations too.
+    let capturedHistory: LlmChatMessage[] = [];
+    const classifyMock = vi.fn<LlmDep>(async (args) => {
+      capturedHistory = [...args.history];
+      return { content: "NONE" };
+    });
     const deps = createDeps({ classify: classifyMock });
     const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
 
@@ -829,7 +890,7 @@ describe("step: logic node semantic (AI) matching", () => {
     expect(call.model).toBe("grok-main");
     expect(call.provider).toBe("xai");
     expect(call.temperature).toBe(0);
-    expect(call.history).toEqual([{ role: "user", content: "hello there" }]);
+    expect(capturedHistory).toEqual([{ role: "user", content: "hello there" }]);
     expect(call.systemPrompt).toContain("rule-pay");
     // Guards against a classifier that fires too eagerly on merely-related messages: the prompt
     // must tell it to require the same specific request, not just shared topic/wording, and to

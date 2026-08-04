@@ -67,6 +67,10 @@ function matchBranch(branches: ConditionBranch[], rawValue: string): ConditionBr
  * pass. Deliberately excludes the empty-triggers catch-all (see catchAllRule below); the "ai"
  * case only falls back to that after also trying a semantic match, so the two need to stay
  * separate rather than one function silently covering both. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function matchLogicKeyword(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
   const message = rawMessage.toLowerCase();
   return rules.find((rule) => {
@@ -74,7 +78,11 @@ function matchLogicKeyword(rules: LogicRule[], rawMessage: string): LogicRule | 
       .split(",")
       .map((keyword) => keyword.trim().toLowerCase())
       .filter(Boolean);
-    return keywords.length > 0 && keywords.some((keyword) => message.includes(keyword));
+    // Word-boundary, not raw substring — a plain .includes() would let trigger "payment" match
+    // inside "payments", "repayment", "prepayment", etc., firing the rule for messages that
+    // aren't actually asking for what the trigger describes (e.g. "I've made payments" —
+    // already-paid, a different intent entirely — matching a "wants a payment link" trigger).
+    return keywords.some((keyword) => new RegExp(`\\b${escapeRegExp(keyword)}\\b`).test(message));
   });
 }
 
@@ -100,9 +108,13 @@ function buildClassifierPrompt(rules: LogicRule[]): string {
   );
   return (
     "You are a strict intent classifier for a customer support chat bot. Decide whether the " +
-    "customer's latest message expresses the SAME SPECIFIC REQUEST as one of the rules below — " +
+    "customer's LATEST message expresses the SAME SPECIFIC REQUEST as one of the rules below — " +
     "different wording is fine (customers phrase the same request many different ways), but the " +
-    "underlying request must genuinely be the same one, not just related or on the same topic.\n\n" +
+    "underlying request must genuinely be the same one, not just related or on the same topic. " +
+    "Use the conversation so far to understand what the latest message actually means — a short " +
+    "reply like \"done\", \"yes\", or \"just did\" only makes sense in light of what was just " +
+    "discussed, and \"I already paid\" is a completely different request from \"send me a payment " +
+    "link\" even though both mention payment.\n\n" +
     `Rules:\n${lines.join("\n")}\n\n` +
     `Respond with ONLY the matching rule's id exactly as written above, or the single word ` +
     `${NONE_TOKEN} if none clearly and specifically applies. When in doubt, respond ${NONE_TOKEN} — ` +
@@ -114,12 +126,16 @@ function buildClassifierPrompt(rules: LogicRule[]): string {
 /** Semantic fallback for matchLogicRule's keyword pass, used only when attached to an AI node
  * (see the "ai" case) — only called once the keyword pass finds nothing, and only against rules
  * that actually have triggers text to compare meaning against (an empty-triggers catch-all is
- * unconditional and needs no classifying). Never throws: a classifier failure — bad key,
- * network error, a garbled response — just means "no semantic match", falling through exactly
- * like a keyword miss would rather than breaking the turn. */
+ * unconditional and needs no classifying). Takes the real conversation so far (not just the
+ * latest message in isolation) so a short, context-dependent reply can be resolved against what
+ * was actually being discussed — the same priorHistory merging run-turn.ts/run-test-turn.ts
+ * already do for the main `llm` dependency applies here too (see EngineDeps.classify). Never
+ * throws: a classifier failure — bad key, network error, a garbled response — just means "no
+ * semantic match", falling through exactly like a keyword miss would rather than breaking the
+ * turn. */
 async function classifySemanticMatch(
   rules: LogicRule[],
-  message: string,
+  history: LlmChatMessage[],
   deps: EngineDeps,
   model: string,
   provider: string | undefined,
@@ -130,7 +146,7 @@ async function classifySemanticMatch(
   try {
     const result = await deps.classify({
       systemPrompt: buildClassifierPrompt(candidates),
-      history: [{ role: "user", content: message }],
+      history,
       temperature: 0,
       model,
       provider,
@@ -235,6 +251,15 @@ export async function step(
 
     switch (node.type) {
       case "start": {
+        // The Start node's own greeting text — editable in the Studio the same way a Message
+        // node's is — was previously silently dropped: this case moved straight to the next
+        // node without ever sending it, so a bot's very first message a visitor sees came from
+        // whatever's wired after Start instead of the greeting configured on Start itself.
+        const text = interpolate(node.data.text ?? "", variables);
+        if (text) {
+          replies.push({ content: text });
+          history.push({ role: "assistant", content: text });
+        }
         const edge = nextEdge(graph, node.id);
         currentNodeId = edge?.target ?? null;
         if (!edge) status = "ENDED";
@@ -270,7 +295,7 @@ export async function step(
         if (input !== undefined && logicRules) {
           candidateRule =
             matchLogicKeyword(logicRules, input) ??
-            (await classifySemanticMatch(logicRules, input, deps, node.data.model, node.data.provider)) ??
+            (await classifySemanticMatch(logicRules, history, deps, node.data.model, node.data.provider)) ??
             catchAllRule(logicRules);
         }
         const candidateBranchEdge = candidateRule ? edgeForBranch(graph, logicNode!.id, candidateRule.id) : undefined;
