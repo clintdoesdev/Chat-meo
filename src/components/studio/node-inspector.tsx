@@ -254,12 +254,16 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               Attach this to an AI node&apos;s bottom dot. Each turn, the visitor&apos;s message is
               checked against your rules&apos; triggers — first for a literal match, then, if
               nothing hits, the AI checks whether it means the same thing even if it&apos;s
-              worded completely differently. So &quot;I have made payments&quot; as a trigger will
-              also catch &quot;just sent the money over&quot; — you don&apos;t need to list every
-              phrasing. A rule that has a reply and/or a route wins and skips the AI for that
-              turn; a rule with no triggers matches anything, so it&apos;s a good catch-all — but
-              leave both its reply and route blank and it&apos;s a no-op, so the AI still handles
-              that turn normally.
+              worded completely differently, using the conversation so far to make sense of short
+              replies like &quot;done&quot; or &quot;yes&quot;. So &quot;I have made
+              payments&quot; as a trigger will also catch &quot;just sent the money over&quot; —
+              you don&apos;t need to list every phrasing. When two rules could sound related (one
+              asks for a payment link, another confirms a payment&apos;s already been made), the
+              AI leans on each rule&apos;s reply text to tell them apart — so a clear, specific
+              reply helps it pick the right rule, not just the customer. A rule that has a reply
+              and/or a route wins and skips the AI for that turn; a rule with no triggers matches
+              anything, so it&apos;s a good catch-all — but leave both its reply and route blank
+              and it&apos;s a no-op, so the AI still handles that turn normally.
             </p>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={labelClass().replace("mb-1.5 ", "")}>Rules</span>

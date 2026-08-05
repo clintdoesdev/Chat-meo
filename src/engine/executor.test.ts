@@ -899,6 +899,52 @@ describe("step: logic node semantic (AI) matching", () => {
     expect(call.systemPrompt).toMatch(/when in doubt.*NONE/i);
   });
 
+  it("includes each candidate rule's reply text in the prompt, not just its trigger phrase", async () => {
+    // Regression: a bare trigger like "payment, invoice, pay now, checkout" doesn't read as a
+    // specific request on its own, so the classifier had nothing to tell "wants a payment link"
+    // apart from "confirms a payment already happened" beyond vocabulary overlap — both rules
+    // mention payment. The rule's own configured reply is what actually reveals its purpose, so
+    // it must be visible in the prompt for every candidate that has one.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-link",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Sure — here's your payment link: https://pay.example.com",
+              },
+              {
+                id: "rule-confirm",
+                label: "Confirmation rule",
+                triggers: "I have made payments",
+                reply: "Alright, drop payment receipt",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    let capturedSystemPrompt = "";
+    const classifyMock = vi.fn<LlmDep>(async (args) => {
+      capturedSystemPrompt = args.systemPrompt;
+      return { content: "NONE" };
+    });
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    await step(graph, state, "Done", deps);
+
+    expect(capturedSystemPrompt).toContain("Sure — here's your payment link");
+    expect(capturedSystemPrompt).toContain("Alright, drop payment receipt");
+  });
+
   it("skips the classifier entirely once a keyword already matched (no wasted call)", async () => {
     const classifyMock = vi.fn(async () => ({ content: "NONE" }));
     const deps = createDeps({ classify: classifyMock });

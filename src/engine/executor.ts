@@ -103,18 +103,28 @@ function matchLogicRule(rules: LogicRule[], rawMessage: string): LogicRule | und
 const NONE_TOKEN = "NONE";
 
 function buildClassifierPrompt(rules: LogicRule[]): string {
-  const lines = rules.map(
-    (rule) => `- id: ${rule.id} — matches messages that express the same specific request as: "${rule.triggers}"`,
-  );
+  const lines = rules.map((rule) => {
+    // The trigger text alone is often a bare keyword list ("payment, invoice, pay now,
+    // checkout") that doesn't read as a specific request on its own — the rule's configured
+    // reply is what actually reveals what it's FOR (asking the customer to pay vs. confirming
+    // they already have), so it's included whenever set as the real disambiguating signal
+    // between rules that share vocabulary but mean opposite things.
+    const purpose = rule.reply.trim()
+      ? ` — this rule is for when the customer needs this specific thing, and firing it replies: "${rule.reply.trim()}"`
+      : "";
+    return `- id: ${rule.id} — triggers on messages meaning the same as: "${rule.triggers}"${purpose}`;
+  });
   return (
     "You are a strict intent classifier for a customer support chat bot. Decide whether the " +
     "customer's LATEST message expresses the SAME SPECIFIC REQUEST as one of the rules below — " +
     "different wording is fine (customers phrase the same request many different ways), but the " +
     "underlying request must genuinely be the same one, not just related or on the same topic. " +
-    "Use the conversation so far to understand what the latest message actually means — a short " +
-    "reply like \"done\", \"yes\", or \"just did\" only makes sense in light of what was just " +
-    "discussed, and \"I already paid\" is a completely different request from \"send me a payment " +
-    "link\" even though both mention payment.\n\n" +
+    "Use each rule's reply text (below) to understand what it actually means, not just its " +
+    "trigger phrase — two rules can share vocabulary (\"payment\") while meaning opposite things " +
+    "(requesting a payment link vs. confirming a payment already happened) and must not be " +
+    "confused for each other. Use the conversation so far to understand what the latest message " +
+    "actually refers to — a short reply like \"done\", \"yes\", or \"just did\" only makes sense " +
+    "in light of what was just discussed.\n\n" +
     `Rules:\n${lines.join("\n")}\n\n` +
     `Respond with ONLY the matching rule's id exactly as written above, or the single word ` +
     `${NONE_TOKEN} if none clearly and specifically applies. When in doubt, respond ${NONE_TOKEN} — ` +
