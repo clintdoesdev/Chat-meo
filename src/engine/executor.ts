@@ -448,6 +448,17 @@ export async function step(
         break;
       }
 
+      case "silentHandoff": {
+        // Same end state as "handoff" (status HANDOFF, conversation shows up in the Inbox) but
+        // never sends anything to the customer, on any channel — typically routed to from a
+        // Logic rule that already sent its own reply and the flow author wants the bot to just
+        // go quiet from there rather than also announce a handoff on top of it.
+        status = "HANDOFF";
+        currentNodeId = null;
+        walking = false;
+        break;
+      }
+
       default: {
         status = "ENDED";
         currentNodeId = null;

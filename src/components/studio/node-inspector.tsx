@@ -531,6 +531,29 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
             />
           </div>
         )}
+
+        {node.type === "silentHandoff" && (
+          <div className="mb-3.5">
+            <p className="mb-3 rounded-lg border border-line-2 bg-card-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              The bot just stops here — the customer isn’t shown anything, unlike a regular
+              Handoff. Good right after a Logic rule (or a Message node) already sent what the
+              customer needed, and you&apos;d rather take it from there yourself.
+            </p>
+            <label htmlFor="field-note" className={labelClass()}>
+              Internal note
+            </label>
+            <textarea
+              id="field-note"
+              value={data.note ?? ""}
+              onChange={(event) =>
+                onChange(node.id, { note: event.target.value })
+              }
+              rows={3}
+              placeholder="For your team only — why this conversation is being handed off."
+              className={`${fieldClass()} resize-y leading-relaxed`}
+            />
+          </div>
+        )}
       </aside>
     </>
   );

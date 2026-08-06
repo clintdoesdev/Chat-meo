@@ -1299,6 +1299,34 @@ export function NodesHandoffIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function NodesSilentHandoffIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="6"
+        d="M13 36v-6a19 19 0 0 1 38 0v6M51 44v3a9 9 0 0 1-9 9h-6"
+      />
+      <rect x="7" y="32" width="11" height="17" rx="5.5" fill="currentColor" />
+      <rect x="46" y="32" width="11" height="17" rx="5.5" fill="currentColor" />
+      <circle cx="34" cy="56" r="4" fill="currentColor" />
+      {/* Mute slash — same "crossed-out" convention as a muted-speaker icon, marking this as
+          the handoff variant that never speaks up to the customer. */}
+      <line x1="10" y1="10" x2="54" y2="54" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function NodesMessageIcon({ size = 16, className }: IconProps) {
   return (
     <svg

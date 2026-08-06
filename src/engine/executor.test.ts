@@ -539,6 +539,78 @@ describe("step: handoff", () => {
   });
 });
 
+describe("step: silent handoff", () => {
+  it("sets status HANDOFF without emitting anything to the customer, ignoring the internal note", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        {
+          id: "silent-1",
+          type: "silentHandoff",
+          data: { note: "Internal: took over after the payment-link rule fired." },
+        },
+      ],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "silent-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps());
+
+    expect(output.replies).toEqual([]);
+    expect(output.state.status).toBe("HANDOFF");
+    expect(output.state.currentNodeId).toBeNull();
+  });
+
+  it("stays silent on the web channel too, unlike a regular handoff", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "silent-1", type: "silentHandoff", data: {} }],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "silent-1", variables: {}, status: "RUNNING" };
+    const output = await step(graph, state, undefined, createDeps({ channel: "web" }));
+
+    expect(output.replies).toEqual([]);
+    expect(output.state.status).toBe("HANDOFF");
+  });
+
+  it("lets a Logic rule's reply be the last thing the customer sees, then goes quiet for a human to take over", async () => {
+    // The exact use case this node exists for: a Logic rule attached to an AI node sends its
+    // own reply (e.g. a payment link) and routes straight to a silent handoff instead of back
+    // to the AI — the rule's reply should be the only thing the customer sees this turn.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Payment link",
+                triggers: "payment link, invoice",
+                reply: "Here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+        { id: "silent-1", type: "silentHandoff", data: { note: "Customer requested payment link." } },
+      ],
+      edges: [
+        { id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" },
+        { id: "e-route", source: "logic-1", target: "silent-1", sourceHandle: "rule-pay" },
+      ],
+    };
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "send me the payment link please", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+    expect(output.state.status).toBe("HANDOFF");
+  });
+});
+
 describe("step: guards", () => {
   it("stops after 25 hops on a cyclic graph instead of looping forever", async () => {
     const graph: FlowGraph = {

@@ -31,6 +31,7 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
     case "webhook":
       return data.url ? `${data.method ?? "POST"} ${data.url}` : "No URL set";
     case "handoff":
+    case "silentHandoff":
       return data.note || "No note set";
     case "link":
       return data.url ? (data.linkText ? `${data.linkText} → ${data.url}` : data.url) : "No link set";
@@ -298,7 +299,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         </div>
       )}
 
-      {type !== "handoff" && !hasBranchHandles && (
+      {type !== "handoff" && type !== "silentHandoff" && !hasBranchHandles && (
         <Handle
           type="source"
           position={Position.Right}

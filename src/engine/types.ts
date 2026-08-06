@@ -78,6 +78,16 @@ export type HandoffNode = {
   data: { note?: string };
 };
 
+/** Same effect as HandoffNode (ends the bot's automated replies, marks the conversation as
+ * needing a human) but never shows the customer anything, on any channel — useful right after a
+ * Logic rule already said what needed saying (e.g. sent a payment link) and the flow author
+ * wants a human to take it from there without the bot announcing a handoff on top of it. */
+export type SilentHandoffNode = {
+  id: string;
+  type: "silentHandoff";
+  data: { note?: string };
+};
+
 export type FlowNode =
   | StartNode
   | MessageNode
@@ -86,6 +96,7 @@ export type FlowNode =
   | CaptureNode
   | WebhookNode
   | HandoffNode
+  | SilentHandoffNode
   | LinkNode
   | LogicNode;
 

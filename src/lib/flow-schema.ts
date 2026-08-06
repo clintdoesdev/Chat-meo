@@ -40,7 +40,18 @@ const FlowNodeDataSchema = z.object({
 
 const FlowNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["start", "message", "ai", "condition", "capture", "webhook", "handoff", "link", "logic"]),
+  type: z.enum([
+    "start",
+    "message",
+    "ai",
+    "condition",
+    "capture",
+    "webhook",
+    "handoff",
+    "silentHandoff",
+    "link",
+    "logic",
+  ]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: FlowNodeDataSchema,
   deletable: z.boolean().optional(),

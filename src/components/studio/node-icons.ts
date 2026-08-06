@@ -8,6 +8,7 @@ import {
   NodesLogicIcon,
   NodesMessageIcon,
   NodesQuestionIcon,
+  NodesSilentHandoffIcon,
   type IconProps,
 } from "@/components/icons";
 import type { FlowNodeKind } from "@/lib/flow-types";
@@ -22,6 +23,7 @@ export const NODE_KIND_ICON: Record<FlowNodeKind, ComponentType<IconProps>> = {
   capture: NodesQuestionIcon,
   webhook: NodesActionIcon,
   handoff: NodesHandoffIcon,
+  silentHandoff: NodesSilentHandoffIcon,
   link: ActionsLinkIcon,
   logic: NodesLogicIcon,
 };

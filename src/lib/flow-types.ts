@@ -8,6 +8,7 @@ export type FlowNodeKind =
   | "capture"
   | "webhook"
   | "handoff"
+  | "silentHandoff"
   | "link"
   | "logic";
 
@@ -196,6 +197,17 @@ export const NODE_KINDS: NodeKindMeta[] = [
     inPalette: true,
     description:
       "Ends the bot's automated replies and marks the conversation as needing a human — it'll show up in your Inbox.",
+  },
+  {
+    kind: "silentHandoff",
+    label: "Silent handoff",
+    color: "#C24848",
+    defaultData: { label: "Silent handoff", note: "Route to a human teammate without announcing it." },
+    inPalette: true,
+    description:
+      "Same as Handoff, but the customer isn't told — the bot just stops replying, and it shows up in your " +
+      "Inbox for you to pick up. Useful after a Logic rule already said what needed saying (e.g. sent a " +
+      "payment link) and you want to take it from there yourself instead of the AI continuing the conversation.",
   },
 ];
 

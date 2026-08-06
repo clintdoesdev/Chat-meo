@@ -55,6 +55,7 @@ const nodeTypes = {
   capture: FlowNodeView,
   webhook: FlowNodeView,
   handoff: FlowNodeView,
+  silentHandoff: FlowNodeView,
   link: FlowNodeView,
   logic: FlowNodeView,
 };
