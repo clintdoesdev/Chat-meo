@@ -164,13 +164,17 @@ model Flow {
 }
 
 model Conversation {
-  id          String             @id @default(cuid())
-  botId       String
-  visitorId   String
-  status      ConversationStatus @default(OPEN)
+  id            String             @id @default(cuid())
+  botId         String
+  visitorId     String
+  status        ConversationStatus @default(OPEN)
   /// Serialized engine EngineState ({ currentNodeId, variables, status }) — see src/engine/types.ts.
-  engineState Json               @default("{}")
-  createdAt   DateTime           @default(now())
+  engineState   Json               @default("{}")
+  /// When the customer last messaged in, per the channel's own delivered timestamp (not when we
+  /// finished processing it) — see src/lib/whatsapp/service-window.ts. Only ever set by the
+  /// WhatsApp webhook today; null for widget conversations, which have no such window to track.
+  lastInboundAt DateTime?
+  createdAt     DateTime           @default(now())
 
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   messages Message[]

@@ -10,6 +10,9 @@ const WebhookMessageSchema = z.object({
   id: z.string().min(1),
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
+  /// Unix epoch seconds, as a string, per Meta's own convention — when the customer actually
+  /// sent this message, not when we received/parsed it. See InboundWhatsAppMessage.receivedAt.
+  timestamp: z.string().optional(),
 });
 
 const WebhookChangeValueSchema = z.object({
@@ -40,6 +43,11 @@ export type InboundWhatsAppMessage = {
    * how to consume plain text input. */
   isText: boolean;
   content: string;
+  /** When the customer actually sent this, from Meta's own `timestamp` field — used (not our
+   * processing time) to track the 24h service window (see service-window.ts), so a delayed or
+   * replayed webhook delivery doesn't look freshly-within-window just because we happened to
+   * process it moments ago. Falls back to now if Meta's timestamp is missing or unparseable. */
+  receivedAt: Date;
 };
 
 /** Pulls every actual inbound message out of one webhook delivery, ignoring anything that isn't
@@ -56,12 +64,14 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
 
       for (const message of change.value.messages ?? []) {
         const isText = message.type === "text" && Boolean(message.text?.body);
+        const timestampMs = message.timestamp && /^\d+$/.test(message.timestamp) ? Number(message.timestamp) * 1000 : NaN;
         out.push({
           phoneNumberId,
           from: message.from,
           waMessageId: message.id,
           isText,
           content: isText ? message.text!.body : `[unsupported message type: ${message.type}]`,
+          receivedAt: Number.isFinite(timestampMs) ? new Date(timestampMs) : new Date(),
         });
       }
     }

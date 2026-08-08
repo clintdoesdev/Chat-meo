@@ -7,9 +7,12 @@ import { conversationStatusFor, type RunTurnDeps } from "@/lib/chat/run-turn";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
+import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
 // Mirrors run-turn.ts's constant of the same name.
 const MAX_HISTORY_MESSAGES = 12;
+
+const OUTSIDE_WINDOW_WARNING = "Bot reply not sent — outside 24h window, customer needs to message first.";
 
 export type RunWhatsAppTurnParams = {
   botId: string;
@@ -21,11 +24,14 @@ export type RunWhatsAppTurnParams = {
    * stored for the seller's inbox, but the flow is never loaded and the engine never runs,
    * regardless of whether an active flow exists. Defaults to true. */
   runEngine?: boolean;
+  /** When the customer actually sent this, per Meta's own timestamp — see
+   * InboundWhatsAppMessage.receivedAt. Defaults to now for callers that don't have one. */
+  receivedAt?: Date;
 };
 
 export type RunWhatsAppTurnResult =
   | { kind: "stored_only" }
-  | { kind: "success"; replies: Reply[]; status: EngineStatus };
+  | { kind: "success"; replies: Reply[]; status: EngineStatus; withinWindow: boolean };
 
 /**
  * The WhatsApp webhook's counterpart to runChatTurn (src/lib/chat/run-turn.ts) — same engine,
@@ -37,8 +43,17 @@ export type RunWhatsAppTurnResult =
  * active flow to run — since the webhook's job is to keep the seller's inbox complete regardless
  * of whether the engine can actually respond. In that case this returns "stored_only" and the
  * caller sends no reply back to the customer, the same as it would for a paused connection.
+ *
+ * Also tracks Conversation.lastInboundAt and, when the engine does produce replies, whether
+ * they're still inside Meta's 24h customer-service window (see service-window.ts) — outside it,
+ * a normal session message would just be rejected by Graph API, so this persists a warning
+ * Message instead of the actual reply and tells the caller (via `withinWindow: false`) not to
+ * attempt sending. Template messages (Meta's supported way to reach a customer outside the
+ * window) aren't implemented yet — beta scope is skip-and-log, not broken-and-throw.
  */
 export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTurnDeps): Promise<RunWhatsAppTurnResult> {
+  const inboundAt = params.receivedAt ?? new Date();
+
   const shouldRunEngine = params.runEngine !== false;
   const bot = shouldRunEngine
     ? await prisma.bot.findUnique({
@@ -54,14 +69,22 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     where: { botId: params.botId, visitorId: params.visitorId, status: "OPEN" },
     orderBy: { createdAt: "desc" },
   });
+
+  let lastInboundAt: Date;
   if (!conversation) {
+    lastInboundAt = inboundAt;
     conversation = await prisma.conversation.create({
       data: {
         botId: params.botId,
         visitorId: params.visitorId,
+        lastInboundAt,
         ...(graph ? { engineState: createInitialState(graph) } : {}),
       },
     });
+  } else {
+    // An out-of-order/replayed webhook delivery shouldn't be able to rewind the window back
+    // past a more recent message we've already recorded.
+    lastInboundAt = conversation.lastInboundAt && conversation.lastInboundAt > inboundAt ? conversation.lastInboundAt : inboundAt;
   }
 
   // Fetched before persisting this turn's inbound message, same reasoning as run-turn.ts: the
@@ -84,6 +107,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   });
 
   if (!graph) {
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { lastInboundAt } });
     console.log("[whatsapp] stored inbound message, engine not run", {
       botId: params.botId,
       conversationId: conversation.id,
@@ -108,23 +132,40 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   };
 
   const output = await step(graph, state, params.message, engineDeps);
+  const withinWindow = isWithinServiceWindow(lastInboundAt);
 
   if (output.replies.length > 0) {
-    await prisma.message.createMany({
-      data: output.replies.map((reply) => ({
+    if (withinWindow) {
+      await prisma.message.createMany({
+        data: output.replies.map((reply) => ({
+          conversationId: conversation.id,
+          role: "BOT" as const,
+          content: reply.content,
+          promptTokens: reply.promptTokens ?? null,
+          completionTokens: reply.completionTokens ?? null,
+          channel: "WHATSAPP" as const,
+        })),
+      });
+    } else {
+      console.warn("[whatsapp] suppressing reply, outside 24h service window", {
+        botId: params.botId,
         conversationId: conversation.id,
-        role: "BOT" as const,
-        content: reply.content,
-        promptTokens: reply.promptTokens ?? null,
-        completionTokens: reply.completionTokens ?? null,
-        channel: "WHATSAPP" as const,
-      })),
-    });
+        lastInboundAt,
+      });
+      await prisma.message.createMany({
+        data: output.replies.map((reply) => ({
+          conversationId: conversation.id,
+          role: "BOT" as const,
+          content: `${OUTSIDE_WINDOW_WARNING} (Intended reply: "${reply.content}")`,
+          channel: "WHATSAPP" as const,
+        })),
+      });
+    }
   }
 
   await prisma.conversation.update({
     where: { id: conversation.id },
-    data: { engineState: output.state, status: conversationStatusFor(output.state.status) },
+    data: { engineState: output.state, status: conversationStatusFor(output.state.status), lastInboundAt },
   });
 
   console.log("[whatsapp] turn", {
@@ -132,7 +173,8 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     conversationId: conversation.id,
     replyCount: output.replies.length,
     status: output.state.status,
+    withinWindow,
   });
 
-  return { kind: "success", replies: output.replies, status: output.state.status };
+  return { kind: "success", replies: output.replies, status: output.state.status, withinWindow };
 }

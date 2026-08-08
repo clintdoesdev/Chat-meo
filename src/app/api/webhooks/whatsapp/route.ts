@@ -53,17 +53,26 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // knows how to consume plain text input, so there's nothing sensible to feed it for the latter.
   if (!connection.isActive || !message.isText) {
     await runWhatsAppTurn(
-      { botId: connection.botId, visitorId: message.from, message: message.content, runEngine: false },
+      {
+        botId: connection.botId,
+        visitorId: message.from,
+        message: message.content,
+        receivedAt: message.receivedAt,
+        runEngine: false,
+      },
       { llm: providerLlm, classify: classifierLlm },
     );
     return;
   }
 
   const result = await runWhatsAppTurn(
-    { botId: connection.botId, visitorId: message.from, message: message.content },
+    { botId: connection.botId, visitorId: message.from, message: message.content, receivedAt: message.receivedAt },
     { llm: providerLlm, classify: classifierLlm },
   );
-  if (result.kind !== "success" || result.replies.length === 0) return;
+  // Outside the 24h window, runWhatsAppTurn already persisted a warning in place of the reply
+  // (see OUTSIDE_WINDOW_WARNING there) — Graph API would just reject a normal send anyway, so
+  // there's nothing left to do here but leave it unsent.
+  if (result.kind !== "success" || result.replies.length === 0 || !result.withinWindow) return;
 
   const accessToken = decrypt(connection.accessToken);
   for (const reply of result.replies) {

@@ -43,6 +43,7 @@ describe("extractInboundMessages", () => {
         waMessageId: "wamid.ABC",
         isText: true,
         content: "Hello there",
+        receivedAt: new Date(1700000000 * 1000),
       },
     ]);
   });
@@ -56,8 +57,27 @@ describe("extractInboundMessages", () => {
         waMessageId: "wamid.ABC",
         isText: false,
         content: "[unsupported message type: image]",
+        receivedAt: new Date(1700000000 * 1000),
       },
     ]);
+  });
+
+  it("parses Meta's epoch-seconds timestamp into a real Date", () => {
+    const payload = textMessagePayload();
+    const result = extractInboundMessages(payload);
+    expect(result[0].receivedAt).toBeInstanceOf(Date);
+    expect(result[0].receivedAt.getTime()).toBe(1700000000 * 1000);
+  });
+
+  it("falls back to the current time when timestamp is missing or malformed", () => {
+    const payload = textMessagePayload();
+    // @ts-expect-error deliberately malformed for this test
+    delete payload.entry[0].changes[0].value.messages[0].timestamp;
+    const before = Date.now();
+    const result = extractInboundMessages(payload);
+    const after = Date.now();
+    expect(result[0].receivedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result[0].receivedAt.getTime()).toBeLessThanOrEqual(after);
   });
 
   it("ignores status-update deliveries (no messages array)", () => {
