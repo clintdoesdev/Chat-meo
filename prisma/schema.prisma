@@ -49,6 +49,17 @@ enum TwoFactorMethod {
   TOTP
 }
 
+// Reflects Meta's own connection health for this number (token revoked, number disconnected in
+// Meta Business Manager, etc.) — distinct from WhatsAppConnection.isActive, which is the seller's
+// own pause/live toggle. A connection can be CONNECTED but isActive: false (seller paused it), or
+// isActive: true but TOKEN_EXPIRED (seller never paused, Meta cut it off) — the two track
+// different things and shouldn't be collapsed into one flag.
+enum WhatsAppConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  TOKEN_EXPIRED
+}
+
 model User {
   id                  String           @id @default(cuid())
   name                String
@@ -119,10 +130,11 @@ model Bot {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  flows         Flow[]
-  conversations Conversation[]
-  apiKeys       BotApiKey[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flows              Flow[]
+  conversations      Conversation[]
+  apiKeys            BotApiKey[]
+  whatsappConnection WhatsAppConnection?
 
   @@index([userId])
   @@map("bots")
@@ -208,4 +220,34 @@ model BotApiKey {
 
   @@index([botId])
   @@map("bot_api_keys")
+}
+
+// The WhatsApp channel is independent of the widget's BotApiKey — a Bot can run one, the other,
+// both, or neither. One number per Bot (botId unique) and one Bot per number (phoneNumberId
+// unique) — Meta issues a distinct phoneNumberId per WhatsApp Business number, so this doubles as
+// the fast, join-free lookup inbound webhooks route by (findUnique on phoneNumberId hits its own
+// unique index directly, no Bot -> User traversal needed).
+model WhatsAppConnection {
+  id                 String                   @id @default(cuid())
+  botId              String                   @unique
+  wabaId             String
+  phoneNumberId      String                   @unique
+  displayPhoneNumber String
+  /// AES-256-GCM ciphertext (iv:authTag:ciphertext, base64 — see src/lib/crypto.ts), Meta's
+  /// long-lived access token for this number. Encrypted with WHATSAPP_TOKEN_ENCRYPTION_KEY, a
+  /// key deliberately separate from AUTH_SECRET/secret-crypto.ts's — rotating one never forces
+  /// rotating (or breaks decryption of) the other.
+  accessToken        String
+  status             WhatsAppConnectionStatus @default(CONNECTED)
+  /// The seller's own pause/live toggle — independent of `status` (Meta's connection health).
+  /// While false, the webhook still receives and stores inbound messages for the Inbox, but the
+  /// runtime engine must not process them or auto-reply.
+  isActive           Boolean                  @default(true)
+  connectedAt        DateTime                 @default(now())
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_connections")
 }
