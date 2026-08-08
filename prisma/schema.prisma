@@ -249,8 +249,10 @@ model WhatsAppConnection {
   /// AES-256-GCM ciphertext (iv:authTag:ciphertext, base64 — see src/lib/crypto.ts), Meta's
   /// long-lived access token for this number. Encrypted with WHATSAPP_TOKEN_ENCRYPTION_KEY, a
   /// key deliberately separate from AUTH_SECRET/secret-crypto.ts's — rotating one never forces
-  /// rotating (or breaks decryption of) the other.
-  accessToken        String
+  /// rotating (or breaks decryption of) the other. Cleared to null on disconnect (see
+  /// disconnectWhatsApp in src/lib/actions/whatsapp.ts) — a revoked connection has no token
+  /// worth keeping around, encrypted or not.
+  accessToken        String?
   status             WhatsAppConnectionStatus @default(CONNECTED)
   /// The seller's own pause/live toggle — independent of `status` (Meta's connection health).
   /// While false, the webhook still receives and stores inbound messages for the Inbox, but the

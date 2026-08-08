@@ -20,7 +20,7 @@ import { buildEmbedSnippet, type WidgetPosition } from "@/lib/embed-snippet";
 const SAVE_DEBOUNCE_MS = 700;
 const MAX_AVATAR_BYTES = 200_000;
 
-type Tab = "general" | "embed" | "whatsapp";
+type Tab = "general" | "embed";
 
 // Chatmeo/Midnight/Sunset are just a curated primaryColor — the widget's default look already
 // derives from that one value (see lightenHex() in the widget page). WhatsApp/Telegram additionally
@@ -190,8 +190,7 @@ export function BotSettingsModal({
             {(
               [
                 { value: "general" as const, label: "General" },
-                { value: "embed" as const, label: "Embed & domains" },
-                { value: "whatsapp" as const, label: "WhatsApp" },
+                { value: "embed" as const, label: "Deploy & channels" },
               ]
             ).map((t) => (
               <button
@@ -466,6 +465,11 @@ export function BotSettingsModal({
                     </div>
 
                     <div>
+                      <label className={labelClass()}>WhatsApp</label>
+                      <WhatsAppConnectPanel botId={botId} />
+                    </div>
+
+                    <div>
                       <label className={labelClass()}>Allowed domains</label>
                       <div className="mb-2 flex flex-wrap gap-1.5">
                         {config.allowedDomains.map((domain) => (
@@ -513,8 +517,6 @@ export function BotSettingsModal({
                     </div>
                   </>
                 )}
-
-                {tab === "whatsapp" && <WhatsAppConnectPanel botId={botId} />}
               </div>
 
               <div className="border-t border-line bg-[#0c0c0c] p-4 min-[720px]:border-l min-[720px]:border-t-0">

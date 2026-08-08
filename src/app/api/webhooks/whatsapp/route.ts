@@ -74,6 +74,13 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // there's nothing left to do here but leave it unsent.
   if (result.kind !== "success" || result.replies.length === 0 || !result.withinWindow) return;
 
+  // isActive and accessToken are only ever cleared together (see disconnectWhatsApp), so this
+  // shouldn't happen for a connection that just passed the isActive check above — guarded
+  // anyway since a null token has nothing to decrypt.
+  if (!connection.accessToken) {
+    console.error("[whatsapp webhook] active connection has no access token", { botId: connection.botId });
+    return;
+  }
   const accessToken = decrypt(connection.accessToken);
   for (const reply of result.replies) {
     await sendWhatsAppTextMessage(message.phoneNumberId, message.from, reply.content, accessToken).catch((error) => {

@@ -50,7 +50,7 @@ async function graphFetch<T>(
   path: string,
   step: string,
   params?: Record<string, string>,
-  method: "GET" | "POST" = "GET",
+  method: "GET" | "POST" | "DELETE" = "GET",
   jsonBody?: unknown,
 ): Promise<T> {
   const url = new URL(`${GRAPH_BASE}${path}`);
@@ -168,6 +168,15 @@ export async function fetchDisplayPhoneNumber(phoneNumberId: string, accessToken
  * — without this, the connection is stored but nothing ever arrives at our webhook. */
 export async function subscribeAppToWaba(wabaId: string, accessToken: string): Promise<void> {
   await graphFetch(`/${wabaId}/subscribed_apps`, "webhook subscription", { access_token: accessToken }, "POST");
+}
+
+/** The Disconnect action's counterpart to subscribeAppToWaba — revokes our app's webhook
+ * subscription for this WABA, so Meta stops delivering inbound messages here at all. This is
+ * what actually distinguishes "disconnected" from "paused": pausing (WhatsAppConnection.isActive)
+ * only stops us from running the engine on messages we still receive; disconnecting stops Meta
+ * from sending them in the first place. */
+export async function unsubscribeAppFromWaba(wabaId: string, accessToken: string): Promise<void> {
+  await graphFetch(`/${wabaId}/subscribed_apps`, "webhook unsubscription", { access_token: accessToken }, "DELETE");
 }
 
 const WHATSAPP_TEXT_MESSAGE_LIMIT = 4096;
