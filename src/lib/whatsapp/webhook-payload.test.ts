@@ -1,0 +1,128 @@
+import { describe, expect, it } from "vitest";
+import { extractInboundMessages } from "./webhook-payload";
+
+function textMessagePayload(overrides?: { type?: string; body?: string }) {
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "waba-1",
+        changes: [
+          {
+            value: {
+              messaging_product: "whatsapp",
+              metadata: { display_phone_number: "15551234567", phone_number_id: "PHONE_ID_1" },
+              contacts: [{ profile: { name: "Jane" }, wa_id: "CUSTOMER_1" }],
+              messages: [
+                {
+                  from: "CUSTOMER_1",
+                  id: "wamid.ABC",
+                  timestamp: "1700000000",
+                  type: overrides?.type ?? "text",
+                  ...(overrides?.type && overrides.type !== "text"
+                    ? {}
+                    : { text: { body: overrides?.body ?? "Hello there" } }),
+                },
+              ],
+            },
+            field: "messages",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("extractInboundMessages", () => {
+  it("extracts a plain text message", () => {
+    const result = extractInboundMessages(textMessagePayload());
+    expect(result).toEqual([
+      {
+        phoneNumberId: "PHONE_ID_1",
+        from: "CUSTOMER_1",
+        waMessageId: "wamid.ABC",
+        isText: true,
+        content: "Hello there",
+      },
+    ]);
+  });
+
+  it("marks non-text message types with a placeholder and isText: false", () => {
+    const result = extractInboundMessages(textMessagePayload({ type: "image" }));
+    expect(result).toEqual([
+      {
+        phoneNumberId: "PHONE_ID_1",
+        from: "CUSTOMER_1",
+        waMessageId: "wamid.ABC",
+        isText: false,
+        content: "[unsupported message type: image]",
+      },
+    ]);
+  });
+
+  it("ignores status-update deliveries (no messages array)", () => {
+    const statusPayload = {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "PHONE_ID_1" },
+                statuses: [{ id: "wamid.ABC", status: "delivered" }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(extractInboundMessages(statusPayload)).toEqual([]);
+  });
+
+  it("skips a change with no metadata.phone_number_id", () => {
+    const payload = {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [{ from: "CUSTOMER_1", id: "wamid.ABC", type: "text", text: { body: "hi" } }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(extractInboundMessages(payload)).toEqual([]);
+  });
+
+  it("handles multiple entries/changes/messages in one delivery", () => {
+    const payload = {
+      entry: [
+        textMessagePayload().entry[0],
+        {
+          id: "waba-2",
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "PHONE_ID_2" },
+                messages: [
+                  { from: "CUSTOMER_2", id: "wamid.DEF", type: "text", text: { body: "second" } },
+                  { from: "CUSTOMER_3", id: "wamid.GHI", type: "text", text: { body: "third" } },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const result = extractInboundMessages(payload);
+    expect(result).toHaveLength(3);
+    expect(result.map((m) => m.waMessageId)).toEqual(["wamid.ABC", "wamid.DEF", "wamid.GHI"]);
+  });
+
+  it("returns an empty array for a malformed payload rather than throwing", () => {
+    expect(extractInboundMessages(null)).toEqual([]);
+    expect(extractInboundMessages("not an object")).toEqual([]);
+    expect(extractInboundMessages({})).toEqual([]);
+  });
+});

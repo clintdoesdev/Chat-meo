@@ -38,6 +38,14 @@ enum MessageRole {
   AGENT
 }
 
+// Which channel a message was sent/received over. Defaults to WEB so every message from before
+// this field existed (and every widget/test-drawer turn today) needs no backfill. Only the
+// WhatsApp webhook (src/app/api/webhooks/whatsapp/route.ts) ever writes WHATSAPP explicitly.
+enum MessageChannel {
+  WEB
+  WHATSAPP
+}
+
 enum VerificationPurpose {
   EMAIL_VERIFY
   PASSWORD_RESET
@@ -173,15 +181,16 @@ model Conversation {
 }
 
 model Message {
-  id               String      @id @default(cuid())
+  id               String         @id @default(cuid())
   conversationId   String
   role             MessageRole
-  content          String      @db.Text
+  content          String         @db.Text
   /// Only set for BOT messages produced by an "ai" node whose provider reported token usage —
   /// see src/engine/llm.ts. Null for message-node replies, USER messages, etc.
   promptTokens     Int?
   completionTokens Int?
-  createdAt        DateTime    @default(now())
+  channel          MessageChannel @default(WEB)
+  createdAt        DateTime       @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

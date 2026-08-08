@@ -25,8 +25,9 @@ export type RunTurnResult =
   | { kind: "success"; replies: Reply[]; status: EngineStatus };
 
 /** Maps the engine's fine-grained execution status onto the conversation's coarser lifecycle
- * status, used for inbox/dashboard purposes. */
-function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" | "HANDOFF" {
+ * status, used for inbox/dashboard purposes. Exported so other entry points into the engine
+ * (e.g. run-whatsapp-turn.ts) apply the exact same mapping rather than re-deriving it. */
+export function conversationStatusFor(engineStatus: EngineStatus): "OPEN" | "RESOLVED" | "HANDOFF" {
   if (engineStatus === "HANDOFF") return "HANDOFF";
   if (engineStatus === "ENDED") return "RESOLVED";
   return "OPEN";

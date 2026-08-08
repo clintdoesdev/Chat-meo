@@ -1,8 +1,11 @@
-// Meta Graph API calls for the WhatsApp Embedded Signup flow. Kept apart from the API route
-// (src/app/api/whatsapp/connect/route.ts) so that route stays thin orchestration — auth, then
-// call these in order, then persist — and this file stays free of Next.js/request concerns.
+// Meta Graph API calls for the WhatsApp Embedded Signup flow and the inbound webhook. Kept
+// apart from the API routes (src/app/api/whatsapp/connect/route.ts,
+// src/app/api/webhooks/whatsapp/route.ts) so those stay thin orchestration and this file stays
+// free of Next.js/request concerns.
 //
 // Bump this if Meta deprecates it; there's nothing else version-specific in this file.
+import { createHmac, timingSafeEqual } from "crypto";
+
 const GRAPH_API_VERSION = "v23.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
@@ -48,11 +51,17 @@ async function graphFetch<T>(
   step: string,
   params?: Record<string, string>,
   method: "GET" | "POST" = "GET",
+  jsonBody?: unknown,
 ): Promise<T> {
   const url = new URL(`${GRAPH_BASE}${path}`);
   for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
 
-  const response = await fetch(url, { method });
+  const response = await fetch(url, {
+    method,
+    ...(jsonBody !== undefined
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(jsonBody) }
+      : {}),
+  });
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const message =
@@ -159,4 +168,66 @@ export async function fetchDisplayPhoneNumber(phoneNumberId: string, accessToken
  * — without this, the connection is stored but nothing ever arrives at our webhook. */
 export async function subscribeAppToWaba(wabaId: string, accessToken: string): Promise<void> {
   await graphFetch(`/${wabaId}/subscribed_apps`, "webhook subscription", { access_token: accessToken }, "POST");
+}
+
+const WHATSAPP_TEXT_MESSAGE_LIMIT = 4096;
+
+/** Splits a reply into pieces that fit WhatsApp's hard 4096-character text message limit —
+ * unlike the widget (which just renders one long bubble), a reply here that ignores this limit
+ * is rejected outright by the Graph API. Prefers splitting on the nearest preceding newline or
+ * space so a chunk boundary doesn't land mid-word; falls back to a hard cut only when there's no
+ * such break in the back half of the limit. Exported for direct unit testing. */
+export function chunkWhatsAppText(text: string, limit = WHATSAPP_TEXT_MESSAGE_LIMIT): string[] {
+  if (text.length <= limit) return [text];
+
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > limit) {
+    let splitAt = rest.lastIndexOf("\n", limit);
+    if (splitAt < limit / 2) splitAt = rest.lastIndexOf(" ", limit);
+    if (splitAt < limit / 2) splitAt = limit;
+    chunks.push(rest.slice(0, splitAt).trimEnd());
+    rest = rest.slice(splitAt).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+/** Sends one engine reply as one or more WhatsApp text messages (see chunkWhatsAppText above),
+ * to `to` (the customer's wa_id) from the bot's connected number. Sequential rather than
+ * parallel so a multi-chunk reply arrives in reading order. */
+export async function sendWhatsAppTextMessage(
+  phoneNumberId: string,
+  to: string,
+  text: string,
+  accessToken: string,
+): Promise<void> {
+  for (const chunk of chunkWhatsAppText(text)) {
+    await graphFetch(
+      `/${phoneNumberId}/messages`,
+      "send message",
+      { access_token: accessToken },
+      "POST",
+      { messaging_product: "whatsapp", to, type: "text", text: { body: chunk } },
+    );
+  }
+}
+
+/** Verifies Meta's X-Hub-Signature-256 header against the raw request body — must pass before
+ * anything else touches an inbound webhook payload. Without this check, anyone who finds the
+ * webhook URL could post fabricated messages and trigger the runtime engine (at our AI-provider
+ * cost) as if they came from a real WhatsApp customer. `rawBody` must be the exact bytes Meta
+ * sent, read before JSON.parse — the HMAC is over the raw payload, not any re-serialization of
+ * it, so parsing first and re-stringifying would produce a signature mismatch even for a
+ * legitimate request. */
+export function verifyWebhookSignature(rawBody: string, signatureHeader: string | null, appSecret: string): boolean {
+  const prefix = "sha256=";
+  if (!signatureHeader?.startsWith(prefix)) return false;
+
+  const expected = Buffer.from(createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex"), "hex");
+  const provided = Buffer.from(signatureHeader.slice(prefix.length), "hex");
+  // timingSafeEqual throws on mismatched lengths rather than returning false — a malformed or
+  // wrong-length header must be caught here first, not let this throw out of a security check.
+  if (expected.length !== provided.length) return false;
+  return timingSafeEqual(expected, provided);
 }

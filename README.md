@@ -46,3 +46,25 @@ message instead of a connect button.
    ```
 
 Add all four to `.env` (see `.env.example`) and restart the dev server.
+
+### Inbound webhook
+
+Once a bot is connected, `src/app/api/webhooks/whatsapp/route.ts` is the single endpoint that
+receives messages for *every* connected bot — Meta routes each delivery to the right bot itself
+via `phone_number_id`, so there's nothing per-bot to configure here beyond the one-time webhook
+setup below.
+
+1. **`WHATSAPP_WEBHOOK_VERIFY_TOKEN`** — a string you make up yourself (not from Meta). Generate
+   one locally:
+   ```bash
+   openssl rand -hex 24
+   ```
+2. In the App Dashboard → WhatsApp → Configuration → Webhook, set the callback URL to
+   `https://<your-domain>/api/webhooks/whatsapp` and paste the same token into "Verify token".
+   Meta immediately calls the URL with `hub.mode=subscribe`; the route echoes `hub.challenge`
+   back only if the token matches, which confirms the subscription.
+3. Under "Webhook fields", subscribe to **messages** — that's the only field this app reads.
+
+This is a local-network-only deployment, so Meta can't reach `localhost` directly for either the
+verification handshake or live delivery; testing the inbound flow end-to-end requires a real
+public HTTPS URL (e.g. a Vercel deploy, or a tunnel like ngrok pointed at your dev server).
