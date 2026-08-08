@@ -1327,6 +1327,31 @@ export function NodesSilentHandoffIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function WhatsAppIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4.5"
+        strokeLinejoin="round"
+        d="M32 6C17 6 6 16.4 6 30c0 7.8 3.8 14.5 9.9 18.9-.4 3.2-1.7 6.3-4.2 8.7-.7.7-.2 1.9.8 1.8 5.4-.5 10.2-2.6 13.8-5 1.8.3 3.7.5 5.7.5 15 0 26-10.4 26-23.9S47 6 32 6Z"
+      />
+      <path
+        fill="currentColor"
+        d="M39.9 33.5c-.6-.3-3.5-1.7-4-1.9-.5-.2-.9-.3-1.3.3-.4.6-1.5 1.9-1.8 2.2-.3.4-.7.4-1.3.1-.6-.3-2.5-.9-4.7-2.9-1.7-1.5-2.9-3.4-3.3-4-.3-.6 0-.9.3-1.2.3-.3.6-.7.9-1 .3-.3.4-.6.6-1 .2-.4.1-.7 0-1-.1-.3-1.3-3.1-1.8-4.3-.5-1.1-1-1-1.3-1-.3 0-.7-.1-1.1-.1-.4 0-1 .1-1.5.7-.5.6-2 2-2 4.7 0 2.8 2 5.5 2.3 5.9.3.4 4 6.1 9.7 8.5 1.4.6 2.4.9 3.3 1.2 1.4.4 2.6.4 3.6.2 1.1-.2 3.5-1.4 4-2.8.5-1.4.5-2.5.3-2.8-.1-.2-.5-.4-1-.7Z"
+      />
+    </svg>
+  );
+}
+
 export function NodesMessageIcon({ size = 16, className }: IconProps) {
   return (
     <svg

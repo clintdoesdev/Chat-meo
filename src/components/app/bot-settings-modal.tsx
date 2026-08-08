@@ -6,6 +6,7 @@ import { ColorPicker } from "@/components/color-picker";
 import { ActionsCloseIcon, ActionsDuplicateIcon, ActionsUploadIcon } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
 import { Toast } from "@/components/studio/toast";
+import { WhatsAppConnectPanel } from "@/components/app/whatsapp-connect-panel";
 import {
   addAllowedDomain,
   getEmbedConfig,
@@ -19,7 +20,7 @@ import { buildEmbedSnippet, type WidgetPosition } from "@/lib/embed-snippet";
 const SAVE_DEBOUNCE_MS = 700;
 const MAX_AVATAR_BYTES = 200_000;
 
-type Tab = "general" | "embed";
+type Tab = "general" | "embed" | "whatsapp";
 
 // Chatmeo/Midnight/Sunset are just a curated primaryColor — the widget's default look already
 // derives from that one value (see lightenHex() in the widget page). WhatsApp/Telegram additionally
@@ -190,6 +191,7 @@ export function BotSettingsModal({
               [
                 { value: "general" as const, label: "General" },
                 { value: "embed" as const, label: "Embed & domains" },
+                { value: "whatsapp" as const, label: "WhatsApp" },
               ]
             ).map((t) => (
               <button
@@ -511,6 +513,8 @@ export function BotSettingsModal({
                     </div>
                   </>
                 )}
+
+                {tab === "whatsapp" && <WhatsAppConnectPanel botId={botId} />}
               </div>
 
               <div className="border-t border-line bg-[#0c0c0c] p-4 min-[720px]:border-l min-[720px]:border-t-0">
