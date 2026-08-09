@@ -24,14 +24,6 @@ const TOC = [
   { id: "contact", label: "Contact us" },
 ];
 
-function Fill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded border border-line-2 bg-card-2 px-1.5 py-0.5 text-[0.94em] italic text-muted">
-      {children}
-    </span>
-  );
-}
-
 function Section({
   id,
   num,
@@ -96,19 +88,16 @@ export default function PrivacyPolicyPage() {
       <div className="mx-auto max-w-[760px] px-[22px] py-14">
         <div className="mb-8 flex items-center justify-between gap-3">
           <span className="rounded-full border border-line-2 bg-card-2 px-3 py-1 text-[11.5px] font-semibold text-muted [font-variant-numeric:tabular-nums]">
-            Effective <Fill>date</Fill> · v1.0
+            Effective August 9, 2026 · v1.0
           </span>
         </div>
 
         <div className="mb-8 flex items-start gap-2.5 rounded-[14px] border border-orange-2/30 bg-orange/[.08] p-4 text-[13px] leading-relaxed">
           <StatusWarningIcon size={15} className="mt-0.5 flex-shrink-0 text-orange-2" />
           <p>
-            <strong className="text-orange-2">Draft, not yet finalized.</strong> This covers what
-            Chatmeo actually collects and sends to WhatsApp/Meta and its AI providers, in plain
-            terms — but it&apos;s a starting point, not a filed legal document. Fill in the
-            bracketed placeholders (legal entity, address, contact) and have someone with real
-            privacy-law expertise review it — especially the GDPR/CCPA rights section — before
-            treating this as final.
+            This policy has not yet been reviewed by outside legal counsel. It accurately
+            describes what Chatmeo collects and who it&apos;s shared with, but shouldn&apos;t be
+            treated as a substitute for professional legal review before relying on it at scale.
           </p>
         </div>
 
@@ -344,16 +333,27 @@ export default function PrivacyPolicyPage() {
           <Section id="rights" num="09" title="Your rights & choices">
             <p>
               Depending on where you live, you may have rights to access, correct, export, or
-              delete your personal information, and to object to or restrict certain processing.{" "}
-              <Fill>
-                Confirm which regimes apply — e.g. GDPR for EEA/UK users, CCPA/CPRA for
-                California residents — and detail the specific request process and response
-                timeline here.
-              </Fill>
+              delete your personal information, and to object to or restrict certain processing:
             </p>
+            <ul>
+              <li>
+                If you&apos;re in the European Economic Area or United Kingdom, these rights are
+                given to you under the General Data Protection Regulation (GDPR).
+              </li>
+              <li>
+                If you&apos;re a California resident, you have similar rights under the California
+                Consumer Privacy Act (CCPA/CPRA), including the right to know what personal
+                information we&apos;ve collected and to request its deletion.
+              </li>
+              <li>
+                Wherever you are, you can ask us what we hold about you, correct it, or ask us to
+                delete it — we don&apos;t require you to prove a specific law applies before we&apos;ll
+                act on a reasonable request.
+              </li>
+            </ul>
             <p>
               To exercise any of these rights, contact us using the details in{" "}
-              <a href="#contact">Contact us</a>.
+              <a href="#contact">Contact us</a>. We&apos;ll respond within 30 days.
             </p>
           </Section>
 
@@ -367,12 +367,12 @@ export default function PrivacyPolicyPage() {
 
           <Section id="transfers" num="11" title="International transfers">
             <p>
-              Chatmeo and its service providers may process data in countries other than the one
-              you&apos;re in.{" "}
-              <Fill>
-                Specify safeguards used for cross-border transfers, e.g. Standard Contractual
-                Clauses, once your infrastructure/provider footprint is finalized.
-              </Fill>
+              Chatmeo is based in Nigeria, and the infrastructure and service providers we rely
+              on — hosting, database, AI providers, WhatsApp/Meta — are located in other
+              countries, including the United States. Your information may be processed outside
+              the country you&apos;re in as a result. Where required, we rely on standard
+              contractual protections and our providers&apos; own compliance commitments to
+              safeguard data that crosses borders this way.
             </p>
           </Section>
 
@@ -386,11 +386,11 @@ export default function PrivacyPolicyPage() {
           <Section id="contact" num="13" title="Contact us">
             <p>Questions about this policy, or a request to access, export, or delete your data:</p>
             <p className="leading-loose">
-              <Fill>Legal entity name</Fill>
+              <strong className="text-text">Chatmeo</strong>
               <br />
-              <Fill>Support / privacy email address</Fill>
+              <a href="mailto:novapixelstudios001@gmail.com">novapixelstudios001@gmail.com</a>
               <br />
-              <Fill>Registered business address</Fill>
+              Port Harcourt, Nigeria
             </p>
           </Section>
         </div>
@@ -399,7 +399,7 @@ export default function PrivacyPolicyPage() {
           <Link href="/" className="font-semibold text-[#cfcfcf] hover:text-orange-2">
             ← Back to chatmeo
           </Link>
-          <span>Draft template, pending legal review.</span>
+          <span>© 2026 Chatmeo.</span>
         </footer>
       </div>
     </div>
