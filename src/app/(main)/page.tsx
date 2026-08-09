@@ -190,6 +190,16 @@ export default function LandingPage() {
                 </Link>
               </div>
             </div>
+            <div>
+              <h5 className="mb-3.5 text-[11px] font-semibold uppercase tracking-[.14em] text-muted">
+                Legal
+              </h5>
+              <div className="flex flex-col gap-1">
+                <Link href="/privacy" className="py-1 text-[13.5px] text-[#B5B5B5] transition-colors hover:text-orange-2">
+                  Privacy Policy
+                </Link>
+              </div>
+            </div>
           </div>
 
           <p
