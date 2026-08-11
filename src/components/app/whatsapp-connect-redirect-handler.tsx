@@ -22,7 +22,6 @@ const STATUS_COPY: Record<string, { message: string; tone: "ok" | "bad" }> = {
 // else falls back to the generic message; the raw Graph API error text itself never reaches the
 // URL or the client.
 const STEP_HINTS: Record<string, string> = {
-  "business discovery": "Couldn't find a linked business for that login",
   "WABA discovery": "Couldn't find a WhatsApp Business Account for that login",
   "duplicate number": "That number is already connected to another bot",
 };

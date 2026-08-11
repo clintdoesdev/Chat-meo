@@ -129,30 +129,31 @@ export async function exchangeForLongLivedToken(shortLivedToken: string): Promis
 
 export type WhatsAppAssets = { wabaId: string; phoneNumberId: string; displayPhoneNumber: string };
 
-/** Resolves which WABA and phone number this token was actually granted for — the only way to
- * find out, now that this flow is a plain OAuth redirect rather than the JS SDK popup (which
- * could hand this over directly via a postMessage 'FINISH' event). Tries the business's *client*
- * WhatsApp accounts first — the Tech Provider shape, where a WABA belongs to a different
- * business than the one running the app — and falls back to *owned* accounts, which is what a
- * Tech Provider testing with their own number sees instead: their own business simultaneously
- * runs the app and owns the WABA, so it was never a "client" account to begin with. Both edges
- * get tried on every call since which one applies depends on who's connecting, not something
- * fixed per deployment. */
+/** Resolves which WABA this token was actually granted for — the only way to find out, now that
+ * this flow is a plain OAuth redirect rather than the JS SDK popup (which could hand this over
+ * directly via a postMessage 'FINISH' event). `/me/businesses` and the client/owned WABA edges
+ * all need the separate `business_management` permission, which the WhatsApp Embedded Signup
+ * configuration never grants — it only requests `whatsapp_business_management` and
+ * `whatsapp_business_messaging` (Meta rejects those calls with "(#100) Missing Permission"
+ * otherwise). The Access Token Debugger doesn't have that problem: it's authenticated with the
+ * *app's* own credentials rather than the user token's permissions, and echoes back exactly which
+ * WABA(s) whatsapp_business_management was granted for as `granular_scopes` — precisely the
+ * signal Embedded Signup is documented to hand over out-of-band from the token itself. */
 export async function discoverWhatsAppAssets(accessToken: string): Promise<WhatsAppAssets> {
-  const businesses = await graphFetch<{ data?: { id: string }[] }>("/me/businesses", "business discovery", {
-    access_token: accessToken,
+  const { appId, appSecret } = requireMetaAppConfig();
+  const debug = await graphFetch<{
+    data?: { granular_scopes?: { scope: string; target_ids?: string[] }[] };
+  }>("/debug_token", "WABA discovery", {
+    input_token: accessToken,
+    access_token: `${appId}|${appSecret}`,
   });
-  const businessId = businesses.data?.[0]?.id;
-  if (!businessId) {
-    throw new MetaGraphError(
-      "No shared business found for this token — the signup may not have finished granting access.",
-      "business discovery",
-    );
-  }
-
-  const wabaId = await discoverWabaId(businessId, accessToken);
+  const wabaId = debug.data?.granular_scopes?.find((s) => s.scope === "whatsapp_business_management")
+    ?.target_ids?.[0];
   if (!wabaId) {
-    throw new MetaGraphError("No WhatsApp Business Account found for this business.", "WABA discovery");
+    throw new MetaGraphError(
+      "No WhatsApp Business Account was granted to this token — the signup may not have finished.",
+      "WABA discovery",
+    );
   }
 
   const phoneNumbers = await graphFetch<{ data?: { id: string; display_phone_number: string }[] }>(
@@ -166,17 +167,6 @@ export async function discoverWhatsAppAssets(accessToken: string): Promise<Whats
   }
 
   return { wabaId, phoneNumberId: phone.id, displayPhoneNumber: phone.display_phone_number };
-}
-
-async function discoverWabaId(businessId: string, accessToken: string): Promise<string | undefined> {
-  for (const edge of ["client_whatsapp_business_accounts", "owned_whatsapp_business_accounts"]) {
-    const wabas = await graphFetch<{ data?: { id: string }[] }>(`/${businessId}/${edge}`, "WABA discovery", {
-      access_token: accessToken,
-    });
-    const wabaId = wabas.data?.[0]?.id;
-    if (wabaId) return wabaId;
-  }
-  return undefined;
 }
 
 /** Registers our app to receive webhook events (inbound messages, status updates) for this WABA
