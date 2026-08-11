@@ -23,6 +23,7 @@ const STATUS_COPY: Record<string, { message: string; tone: "ok" | "bad" }> = {
 // URL or the client.
 const STEP_HINTS: Record<string, string> = {
   "WABA discovery": "Couldn't find a WhatsApp Business Account for that login",
+  "phone number registration": "Couldn't activate that number on WhatsApp — try reconnecting",
   "duplicate number": "That number is already connected to another bot",
 };
 

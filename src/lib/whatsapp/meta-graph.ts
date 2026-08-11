@@ -4,7 +4,7 @@
 // free of Next.js/request concerns.
 //
 // Bump this if Meta deprecates it; there's nothing else version-specific in this file.
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomInt, timingSafeEqual } from "crypto";
 
 const GRAPH_API_VERSION = "v23.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -13,6 +13,10 @@ export class MetaGraphError extends Error {
   constructor(
     message: string,
     public readonly step: string,
+    // Meta's numeric error code (e.g. 133010), when the response included one — lets callers
+    // recognize specific known failure modes (like "already registered") without parsing message
+    // text, which Meta doesn't guarantee the wording of.
+    public readonly code?: number,
   ) {
     super(message);
     this.name = "MetaGraphError";
@@ -84,11 +88,13 @@ async function graphFetch<T>(
   });
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
+    const errorObj =
       json && typeof json === "object" && "error" in json && json.error && typeof json.error === "object"
-        ? String((json.error as { message?: unknown }).message ?? response.statusText)
-        : response.statusText;
-    throw new MetaGraphError(`Meta API error during ${step}: ${message}`, step);
+        ? (json.error as { message?: unknown; code?: unknown })
+        : undefined;
+    const message = String(errorObj?.message ?? response.statusText);
+    const code = typeof errorObj?.code === "number" ? errorObj.code : undefined;
+    throw new MetaGraphError(`Meta API error during ${step}: ${message}`, step, code);
   }
   return json as T;
 }
@@ -167,6 +173,35 @@ export async function discoverWhatsAppAssets(accessToken: string): Promise<Whats
   }
 
   return { wabaId, phoneNumberId: phone.id, displayPhoneNumber: phone.display_phone_number };
+}
+
+// Meta's error code for "this number already has two-step verification set up" — thrown when
+// registerPhoneNumber's generated PIN doesn't match one already on file. That's not a failure
+// here: it means the number was already registered on the WhatsApp network by a previous
+// connection attempt or (for Coexistence) by the WhatsApp Business App itself, so registration
+// has nothing left to do.
+const ALREADY_REGISTERED_ERROR_CODE = 133010;
+
+/** Finishes activating a phone number on the Cloud API / WhatsApp network. Embedded Signup hands
+ * back a phone_number_id once the seller picks a number, but a brand-new number (not linked via
+ * Coexistence to an existing WhatsApp Business App number, which is already registered) still
+ * needs this call before it's actually reachable — otherwise it sits associated with the WABA in
+ * the Graph API while every WhatsApp client reports it as "not on WhatsApp". Safe to call
+ * unconditionally: an already-registered number just rejects our made-up PIN with
+ * ALREADY_REGISTERED_ERROR_CODE, which we treat as success rather than a real failure. */
+export async function registerPhoneNumber(phoneNumberId: string, accessToken: string): Promise<void> {
+  try {
+    await graphFetch(
+      `/${phoneNumberId}/register`,
+      "phone number registration",
+      { access_token: accessToken },
+      "POST",
+      { messaging_product: "whatsapp", pin: String(randomInt(0, 1_000_000)).padStart(6, "0") },
+    );
+  } catch (error) {
+    if (error instanceof MetaGraphError && error.code === ALREADY_REGISTERED_ERROR_CODE) return;
+    throw error;
+  }
 }
 
 /** Registers our app to receive webhook events (inbound messages, status updates) for this WABA

@@ -10,6 +10,7 @@ import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
   MetaGraphError,
+  registerPhoneNumber,
   subscribeAppToWaba,
 } from "@/lib/whatsapp/meta-graph";
 
@@ -30,6 +31,7 @@ export async function completeWhatsAppConnection(
     const accessToken = await exchangeForLongLivedToken(shortLivedToken);
     const { wabaId, phoneNumberId, displayPhoneNumber } = await discoverWhatsAppAssets(accessToken);
 
+    await registerPhoneNumber(phoneNumberId, accessToken);
     await subscribeAppToWaba(wabaId, accessToken);
 
     const connectedAt = new Date();
