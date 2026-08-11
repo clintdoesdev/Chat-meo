@@ -15,7 +15,10 @@ import {
 
 export type CompleteWhatsAppConnectionResult =
   | { ok: true; displayPhoneNumber: string }
-  | { ok: false; status: number; error: string };
+  // `step` is one of MetaGraphError's own step labels (e.g. "WABA discovery") or a fixed code
+  // for the non-Graph-API failure modes below — safe to surface in a redirect URL/toast since
+  // it's just a stage name, never the underlying Graph API error message itself.
+  | { ok: false; status: number; error: string; step: string };
 
 export async function completeWhatsAppConnection(botId: string, code: string): Promise<CompleteWhatsAppConnectionResult> {
   try {
@@ -53,15 +56,20 @@ export async function completeWhatsAppConnection(botId: string, code: string): P
   } catch (error) {
     if (error instanceof MetaGraphError) {
       console.error(`[whatsapp/connect] failed at "${error.step}":`, error.message);
-      return { ok: false, status: 502, error: error.message };
+      return { ok: false, status: 502, error: error.message, step: error.step };
     }
     // phoneNumberId is globally unique (see the schema doc comment) — this fires when the
     // WhatsApp number just signed up is already linked to a different bot.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { ok: false, status: 409, error: "This WhatsApp number is already connected to another bot." };
+      return {
+        ok: false,
+        status: 409,
+        error: "This WhatsApp number is already connected to another bot.",
+        step: "duplicate number",
+      };
     }
     const message = error instanceof Error ? error.message : "Unknown error.";
     console.error("[whatsapp/connect] unexpected failure:", error);
-    return { ok: false, status: 500, error: `Couldn't connect WhatsApp: ${message}` };
+    return { ok: false, status: 500, error: `Couldn't connect WhatsApp: ${message}`, step: "unknown" };
   }
 }

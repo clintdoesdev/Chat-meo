@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ActionsTrashIcon, StatusWarningIcon, WhatsAppIcon } from "@/components/icons";
+import { ActionsTrashIcon, AnimatedSpinnerIcon, StatusWarningIcon, WhatsAppIcon } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
 import {
   disconnectWhatsApp,
@@ -37,6 +37,7 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
   const [disconnectPending, setDisconnectPending] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,10 +196,24 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
       {isRevoked && (
         <a
           href={`/api/whatsapp/connect/start?botId=${encodeURIComponent(botId)}`}
-          className="mt-3.5 flex w-fit items-center gap-2 rounded-full bg-grad-orange px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"
+          aria-disabled={redirecting}
+          onClick={(event) => {
+            if (redirecting) {
+              event.preventDefault();
+              return;
+            }
+            // Not preventDefault()'d otherwise — the browser's own navigation to Meta still
+            // happens right after this; this just gives that brief moment (and any network
+            // latency before the redirect actually lands) a visible loading state instead of
+            // the button appearing to do nothing.
+            setRedirecting(true);
+          }}
+          className={`mt-3.5 flex w-fit items-center gap-2 rounded-full bg-grad-orange px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110 ${
+            redirecting ? "pointer-events-none opacity-70" : ""
+          }`}
         >
-          <WhatsAppIcon size={14} />
-          {connection ? "Reconnect WhatsApp" : "Connect WhatsApp"}
+          {redirecting ? <AnimatedSpinnerIcon size={14} /> : <WhatsAppIcon size={14} />}
+          {redirecting ? "Redirecting to Facebook…" : connection ? "Reconnect WhatsApp" : "Connect WhatsApp"}
         </a>
       )}
 
