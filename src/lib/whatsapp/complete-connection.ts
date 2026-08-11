@@ -20,9 +20,13 @@ export type CompleteWhatsAppConnectionResult =
   // it's just a stage name, never the underlying Graph API error message itself.
   | { ok: false; status: number; error: string; step: string };
 
-export async function completeWhatsAppConnection(botId: string, code: string): Promise<CompleteWhatsAppConnectionResult> {
+export async function completeWhatsAppConnection(
+  botId: string,
+  code: string,
+  redirectUri: string,
+): Promise<CompleteWhatsAppConnectionResult> {
   try {
-    const shortLivedToken = await exchangeCodeForToken(code);
+    const shortLivedToken = await exchangeCodeForToken(code, redirectUri);
     const accessToken = await exchangeForLongLivedToken(shortLivedToken);
     const { wabaId, phoneNumberId, displayPhoneNumber } = await discoverWhatsAppAssets(accessToken);
 

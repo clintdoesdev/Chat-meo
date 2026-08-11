@@ -93,14 +93,16 @@ async function graphFetch<T>(
   return json as T;
 }
 
-/** Step 1 of the token exchange: the `code` FB.login's callback hands back is short-lived and
- * tied to this specific app+redirect — exchange it for a short-lived user access token before it
- * can be used for anything else. */
-export async function exchangeCodeForToken(code: string): Promise<string> {
+/** Step 1 of the token exchange: the `code` the OAuth callback hands back is short-lived and
+ * tied to this specific app+redirect_uri pair — Meta rejects the exchange unless `redirect_uri`
+ * here is byte-for-byte identical to the one used in the original `/dialog/oauth` request (see
+ * buildEmbeddedSignupUrl), even though the browser has already left that URL by this point. */
+export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<string> {
   const { appId, appSecret } = requireMetaAppConfig();
   const json = await graphFetch<{ access_token?: string }>("/oauth/access_token", "code exchange", {
     client_id: appId,
     client_secret: appSecret,
+    redirect_uri: redirectUri,
     code,
   });
   if (!json.access_token) {

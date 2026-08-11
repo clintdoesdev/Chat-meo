@@ -63,7 +63,11 @@ export async function GET(request: NextRequest) {
     return redirectWithStatus(request, "error", { botId, step: "ownership check" });
   }
 
-  const result = await completeWhatsAppConnection(botId, code);
+  // Must be byte-for-byte identical to the redirect_uri start/route.ts sent Meta, or the code
+  // exchange fails with "Error validating verification code" — built the same way, from the same
+  // request.url base, for exactly that reason.
+  const redirectUri = new URL("/api/whatsapp/connect/callback", request.url).toString();
+  const result = await completeWhatsAppConnection(botId, code, redirectUri);
   return redirectWithStatus(request, result.ok ? "connected" : "error", {
     botId,
     step: result.ok ? undefined : result.step,
