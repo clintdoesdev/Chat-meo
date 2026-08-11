@@ -18,6 +18,17 @@ const nextConfig: NextConfig = {
         source: "/widget.js",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
+      {
+        // The WhatsApp "Connect WhatsApp" button (bot settings → Deploy & channels) opens
+        // Meta's Embedded Signup as a popup via the Facebook JS SDK, which needs a live
+        // window.opener reference back to this tab to hand over the result — the default
+        // Cross-Origin-Opener-Policy some hosts/security presets apply ("same-origin") silently
+        // severs that link, so the popup finishes but this tab never hears about it.
+        // "same-origin-allow-popups" keeps the isolation for same-origin cases while explicitly
+        // permitting popups we open ourselves to retain that reference.
+        source: "/app/:path*",
+        headers: [{ key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" }],
+      },
     ];
   },
 };
