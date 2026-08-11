@@ -23,17 +23,18 @@ export type WhatsAppConnectionInfo = {
 };
 
 export type WhatsAppConnectConfig = {
-  /** null when META_APP_ID/META_CONFIG_ID aren't set on this deployment — the connect button
-   * shows a "not configured" state instead of calling FB.init() with nothing to init. */
-  appId: string | null;
-  configId: string | null;
+  /** False when META_APP_ID/META_APP_SECRET/META_CONFIG_ID aren't all set on this deployment —
+   * the connect button shows a "not configured" state instead of a link to a redirect that would
+   * just fail. The client never needs the values themselves: /api/whatsapp/connect/start builds
+   * Meta's redirect URL server-side, so nothing Meta-specific has to reach the browser at all. */
+  configured: boolean;
   connection: WhatsAppConnectionInfo | null;
 };
 
-/** Everything the "WhatsApp" tab needs to render: whether Embedded Signup is even configured on
- * this deployment, and this bot's current connection (if any). Read-only — connecting/updating
- * happens through POST /api/whatsapp/connect, not here, since that flow needs to run mid-signup
- * from a plain fetch() rather than a form-bound server action. */
+/** Everything the "WhatsApp" card needs to render: whether Embedded Signup is even configured on
+ * this deployment, and this bot's current connection (if any). Read-only — connecting happens
+ * through the /api/whatsapp/connect/start → Meta → /api/whatsapp/connect/callback redirect
+ * chain, not here. */
 export async function getWhatsAppConnectConfig(botId: string): Promise<WhatsAppConnectConfig | { error: string }> {
   const bot = await requireBotOwnership(botId);
   if (!bot) return { error: "Bot not found." };
@@ -42,11 +43,9 @@ export async function getWhatsAppConnectConfig(botId: string): Promise<WhatsAppC
     where: { botId },
     select: { status: true, isActive: true, displayPhoneNumber: true, connectedAt: true },
   });
-  const metaConfig = getMetaAppConfig();
 
   return {
-    appId: metaConfig?.appId ?? null,
-    configId: metaConfig?.configId ?? null,
+    configured: getMetaAppConfig() !== null,
     connection: connection
       ? {
           status: connection.status,

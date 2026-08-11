@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
-import { describe, expect, it } from "vitest";
-import { chunkWhatsAppText, verifyWebhookSignature } from "./meta-graph";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildEmbeddedSignupUrl, chunkWhatsAppText, verifyWebhookSignature } from "./meta-graph";
 
 const APP_SECRET = "test-app-secret-do-not-use-in-production";
 
@@ -62,5 +62,40 @@ describe("chunkWhatsAppText", () => {
       expect(chunk.endsWith(" ")).toBe(false); // trimmed
     }
     expect(chunks.every((c) => c.length <= 30)).toBe(true);
+  });
+});
+
+describe("buildEmbeddedSignupUrl", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    process.env.META_APP_ID = "test-app-id";
+    process.env.META_APP_SECRET = "test-app-secret";
+    process.env.META_CONFIG_ID = "test-config-id";
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("builds Meta's OAuth dialog URL with the app id, config id, and caller-supplied redirect/state", () => {
+    const url = new URL(
+      buildEmbeddedSignupUrl({ redirectUri: "https://chatmeo.app/api/whatsapp/connect/callback", state: "bot123.nonce456" }),
+    );
+    expect(url.origin).toBe("https://www.facebook.com");
+    expect(url.pathname).toMatch(/\/dialog\/oauth$/);
+    expect(url.searchParams.get("client_id")).toBe("test-app-id");
+    expect(url.searchParams.get("config_id")).toBe("test-config-id");
+    expect(url.searchParams.get("redirect_uri")).toBe("https://chatmeo.app/api/whatsapp/connect/callback");
+    expect(url.searchParams.get("state")).toBe("bot123.nonce456");
+    expect(url.searchParams.get("response_type")).toBe("code");
+    expect(url.searchParams.get("override_default_response_type")).toBe("true");
+  });
+
+  it("throws when Meta app config is missing rather than building a broken URL", () => {
+    delete process.env.META_APP_ID;
+    expect(() => buildEmbeddedSignupUrl({ redirectUri: "https://chatmeo.app/callback", state: "x" })).toThrow(
+      /META_APP_ID/,
+    );
   });
 });

@@ -46,6 +46,26 @@ export function getMetaAppConfig(): MetaAppConfig | null {
   }
 }
 
+/** Builds the URL that starts WhatsApp Embedded Signup as a full-page redirect (Meta's
+ * `/dialog/oauth` endpoint) rather than the Facebook JS SDK's popup — the popup relies on a live
+ * `window.opener` reference to hand the result back, which mobile browsers frequently break
+ * (the popup completes but the tab that opened it never hears about it). A redirect has no such
+ * dependency: the browser navigates away and Meta redirects it straight back to `redirectUri`
+ * with `?code=...&state=...` (or `?error=...` if the seller cancels), exactly like any other
+ * OAuth provider. `state` is the caller's responsibility to generate and verify on the way back
+ * — see src/app/api/whatsapp/connect/start/route.ts. */
+export function buildEmbeddedSignupUrl(params: { redirectUri: string; state: string }): string {
+  const { appId, configId } = requireMetaAppConfig();
+  const url = new URL(`https://www.facebook.com/${GRAPH_API_VERSION}/dialog/oauth`);
+  url.searchParams.set("client_id", appId);
+  url.searchParams.set("redirect_uri", params.redirectUri);
+  url.searchParams.set("config_id", configId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("override_default_response_type", "true");
+  url.searchParams.set("state", params.state);
+  return url.toString();
+}
+
 async function graphFetch<T>(
   path: string,
   step: string,
@@ -147,21 +167,6 @@ export async function discoverWhatsAppAssets(accessToken: string): Promise<Whats
   }
 
   return { wabaId, phoneNumberId: phone.id, displayPhoneNumber: phone.display_phone_number };
-}
-
-/** Looks up just the display phone number for a WABA/phone number pair the client already
- * handed us (the common case) — cheaper than the full discovery walk above when we already know
- * which WABA and phone number, just not how to show it. */
-export async function fetchDisplayPhoneNumber(phoneNumberId: string, accessToken: string): Promise<string> {
-  const json = await graphFetch<{ display_phone_number?: string }>(
-    `/${phoneNumberId}`,
-    "phone number lookup",
-    { access_token: accessToken, fields: "display_phone_number" },
-  );
-  if (!json.display_phone_number) {
-    throw new MetaGraphError("Meta didn't return a display phone number for this number.", "phone number lookup");
-  }
-  return json.display_phone_number;
 }
 
 /** Registers our app to receive webhook events (inbound messages, status updates) for this WABA

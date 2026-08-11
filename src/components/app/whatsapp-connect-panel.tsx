@@ -1,7 +1,6 @@
 "use client";
 
-import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActionsTrashIcon, StatusWarningIcon, WhatsAppIcon } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
 import {
@@ -11,48 +10,7 @@ import {
   type WhatsAppConnectionInfo,
 } from "@/lib/actions/whatsapp";
 
-// Facebook Login for Business JS SDK — loaded once per page via next/script below, not an npm
-// package (Meta only ships this as a browser global). window.fbAsyncInit is the SDK's own
-// documented ready-hook, called automatically once connect.facebook.net/en_US/sdk.js finishes
-// loading; declared here since nothing else in the app touches the FB SDK.
-type FacebookLoginResponse = {
-  authResponse?: { code?: string; accessToken?: string } | null;
-  status?: string;
-};
-
-declare global {
-  interface Window {
-    fbAsyncInit?: () => void;
-    FB?: {
-      init: (params: { appId: string; autoLogAppEvents?: boolean; xfbml?: boolean; version: string }) => void;
-      login: (
-        callback: (response: FacebookLoginResponse) => void,
-        options: {
-          config_id: string;
-          response_type: "code";
-          override_default_response_type: true;
-          extras?: { setup?: Record<string, unknown>; featureType?: string; sessionInfoVersion?: string };
-        },
-      ) => void;
-    };
-  }
-}
-
-const FB_SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
-const FB_SDK_VERSION = "v23.0";
-// Meta's own message-event origins for the Embedded Signup popup/iframe — anything else is
-// ignored outright rather than trusting arbitrary postMessage senders.
-const META_MESSAGE_ORIGINS = new Set(["https://www.facebook.com", "https://web.facebook.com"]);
-
-type WaEmbeddedSignupEvent = {
-  type?: string;
-  event?: string;
-  data?: { waba_id?: string; phone_number_id?: string; business_id?: string };
-};
-
-type SignupAssets = { wabaId?: string; phoneNumberId?: string };
-
-type PanelStatus = "loading" | "not_configured" | "idle" | "connecting" | "connected" | "error";
+type PanelStatus = "loading" | "not_configured" | "idle" | "error";
 
 // Checked in this order deliberately: connection health (status) takes precedence over the
 // seller's own pause toggle — a DISCONNECTED or TOKEN_EXPIRED connection is worth flagging as
@@ -73,16 +31,12 @@ function statusLabel(connection: WhatsAppConnectionInfo): { text: string; classN
 
 export function WhatsAppConnectPanel({ botId }: { botId: string }) {
   const [status, setStatus] = useState<PanelStatus>("loading");
-  const [appId, setAppId] = useState<string | null>(null);
-  const [configId, setConfigId] = useState<string | null>(null);
   const [connection, setConnection] = useState<WhatsAppConnectionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sdkReady, setSdkReady] = useState(false);
   const [togglePending, setTogglePending] = useState(false);
   const [disconnectPending, setDisconnectPending] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const signupAssetsRef = useRef<SignupAssets>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -93,109 +47,13 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
         setError(result.error);
         return;
       }
-      setAppId(result.appId);
-      setConfigId(result.configId);
       setConnection(result.connection);
-      setStatus(result.appId && result.configId ? "idle" : "not_configured");
+      setStatus(result.configured ? "idle" : "not_configured");
     });
     return () => {
       cancelled = true;
     };
   }, [botId]);
-
-  // The FB SDK calls window.fbAsyncInit itself once connect.facebook.net finishes loading —
-  // that's the documented hook, not Script's own onLoad (which can fire before the SDK has
-  // finished setting up window.FB internally).
-  useEffect(() => {
-    if (!appId) return;
-    if (window.FB) {
-      setSdkReady(true);
-      return;
-    }
-    window.fbAsyncInit = () => {
-      window.FB?.init({ appId, autoLogAppEvents: true, xfbml: false, version: FB_SDK_VERSION });
-      setSdkReady(true);
-    };
-  }, [appId]);
-
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      if (!META_MESSAGE_ORIGINS.has(event.origin)) return;
-      let payload: WaEmbeddedSignupEvent;
-      try {
-        payload = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-      } catch {
-        return;
-      }
-      if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
-
-      if (payload.event === "FINISH" || payload.event?.startsWith("FINISH")) {
-        signupAssetsRef.current = {
-          wabaId: payload.data?.waba_id,
-          phoneNumberId: payload.data?.phone_number_id,
-        };
-      } else if (payload.event === "CANCEL") {
-        setStatus("idle");
-        setError("WhatsApp sign-in was cancelled.");
-      } else if (payload.event === "ERROR") {
-        setStatus("idle");
-        setError("Something went wrong during WhatsApp sign-in — try again.");
-      }
-    }
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  async function finishConnect(code: string) {
-    try {
-      const response = await fetch("/api/whatsapp/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ botId, code, ...signupAssetsRef.current }),
-      });
-      const json: { ok?: boolean; displayPhoneNumber?: string; error?: string } = await response.json();
-      if (!response.ok || !json.ok || !json.displayPhoneNumber) {
-        setStatus("idle");
-        setError(json.error ?? "Couldn't connect WhatsApp — try again.");
-        return;
-      }
-      setConnection({
-        status: "CONNECTED",
-        isActive: true,
-        displayPhoneNumber: json.displayPhoneNumber,
-        connectedAt: new Date().toISOString(),
-      });
-      setStatus("connected");
-    } catch {
-      setStatus("idle");
-      setError("Couldn't reach the server — check your connection and try again.");
-    } finally {
-      signupAssetsRef.current = {};
-    }
-  }
-
-  function handleConnectClick() {
-    if (!window.FB || !configId) return;
-    setError(null);
-    setStatus("connecting");
-    window.FB.login(
-      (response) => {
-        const code = response.authResponse?.code;
-        if (code) {
-          void finishConnect(code);
-        } else {
-          setStatus("idle");
-          setError("WhatsApp sign-in didn't complete — try again.");
-        }
-      },
-      {
-        config_id: configId,
-        response_type: "code",
-        override_default_response_type: true,
-        extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
-      },
-    );
-  }
 
   async function handleToggleActive() {
     if (!connection) return;
@@ -242,7 +100,6 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
     );
   }
 
-
   // A DISCONNECTED connection still has a row (phone number, status), but nothing left to
   // pause or revoke — it's functionally the same "needs (re)connecting" state as never having
   // connected at all, just with a number to show instead of the Coexistence pitch.
@@ -250,8 +107,6 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
 
   return (
     <div>
-      {appId && <Script src={FB_SDK_SRC} strategy="afterInteractive" />}
-
       {isRevoked ? (
         <p className="mb-3.5 text-[12.5px] leading-relaxed text-muted">
           We recommend <strong className="text-text">linking your existing WhatsApp Business App
@@ -338,15 +193,13 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
       )}
 
       {isRevoked && (
-        <button
-          type="button"
-          onClick={handleConnectClick}
-          disabled={!sdkReady || status === "connecting"}
-          className="mt-3.5 flex items-center gap-2 rounded-full bg-grad-orange px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition disabled:opacity-50"
+        <a
+          href={`/api/whatsapp/connect/start?botId=${encodeURIComponent(botId)}`}
+          className="mt-3.5 flex w-fit items-center gap-2 rounded-full bg-grad-orange px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_24px_-8px_rgba(255,92,22,.6)] transition hover:brightness-110"
         >
           <WhatsAppIcon size={14} />
-          {status === "connecting" ? "Connecting…" : connection ? "Reconnect WhatsApp" : "Connect WhatsApp"}
-        </button>
+          {connection ? "Reconnect WhatsApp" : "Connect WhatsApp"}
+        </a>
       )}
 
       {actionError && <p className="mt-2.5 text-[11.5px] text-bad">{actionError}</p>}

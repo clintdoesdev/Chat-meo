@@ -27,8 +27,16 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## WhatsApp Business setup
 
-Connecting a bot to WhatsApp (the "WhatsApp" tab in a bot's settings) uses Meta's Embedded
-Signup flow and needs four environment variables. Without them, the tab shows a "not configured"
+Connecting a bot to WhatsApp (the "WhatsApp" card in a bot's Deploy & channels tab) uses Meta's
+Embedded Signup flow, driven as a **full-page redirect** rather than the Facebook JS SDK's popup
+— the popup depends on a live `window.opener` reference back to the tab that opened it, which
+mobile browsers frequently break silently (the signup completes on Meta's side, but the
+originating tab never hears about it). A redirect has no such dependency: clicking "Connect
+WhatsApp" navigates to `/api/whatsapp/connect/start`, which sends the browser to Meta, and Meta
+sends it straight back to `/api/whatsapp/connect/callback` when done — see
+`src/lib/whatsapp/meta-graph.ts`'s `buildEmbeddedSignupUrl`.
+
+This needs four environment variables. Without them, the WhatsApp card shows a "not configured"
 message instead of a connect button.
 
 1. Create (or open) an app at the [Meta App Dashboard](https://developers.facebook.com/apps) and
@@ -44,8 +52,14 @@ message instead of a connect button.
    ```bash
    openssl rand -base64 33
    ```
+6. **Register the redirect URI** — under **Facebook Login for Business → Settings → Client
+   OAuth settings**, add `https://<your-domain>/api/whatsapp/connect/callback` to **Valid OAuth
+   Redirect URIs**, then Save. This must match exactly (scheme, host, path) or Meta rejects the
+   redirect outright. ("Login with the JavaScript SDK" and its allowed-domains field are *not*
+   needed for this flow — they're only relevant if something else in the app used the JS SDK's
+   popup login, which nothing does.)
 
-Add all four to `.env` (see `.env.example`) and restart the dev server.
+Add all four env vars to `.env` (see `.env.example`) and restart the dev server.
 
 ### Inbound webhook
 

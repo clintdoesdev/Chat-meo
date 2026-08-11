@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { auth } from "@/auth";
 import { BetaUsagePanel } from "@/components/app/beta-usage-panel";
 import { BotsPanel } from "@/components/app/bots-panel";
 import { StatCard } from "@/components/app/stat-card";
+import { WhatsAppConnectStatusToast } from "@/components/app/whatsapp-connect-status-toast";
 import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
 import { BETA_BOT_CAP, BETA_MESSAGE_CAP, startOfCurrentMonth } from "@/lib/beta-limits";
 import { prisma } from "@/lib/prisma";
@@ -64,6 +66,10 @@ export default async function OverviewPage() {
 
   return (
     <div>
+      <Suspense fallback={null}>
+        <WhatsAppConnectStatusToast />
+      </Suspense>
+
       <div className="mb-[22px]">
         <h1 className="text-[22px] font-bold tracking-tight">Overview</h1>
         <p className="mt-0.5 text-[12.5px] text-muted">
