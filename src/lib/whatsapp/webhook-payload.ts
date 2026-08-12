@@ -10,6 +10,10 @@ const WebhookMessageSchema = z.object({
   id: z.string().min(1),
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
+  /// Present on an image message — `id` is a media id (see getWhatsAppMediaUrl/
+  /// downloadWhatsAppMedia in meta-graph.ts), not a fetchable URL by itself. `caption` is the
+  /// optional text WhatsApp lets a customer attach alongside a photo.
+  image: z.object({ id: z.string().min(1), caption: z.string().optional() }).optional(),
   /// Unix epoch seconds, as a string, per Meta's own convention — when the customer actually
   /// sent this message, not when we received/parsed it. See InboundWhatsAppMessage.receivedAt.
   timestamp: z.string().optional(),
@@ -43,6 +47,13 @@ export type InboundWhatsAppMessage = {
    * how to consume plain text input. */
   isText: boolean;
   content: string;
+  /** Set only for an inbound "image" message — the Meta media id needed to actually download the
+   * bytes (see getWhatsAppMediaUrl/downloadWhatsAppMedia in meta-graph.ts). Null for every other
+   * message type, including text. */
+  imageMediaId: string | null;
+  /** The optional caption WhatsApp lets a customer attach to a photo. Null unless imageMediaId is
+   * set and a caption was actually provided. */
+  caption: string | null;
   /** When the customer actually sent this, from Meta's own `timestamp` field — used (not our
    * processing time) to track the 24h service window (see service-window.ts), so a delayed or
    * replayed webhook delivery doesn't look freshly-within-window just because we happened to
@@ -64,13 +75,20 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
 
       for (const message of change.value.messages ?? []) {
         const isText = message.type === "text" && Boolean(message.text?.body);
+        const imageMediaId = message.type === "image" ? (message.image?.id ?? null) : null;
         const timestampMs = message.timestamp && /^\d+$/.test(message.timestamp) ? Number(message.timestamp) * 1000 : NaN;
         out.push({
           phoneNumberId,
           from: message.from,
           waMessageId: message.id,
           isText,
-          content: isText ? message.text!.body : `[unsupported message type: ${message.type}]`,
+          content: isText
+            ? message.text!.body
+            : imageMediaId
+              ? "[image]"
+              : `[unsupported message type: ${message.type}]`,
+          imageMediaId,
+          caption: imageMediaId ? (message.image?.caption ?? null) : null,
           receivedAt: Number.isFinite(timestampMs) ? new Date(timestampMs) : new Date(),
         });
       }

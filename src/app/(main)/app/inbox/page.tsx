@@ -58,7 +58,7 @@ export default async function InboxPage() {
         messages: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { role: true, content: true, createdAt: true },
+          select: { role: true, content: true, contentType: true, createdAt: true },
         },
       },
     }),
@@ -81,7 +81,11 @@ export default async function InboxPage() {
         visitorId: conversation.visitorId,
         messageCount: conversation._count.messages,
         lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
-        lastMessagePreview: lastMessage?.content ?? "No messages yet",
+        lastMessagePreview: !lastMessage
+          ? "No messages yet"
+          : lastMessage.contentType === "IMAGE"
+            ? "📷 Photo"
+            : lastMessage.content,
         lastMessageRole: lastMessage?.role ?? null,
         archived: conversation.archived,
         folderId: conversation.folderId,

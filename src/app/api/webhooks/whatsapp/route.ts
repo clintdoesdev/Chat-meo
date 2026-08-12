@@ -3,7 +3,13 @@ import { classifierLlm, providerLlm } from "@/engine/llm";
 import { runWhatsAppTurn } from "@/lib/chat/run-whatsapp-turn";
 import { decrypt } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
-import { markWhatsAppMessageReadWithTyping, sendWhatsAppTextMessage, verifyWebhookSignature } from "@/lib/whatsapp/meta-graph";
+import {
+  downloadWhatsAppMedia,
+  getWhatsAppMediaUrl,
+  markWhatsAppMessageReadWithTyping,
+  sendWhatsAppTextMessage,
+  verifyWebhookSignature,
+} from "@/lib/whatsapp/meta-graph";
 import { extractInboundMessages, type InboundWhatsAppMessage } from "@/lib/whatsapp/webhook-payload";
 
 /**
@@ -22,6 +28,29 @@ export async function GET(request: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
   return new NextResponse(challenge, { status: 200 });
+}
+
+/** Resolves an inbound image message's media id to its actual bytes (see getWhatsAppMediaUrl/
+ * downloadWhatsAppMedia in meta-graph.ts), for runWhatsAppTurn to persist directly. Best-effort:
+ * a failure here (expired media, transient network) shouldn't drop the whole inbound message —
+ * runWhatsAppTurn just falls back to storing the "[image]" placeholder text instead. */
+async function downloadInboundImage(
+  message: InboundWhatsAppMessage,
+  accessToken: string,
+): Promise<{ dataUri: string; caption: string | null } | undefined> {
+  if (!message.imageMediaId) return undefined;
+  try {
+    const mediaUrl = await getWhatsAppMediaUrl(message.imageMediaId, accessToken);
+    const dataUri = await downloadWhatsAppMedia(mediaUrl, accessToken);
+    return { dataUri, caption: message.caption };
+  } catch (error) {
+    console.error("[whatsapp webhook] failed to download inbound image", {
+      phoneNumberId: message.phoneNumberId,
+      waMessageId: message.waMessageId,
+      error,
+    });
+    return undefined;
+  }
 }
 
 /**
@@ -48,10 +77,15 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     return;
   }
 
+  // Present for every message type, not just active+text, since an inbound image needs it for
+  // both the "connection paused" and "active but non-text" branches below.
+  const accessToken = connection.accessToken ? decrypt(connection.accessToken) : null;
+
   // Paused connections and non-text message types (image, audio, location, button replies, ...)
   // both land in the inbox without ever reaching the engine — the flow-walking engine only
   // knows how to consume plain text input, so there's nothing sensible to feed it for the latter.
   if (!connection.isActive || !message.isText) {
+    const image = message.imageMediaId && accessToken ? await downloadInboundImage(message, accessToken) : undefined;
     await runWhatsAppTurn(
       {
         botId: connection.botId,
@@ -59,6 +93,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
         message: message.content,
         receivedAt: message.receivedAt,
         runEngine: false,
+        image,
       },
       { llm: providerLlm, classify: classifierLlm },
     );
@@ -68,11 +103,10 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // isActive and accessToken are only ever cleared together (see disconnectWhatsApp), so this
   // shouldn't happen for a connection that just passed the isActive check above — guarded
   // anyway since a null token has nothing to decrypt.
-  if (!connection.accessToken) {
+  if (!accessToken) {
     console.error("[whatsapp webhook] active connection has no access token", { botId: connection.botId });
     return;
   }
-  const accessToken = decrypt(connection.accessToken);
 
   // Best-effort and fire-before-the-engine-runs: an AI node's LLM call can take a few seconds,
   // so this gives the customer a "typing…" indicator to look at instead of dead air. A failure

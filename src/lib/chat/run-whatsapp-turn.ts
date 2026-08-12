@@ -27,6 +27,11 @@ export type RunWhatsAppTurnParams = {
   /** When the customer actually sent this, per Meta's own timestamp — see
    * InboundWhatsAppMessage.receivedAt. Defaults to now for callers that don't have one. */
   receivedAt?: Date;
+  /** Set only when the webhook already downloaded an inbound image (see downloadWhatsAppMedia in
+   * meta-graph.ts) — persisted as an IMAGE-content Message instead of `message`'s placeholder
+   * text. The flow-walking engine only understands text, so this is only ever passed alongside
+   * runEngine: false, same as any other non-text message type. */
+  image?: { dataUri: string; caption: string | null };
 };
 
 export type RunWhatsAppTurnResult =
@@ -119,7 +124,16 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
       : [];
 
   await prisma.message.create({
-    data: { conversationId: conversation.id, role: "USER", content: params.message, channel: "WHATSAPP" },
+    data: params.image
+      ? {
+          conversationId: conversation.id,
+          role: "USER",
+          content: params.image.dataUri,
+          contentType: "IMAGE",
+          caption: params.image.caption,
+          channel: "WHATSAPP",
+        }
+      : { conversationId: conversation.id, role: "USER", content: params.message, channel: "WHATSAPP" },
   });
 
   // A HANDOFF conversation stays that way for good — step() would no-op on it anyway (see

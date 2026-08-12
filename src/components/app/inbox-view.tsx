@@ -449,15 +449,27 @@ export function InboxView({
                     </span>
                   )}
                   <div
-                    className={`max-w-[76%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                    className={`max-w-[76%] overflow-hidden rounded-2xl text-[13px] leading-relaxed ${
                       message.role === "USER"
                         ? "rounded-br-md bg-grad-orange text-white"
                         : "rounded-bl-md bg-card-2 text-text"
                     }`}
                   >
-                    {formatMessage(
-                      message.content,
-                      "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
+                    {message.contentType === "IMAGE" ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it */}
+                        <img src={message.content} alt={message.caption ?? "Photo"} className="block max-h-72 w-full object-cover" />
+                        {message.caption && (
+                          <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
+                        )}
+                      </>
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words px-3.5 py-2.5">
+                        {formatMessage(
+                          message.content,
+                          "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

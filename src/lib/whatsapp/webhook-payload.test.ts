@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { extractInboundMessages } from "./webhook-payload";
 
-function textMessagePayload(overrides?: { type?: string; body?: string }) {
+function textMessagePayload(overrides?: {
+  type?: string;
+  body?: string;
+  image?: { id: string; caption?: string };
+}) {
   return {
     object: "whatsapp_business_account",
     entry: [
@@ -22,6 +26,7 @@ function textMessagePayload(overrides?: { type?: string; body?: string }) {
                   ...(overrides?.type && overrides.type !== "text"
                     ? {}
                     : { text: { body: overrides?.body ?? "Hello there" } }),
+                  ...(overrides?.image ? { image: overrides.image } : {}),
                 },
               ],
             },
@@ -43,23 +48,50 @@ describe("extractInboundMessages", () => {
         waMessageId: "wamid.ABC",
         isText: true,
         content: "Hello there",
+        imageMediaId: null,
+        caption: null,
         receivedAt: new Date(1700000000 * 1000),
       },
     ]);
   });
 
-  it("marks non-text message types with a placeholder and isText: false", () => {
-    const result = extractInboundMessages(textMessagePayload({ type: "image" }));
+  it("marks non-image, non-text message types with a placeholder and isText: false", () => {
+    const result = extractInboundMessages(textMessagePayload({ type: "audio" }));
     expect(result).toEqual([
       {
         phoneNumberId: "PHONE_ID_1",
         from: "CUSTOMER_1",
         waMessageId: "wamid.ABC",
         isText: false,
-        content: "[unsupported message type: image]",
+        content: "[unsupported message type: audio]",
+        imageMediaId: null,
+        caption: null,
         receivedAt: new Date(1700000000 * 1000),
       },
     ]);
+  });
+
+  it("extracts an image message's media id and caption", () => {
+    const payload = textMessagePayload({ type: "image", image: { id: "MEDIA_ID_1", caption: "check this out" } });
+    const result = extractInboundMessages(payload);
+    expect(result).toEqual([
+      {
+        phoneNumberId: "PHONE_ID_1",
+        from: "CUSTOMER_1",
+        waMessageId: "wamid.ABC",
+        isText: false,
+        content: "[image]",
+        imageMediaId: "MEDIA_ID_1",
+        caption: "check this out",
+        receivedAt: new Date(1700000000 * 1000),
+      },
+    ]);
+  });
+
+  it("extracts an image message with no caption as null", () => {
+    const payload = textMessagePayload({ type: "image", image: { id: "MEDIA_ID_1" } });
+    const result = extractInboundMessages(payload);
+    expect(result[0].caption).toBeNull();
   });
 
   it("parses Meta's epoch-seconds timestamp into a real Date", () => {

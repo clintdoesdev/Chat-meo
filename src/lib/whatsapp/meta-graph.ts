@@ -285,6 +285,34 @@ export async function markWhatsAppMessageReadWithTyping(
   );
 }
 
+/** Step 1 of downloading an inbound image (or any other media type): a webhook payload only ever
+ * hands over a media *id*, not a URL — this resolves it to a direct download URL, valid for a few
+ * minutes. */
+export async function getWhatsAppMediaUrl(mediaId: string, accessToken: string): Promise<string> {
+  const json = await graphFetch<{ url?: string }>(`/${mediaId}`, "media lookup", { access_token: accessToken });
+  if (!json.url) {
+    throw new MetaGraphError("Meta did not return a download URL for this media.", "media lookup");
+  }
+  return json.url;
+}
+
+/** Step 2: downloads the actual bytes from the URL getWhatsAppMediaUrl returned. Unlike every
+ * other call in this file, the URL isn't a `/v23.0/...` Graph API path (Meta hands back a full
+ * CDN-style URL), so it can't go through graphFetch — but it still needs the same access token,
+ * as a Bearer header this time rather than an `access_token` query param. Returns a `data:` URI
+ * ready to store directly in Message.content — no blob storage in this app (see Bot.avatarUrl's
+ * schema doc comment), so an inbound image's bytes live directly in the database, same as an
+ * uploaded avatar's. */
+export async function downloadWhatsAppMedia(mediaUrl: string, accessToken: string): Promise<string> {
+  const response = await fetch(mediaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) {
+    throw new MetaGraphError(`Meta API error during media download: ${response.statusText}`, "media download");
+  }
+  const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+}
+
 /** Verifies Meta's X-Hub-Signature-256 header against the raw request body — must pass before
  * anything else touches an inbound webhook payload. Without this check, anyone who finds the
  * webhook URL could post fabricated messages and trigger the runtime engine (at our AI-provider

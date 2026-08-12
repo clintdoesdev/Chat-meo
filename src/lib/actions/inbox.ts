@@ -20,7 +20,14 @@ export type ConversationDetail = {
   folderId: string | null;
   botName: string;
   botSlug: string;
-  messages: { id: string; role: "BOT" | "USER" | "AGENT"; content: string; createdAt: string }[];
+  messages: {
+    id: string;
+    role: "BOT" | "USER" | "AGENT";
+    content: string;
+    contentType: "TEXT" | "IMAGE";
+    caption: string | null;
+    createdAt: string;
+  }[];
 };
 
 /** Full transcript for one conversation, scoped to bots the signed-in user owns. */
@@ -40,7 +47,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
       bot: { select: { name: true, slug: true, userId: true } },
       messages: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, role: true, content: true, createdAt: true },
+        select: { id: true, role: true, content: true, contentType: true, caption: true, createdAt: true },
       },
     },
   });
@@ -60,6 +67,8 @@ export async function getConversationMessages(conversationId: string): Promise<C
       id: m.id,
       role: m.role,
       content: m.content,
+      contentType: m.contentType,
+      caption: m.caption,
       createdAt: m.createdAt.toISOString(),
     })),
   };
