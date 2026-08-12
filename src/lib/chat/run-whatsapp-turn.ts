@@ -65,8 +65,13 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   const graph = flowRow ? adaptPersistedGraph(parseFlowGraph(flowRow.graph) ?? defaultFlowGraph()) : null;
   if (graph && flowRow) await attachAiNodeDocuments(graph, flowRow.id);
 
+  // HANDOFF is included alongside OPEN so a customer who's been handed off keeps landing in the
+  // *same* conversation — otherwise, since only OPEN ever matched here, their very next message
+  // would find nothing, open a brand-new conversation, and restart the bot from Start, silently
+  // undoing the handoff. RESOLVED is deliberately excluded: once a flow finishes naturally, the
+  // next message from that visitor starting a fresh conversation is the correct behavior.
   let conversation = await prisma.conversation.findFirst({
-    where: { botId: params.botId, visitorId: params.visitorId, status: "OPEN" },
+    where: { botId: params.botId, visitorId: params.visitorId, status: { in: ["OPEN", "HANDOFF"] } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -89,29 +94,35 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
 
   // Fetched before persisting this turn's inbound message, same reasoning as run-turn.ts: the
   // executor's own local history (which prepends that same message) shouldn't end up duplicated
-  // in the merge below. Skipped entirely when there's no flow to run, since nothing will read it.
-  const priorHistory: LlmChatMessage[] = graph
-    ? (
-        await prisma.message.findMany({
-          where: { conversationId: conversation.id },
-          orderBy: { createdAt: "desc" },
-          take: MAX_HISTORY_MESSAGES,
-        })
-      )
-        .reverse()
-        .map((m) => ({ role: m.role === "USER" ? ("user" as const) : ("assistant" as const), content: m.content }))
-    : [];
+  // in the merge below. Skipped whenever the engine won't run this turn (no flow, or already
+  // handed off — see below), since nothing will read it.
+  const priorHistory: LlmChatMessage[] =
+    graph && conversation.status !== "HANDOFF"
+      ? (
+          await prisma.message.findMany({
+            where: { conversationId: conversation.id },
+            orderBy: { createdAt: "desc" },
+            take: MAX_HISTORY_MESSAGES,
+          })
+        )
+          .reverse()
+          .map((m) => ({ role: m.role === "USER" ? ("user" as const) : ("assistant" as const), content: m.content }))
+      : [];
 
   await prisma.message.create({
     data: { conversationId: conversation.id, role: "USER", content: params.message, channel: "WHATSAPP" },
   });
 
-  if (!graph) {
+  // A HANDOFF conversation stays that way for good — step() would no-op on it anyway (see
+  // executor.ts), but skipping the engine here also avoids loading the flow graph/history for a
+  // turn that was never going to produce a reply. The message above is still stored either way,
+  // so the seller sees it in the Inbox and can reply there themselves.
+  if (!graph || conversation.status === "HANDOFF") {
     await prisma.conversation.update({ where: { id: conversation.id }, data: { lastInboundAt } });
     console.log("[whatsapp] stored inbound message, engine not run", {
       botId: params.botId,
       conversationId: conversation.id,
-      reason: shouldRunEngine ? "no_active_flow" : "connection_paused",
+      reason: conversation.status === "HANDOFF" ? "handoff" : shouldRunEngine ? "no_active_flow" : "connection_paused",
     });
     return { kind: "stored_only" };
   }

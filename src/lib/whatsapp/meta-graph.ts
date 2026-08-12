@@ -244,7 +244,10 @@ export function chunkWhatsAppText(text: string, limit = WHATSAPP_TEXT_MESSAGE_LI
 
 /** Sends one engine reply as one or more WhatsApp text messages (see chunkWhatsAppText above),
  * to `to` (the customer's wa_id) from the bot's connected number. Sequential rather than
- * parallel so a multi-chunk reply arrives in reading order. */
+ * parallel so a multi-chunk reply arrives in reading order. `preview_url: true` is what makes
+ * WhatsApp actually fetch and render an OG-info card for a link in the text — without it, Meta
+ * sends the message as plain text with no preview at all, regardless of how long the customer
+ * waits. */
 export async function sendWhatsAppTextMessage(
   phoneNumberId: string,
   to: string,
@@ -257,9 +260,29 @@ export async function sendWhatsAppTextMessage(
       "send message",
       { access_token: accessToken },
       "POST",
-      { messaging_product: "whatsapp", to, type: "text", text: { body: chunk } },
+      { messaging_product: "whatsapp", to, type: "text", text: { body: chunk, preview_url: true } },
     );
   }
+}
+
+/** Marks the customer's inbound message as read and shows the "typing…" indicator on their side
+ * for up to 25 seconds (or until we actually send a reply, whichever comes first) — Meta's
+ * combined read-receipt-plus-typing-indicator call. Best-effort by design: called right before
+ * the engine runs (which can take a few seconds for an AI node's LLM call), so a customer isn't
+ * left staring at silence; callers should catch rather than let a failure here block the reply
+ * that follows. */
+export async function markWhatsAppMessageReadWithTyping(
+  phoneNumberId: string,
+  waMessageId: string,
+  accessToken: string,
+): Promise<void> {
+  await graphFetch(
+    `/${phoneNumberId}/messages`,
+    "typing indicator",
+    { access_token: accessToken },
+    "POST",
+    { messaging_product: "whatsapp", status: "read", message_id: waMessageId, typing_indicator: { type: "text" } },
+  );
 }
 
 /** Verifies Meta's X-Hub-Signature-256 header against the raw request body — must pass before

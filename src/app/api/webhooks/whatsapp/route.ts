@@ -3,7 +3,7 @@ import { classifierLlm, providerLlm } from "@/engine/llm";
 import { runWhatsAppTurn } from "@/lib/chat/run-whatsapp-turn";
 import { decrypt } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
-import { sendWhatsAppTextMessage, verifyWebhookSignature } from "@/lib/whatsapp/meta-graph";
+import { markWhatsAppMessageReadWithTyping, sendWhatsAppTextMessage, verifyWebhookSignature } from "@/lib/whatsapp/meta-graph";
 import { extractInboundMessages, type InboundWhatsAppMessage } from "@/lib/whatsapp/webhook-payload";
 
 /**
@@ -65,6 +65,26 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     return;
   }
 
+  // isActive and accessToken are only ever cleared together (see disconnectWhatsApp), so this
+  // shouldn't happen for a connection that just passed the isActive check above — guarded
+  // anyway since a null token has nothing to decrypt.
+  if (!connection.accessToken) {
+    console.error("[whatsapp webhook] active connection has no access token", { botId: connection.botId });
+    return;
+  }
+  const accessToken = decrypt(connection.accessToken);
+
+  // Best-effort and fire-before-the-engine-runs: an AI node's LLM call can take a few seconds,
+  // so this gives the customer a "typing…" indicator to look at instead of dead air. A failure
+  // here (rate limit, transient network) shouldn't block the reply that follows.
+  await markWhatsAppMessageReadWithTyping(message.phoneNumberId, message.waMessageId, accessToken).catch((error) => {
+    console.error("[whatsapp webhook] failed to send typing indicator", {
+      botId: connection.botId,
+      phoneNumberId: message.phoneNumberId,
+      error,
+    });
+  });
+
   const result = await runWhatsAppTurn(
     { botId: connection.botId, visitorId: message.from, message: message.content, receivedAt: message.receivedAt },
     { llm: providerLlm, classify: classifierLlm },
@@ -74,14 +94,6 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // there's nothing left to do here but leave it unsent.
   if (result.kind !== "success" || result.replies.length === 0 || !result.withinWindow) return;
 
-  // isActive and accessToken are only ever cleared together (see disconnectWhatsApp), so this
-  // shouldn't happen for a connection that just passed the isActive check above — guarded
-  // anyway since a null token has nothing to decrypt.
-  if (!connection.accessToken) {
-    console.error("[whatsapp webhook] active connection has no access token", { botId: connection.botId });
-    return;
-  }
-  const accessToken = decrypt(connection.accessToken);
   for (const reply of result.replies) {
     await sendWhatsAppTextMessage(message.phoneNumberId, message.from, reply.content, accessToken).catch((error) => {
       // Reply is already persisted to Message by runWhatsAppTurn regardless of delivery — a

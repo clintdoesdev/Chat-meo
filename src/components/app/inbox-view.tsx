@@ -1,10 +1,10 @@
 "use client";
 
-import { ActionsCloseIcon, AnimatedSpinnerIcon, NodesMessageIcon } from "@/components/icons";
+import { ActionsCheckIcon, ActionsCloseIcon, AnimatedSpinnerIcon, CommsSendIcon, NodesMessageIcon } from "@/components/icons";
 import { useState } from "react";
 import { formatMessage } from "@/components/format-message";
 import { MeoMark } from "@/components/meo-mark";
-import { getConversationMessages, type ConversationDetail } from "@/lib/actions/inbox";
+import { getConversationMessages, resolveConversation, sendAgentReply, type ConversationDetail } from "@/lib/actions/inbox";
 import { timeAgo } from "@/lib/time";
 
 export type ConversationSummary = {
@@ -49,12 +49,18 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   const filtered = filter === "all" ? conversations : conversations.filter((c) => c.status === filter);
 
   async function openConversation(id: string) {
     setActiveId(id);
     setDetail(null);
+    setReplyText("");
+    setReplyError(null);
     setLoadingDetail(true);
     const result = await getConversationMessages(id);
     setLoadingDetail(false);
@@ -64,6 +70,33 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
   function close() {
     setActiveId(null);
     setDetail(null);
+  }
+
+  async function handleSendReply() {
+    const trimmed = replyText.trim();
+    if (!trimmed || !activeId) return;
+    setSendingReply(true);
+    setReplyError(null);
+    const result = await sendAgentReply(activeId, trimmed);
+    setSendingReply(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setReplyText("");
+    setDetail(await getConversationMessages(activeId));
+  }
+
+  async function handleResolve() {
+    if (!activeId) return;
+    setResolving(true);
+    const result = await resolveConversation(activeId);
+    setResolving(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) => (prev ? { ...prev, status: "RESOLVED" } : prev));
   }
 
   if (conversations.length === 0) {
@@ -177,8 +210,22 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
 
         {detail && (
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <StatusBadge status={detail.status} />
-            <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
+            <div className="flex items-center gap-2">
+              <StatusBadge status={detail.status} />
+              <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
+            </div>
+            {detail.status !== "RESOLVED" && (
+              <button
+                type="button"
+                data-fx-skip
+                onClick={handleResolve}
+                disabled={resolving}
+                className="flex flex-shrink-0 items-center gap-1 rounded-full border border-line-2 bg-card-2 px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-orange-2/40 hover:text-text disabled:opacity-50"
+              >
+                {resolving ? <AnimatedSpinnerIcon size={11} /> : <ActionsCheckIcon size={11} />}
+                Mark resolved
+              </button>
+            )}
           </div>
         )}
 
@@ -227,6 +274,37 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
             <p className="py-8 text-center text-[13px] text-muted">Couldn&apos;t load this conversation.</p>
           )}
         </div>
+
+        {detail && (
+          <div className="flex-shrink-0 border-t border-line px-4 py-3">
+            {replyError && <p className="mb-2 text-[11.5px] text-bad">{replyError}</p>}
+            <div className="flex items-end gap-2">
+              <textarea
+                rows={1}
+                value={replyText}
+                onChange={(event) => setReplyText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSendReply();
+                  }
+                }}
+                placeholder="Reply as yourself…"
+                className="max-h-28 min-h-[38px] flex-1 resize-none rounded-2xl border border-line-2 bg-card-2 px-3.5 py-2.5 text-[13px] text-text placeholder:text-muted focus:border-orange-2/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                data-fx-skip
+                onClick={handleSendReply}
+                disabled={sendingReply || !replyText.trim()}
+                aria-label="Send reply"
+                className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full bg-grad-orange text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3)] transition disabled:opacity-50"
+              >
+                {sendingReply ? <AnimatedSpinnerIcon size={15} /> : <CommsSendIcon size={15} />}
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
     </>
   );
