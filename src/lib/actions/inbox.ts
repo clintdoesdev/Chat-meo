@@ -1,7 +1,12 @@
 "use server";
 
 import { auth } from "@/auth";
+import { adaptPersistedGraph } from "@/engine/adapt-graph";
+import { createInitialState } from "@/engine/executor";
+import { Prisma } from "@/generated/prisma/client";
 import { decrypt } from "@/lib/crypto";
+import { parseFlowGraph } from "@/lib/flow-schema";
+import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/meta-graph";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
@@ -11,6 +16,8 @@ export type ConversationDetail = {
   status: "OPEN" | "RESOLVED" | "HANDOFF";
   visitorId: string;
   createdAt: string;
+  archived: boolean;
+  folderId: string | null;
   botName: string;
   botSlug: string;
   messages: { id: string; role: "BOT" | "USER" | "AGENT"; content: string; createdAt: string }[];
@@ -28,6 +35,8 @@ export async function getConversationMessages(conversationId: string): Promise<C
       status: true,
       visitorId: true,
       createdAt: true,
+      archived: true,
+      folderId: true,
       bot: { select: { name: true, slug: true, userId: true } },
       messages: {
         orderBy: { createdAt: "asc" },
@@ -43,6 +52,8 @@ export async function getConversationMessages(conversationId: string): Promise<C
     status: conversation.status,
     visitorId: conversation.visitorId,
     createdAt: conversation.createdAt.toISOString(),
+    archived: conversation.archived,
+    folderId: conversation.folderId,
     botName: conversation.bot.name,
     botSlug: conversation.bot.slug,
     messages: conversation.messages.map((m) => ({
@@ -117,8 +128,9 @@ export async function sendAgentReply(conversationId: string, content: string): P
 }
 
 /** Hands a conversation back to normal — clears HANDOFF (or just closes out an OPEN one the
- * seller considers done) so the *next* message from this visitor starts a fresh conversation
- * rather than staying pinned to this one forever (see runWhatsAppTurn's HANDOFF handling). */
+ * seller considers done). The conversation itself is never re-created (see runWhatsAppTurn: one
+ * row per number, permanently) — the *next* message from this visitor reuses this same row, with
+ * the engine reset back to Start so it reads as a fresh interaction rather than staying mute. */
 export async function resolveConversation(conversationId: string): Promise<{ error: string | null }> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Not signed in." };
@@ -130,5 +142,139 @@ export async function resolveConversation(conversationId: string): Promise<{ err
   if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
 
   await prisma.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED" } });
+  return { error: null };
+}
+
+/** Immediately resets this conversation's bot flow back to Start and reopens it — the explicit,
+ * right-now counterpart to what already happens lazily the next time a RESOLVED conversation
+ * gets a new inbound message. Mainly useful to hand a HANDOFF conversation straight back to the
+ * bot without waiting for (or requiring) the customer to message again first. */
+export async function restartBotForConversation(conversationId: string): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      bot: {
+        select: { userId: true, flows: { where: { isActive: true }, take: 1, select: { graph: true } } },
+      },
+    },
+  });
+  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  const flowRow = conversation.bot.flows[0];
+  if (!flowRow) return { error: "This bot has no active flow to restart." };
+
+  const graph = adaptPersistedGraph(parseFlowGraph(flowRow.graph) ?? defaultFlowGraph());
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { engineState: createInitialState(graph), status: "OPEN" },
+  });
+  return { error: null };
+}
+
+/** Permanently deletes a conversation and its full transcript (Message rows cascade — see the
+ * schema). Unlike archiving, this can't be undone. */
+export async function deleteConversation(conversationId: string): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  await prisma.conversation.delete({ where: { id: conversationId } });
+  return { error: null };
+}
+
+/** Archiving is purely an Inbox organization concept (see Conversation.archived's schema doc
+ * comment) — it hides a conversation from the default view without touching `status`, so it has
+ * no effect on whether the bot keeps replying. */
+export async function setConversationArchived(conversationId: string, archived: boolean): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  await prisma.conversation.update({ where: { id: conversationId }, data: { archived } });
+  return { error: null };
+}
+
+export type FolderSummary = { id: string; name: string };
+
+/** All of this seller's folders, spanning every bot — folders aren't scoped to one bot since the
+ * Inbox itself already spans all of them. */
+export async function listFolders(): Promise<FolderSummary[]> {
+  const session = await auth();
+  if (!session?.user?.id) return [];
+
+  return prisma.conversationFolder.findMany({
+    where: { userId: session.user.id },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+}
+
+export async function createFolder(name: string): Promise<{ folder: FolderSummary | null; error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { folder: null, error: "Not signed in." };
+
+  const trimmed = name.trim();
+  if (!trimmed) return { folder: null, error: "Folder name can't be empty." };
+
+  try {
+    const folder = await prisma.conversationFolder.create({
+      data: { userId: session.user.id, name: trimmed },
+      select: { id: true, name: true },
+    });
+    return { folder, error: null };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { folder: null, error: "You already have a folder with that name." };
+    }
+    throw error;
+  }
+}
+
+/** Deletes a folder — conversations inside it aren't deleted, just unassigned (see the schema's
+ * onDelete: SetNull on Conversation.folder). */
+export async function deleteFolder(folderId: string): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const folder = await prisma.conversationFolder.findUnique({ where: { id: folderId }, select: { userId: true } });
+  if (!folder || folder.userId !== session.user.id) return { error: "Folder not found." };
+
+  await prisma.conversationFolder.delete({ where: { id: folderId } });
+  return { error: null };
+}
+
+/** Moves a conversation into `folderId`, or out of any folder when null. */
+export async function assignConversationToFolder(
+  conversationId: string,
+  folderId: string | null,
+): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  if (folderId) {
+    const folder = await prisma.conversationFolder.findUnique({ where: { id: folderId }, select: { userId: true } });
+    if (!folder || folder.userId !== session.user.id) return { error: "Folder not found." };
+  }
+
+  await prisma.conversation.update({ where: { id: conversationId }, data: { folderId } });
   return { error: null };
 }

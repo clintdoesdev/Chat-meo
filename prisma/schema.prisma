@@ -86,8 +86,9 @@ model User {
   /// unread, same as never having opened the panel.
   notificationsReadAt DateTime?
 
-  bots              Bot[]
-  verificationCodes VerificationCode[]
+  bots                Bot[]
+  verificationCodes   VerificationCode[]
+  conversationFolders ConversationFolder[]
 
   @@map("users")
 }
@@ -174,14 +175,36 @@ model Conversation {
   /// finished processing it) — see src/lib/whatsapp/service-window.ts. Only ever set by the
   /// WhatsApp webhook today; null for widget conversations, which have no such window to track.
   lastInboundAt DateTime?
+  /// Purely an Inbox organization concept — hides a conversation from the default list without
+  /// touching `status`, which the engine (runWhatsAppTurn/run-turn) reads to decide whether to
+  /// keep replying. Archiving a HANDOFF or OPEN conversation doesn't change bot behavior at all.
+  archived      Boolean            @default(false)
+  folderId      String?
   createdAt     DateTime           @default(now())
 
-  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot      Bot                 @relation(fields: [botId], references: [id], onDelete: Cascade)
+  folder   ConversationFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   messages Message[]
 
   @@index([botId])
   @@index([botId, visitorId, status])
+  @@index([folderId])
   @@map("conversations")
+}
+
+// Purely a seller-side organizational label spanning all of that seller's bots (the Inbox
+// itself already spans bots) — folders have no effect on engine/bot behavior, unlike `status`.
+model ConversationFolder {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@unique([userId, name])
+  @@map("conversation_folders")
 }
 
 model Message {

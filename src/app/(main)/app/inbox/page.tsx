@@ -41,24 +41,33 @@ export default async function InboxPage() {
 
   const botById = new Map(bots.map((bot) => [bot.id, bot]));
 
-  const conversations = await prisma.conversation.findMany({
-    where: { botId: { in: bots.map((bot) => bot.id) } },
-    orderBy: { createdAt: "desc" },
-    take: MAX_CONVERSATIONS,
-    select: {
-      id: true,
-      botId: true,
-      status: true,
-      visitorId: true,
-      createdAt: true,
-      _count: { select: { messages: true } },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { role: true, content: true, createdAt: true },
+  const [conversations, folders] = await Promise.all([
+    prisma.conversation.findMany({
+      where: { botId: { in: bots.map((bot) => bot.id) } },
+      orderBy: { createdAt: "desc" },
+      take: MAX_CONVERSATIONS,
+      select: {
+        id: true,
+        botId: true,
+        status: true,
+        visitorId: true,
+        createdAt: true,
+        archived: true,
+        folderId: true,
+        _count: { select: { messages: true } },
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { role: true, content: true, createdAt: true },
+        },
       },
-    },
-  });
+    }),
+    prisma.conversationFolder.findMany({
+      where: { userId: session.user.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   const summaries: ConversationSummary[] = conversations
     .map((conversation) => {
@@ -74,21 +83,25 @@ export default async function InboxPage() {
         lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
         lastMessagePreview: lastMessage?.content ?? "No messages yet",
         lastMessageRole: lastMessage?.role ?? null,
+        archived: conversation.archived,
+        folderId: conversation.folderId,
       };
     })
     .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+
+  const activeCount = summaries.filter((s) => !s.archived).length;
 
   return (
     <div>
       <div className="mb-[22px]">
         <h1 className="text-[22px] font-bold tracking-tight">Inbox</h1>
         <p className="mt-0.5 text-[12.5px] text-muted">
-          {summaries.length} {summaries.length === 1 ? "conversation" : "conversations"} across{" "}
+          {activeCount} {activeCount === 1 ? "conversation" : "conversations"} across{" "}
           {bots.length} {bots.length === 1 ? "bot" : "bots"}
         </p>
       </div>
 
-      <InboxView conversations={summaries} />
+      <InboxView conversations={summaries} folders={folders} />
     </div>
   );
 }

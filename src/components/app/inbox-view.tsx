@@ -1,10 +1,35 @@
 "use client";
 
-import { ActionsCheckIcon, ActionsCloseIcon, AnimatedSpinnerIcon, CommsSendIcon, NodesMessageIcon } from "@/components/icons";
-import { useState } from "react";
+import {
+  ActionsArchiveIcon,
+  ActionsCheckIcon,
+  ActionsCloseIcon,
+  ActionsFolderIcon,
+  ActionsMoreIcon,
+  ActionsPlusIcon,
+  ActionsRestartIcon,
+  ActionsTrashIcon,
+  AnimatedSpinnerIcon,
+  CommsSendIcon,
+  NodesMessageIcon,
+  StatusWarningIcon,
+} from "@/components/icons";
+import { useEffect, useRef, useState } from "react";
 import { formatMessage } from "@/components/format-message";
 import { MeoMark } from "@/components/meo-mark";
-import { getConversationMessages, resolveConversation, sendAgentReply, type ConversationDetail } from "@/lib/actions/inbox";
+import {
+  assignConversationToFolder,
+  createFolder,
+  deleteConversation,
+  deleteFolder,
+  getConversationMessages,
+  resolveConversation,
+  restartBotForConversation,
+  sendAgentReply,
+  setConversationArchived,
+  type ConversationDetail,
+  type FolderSummary,
+} from "@/lib/actions/inbox";
 import { timeAgo } from "@/lib/time";
 
 export type ConversationSummary = {
@@ -17,15 +42,20 @@ export type ConversationSummary = {
   lastMessageAt: string;
   lastMessagePreview: string;
   lastMessageRole: "BOT" | "USER" | "AGENT" | null;
+  archived: boolean;
+  folderId: string | null;
 };
 
-type Filter = "all" | "HANDOFF" | "OPEN" | "RESOLVED";
+// "all" | "HANDOFF" | "OPEN" | "RESOLVED" | "ARCHIVED" | `folder:${id}` — kept as plain string
+// rather than a template-literal union since it's compared, never pattern-matched.
+type Filter = string;
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "HANDOFF", label: "Needs a human" },
   { value: "OPEN", label: "Active" },
   { value: "RESOLVED", label: "Resolved" },
+  { value: "ARCHIVED", label: "Archived" },
 ];
 
 function StatusBadge({ status }: { status: ConversationSummary["status"] }) {
@@ -44,7 +74,15 @@ function StatusBadge({ status }: { status: ConversationSummary["status"] }) {
   );
 }
 
-export function InboxView({ conversations }: { conversations: ConversationSummary[] }) {
+export function InboxView({
+  conversations: initialConversations,
+  folders: initialFolders,
+}: {
+  conversations: ConversationSummary[];
+  folders: FolderSummary[];
+}) {
+  const [conversations, setConversations] = useState(initialConversations);
+  const [folders, setFolders] = useState(initialFolders);
   const [filter, setFilter] = useState<Filter>("all");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
@@ -53,8 +91,26 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Set right before opening the "new folder" modal — null means it was opened from the general
+  // folder-management chip row, an id means it was opened from a specific conversation's "Move
+  // to folder" menu, so the new folder gets assigned to that conversation immediately on create.
+  const [newFolderTarget, setNewFolderTarget] = useState<string | null | "closed">("closed");
+  const [creatingFolder, setCreatingFolder] = useState(false);
 
-  const filtered = filter === "all" ? conversations : conversations.filter((c) => c.status === filter);
+  const filtered = conversations.filter((c) => {
+    if (filter === "ARCHIVED") return c.archived;
+    if (filter.startsWith("folder:")) return !c.archived && c.folderId === filter.slice("folder:".length);
+    if (c.archived) return false;
+    return filter === "all" || c.status === filter;
+  });
+
+  function patchConversation(id: string, patch: Partial<ConversationSummary>) {
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
 
   async function openConversation(id: string) {
     setActiveId(id);
@@ -85,6 +141,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
     }
     setReplyText("");
     setDetail(await getConversationMessages(activeId));
+    patchConversation(activeId, { status: "HANDOFF" });
   }
 
   async function handleResolve() {
@@ -97,6 +154,88 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
       return;
     }
     setDetail((prev) => (prev ? { ...prev, status: "RESOLVED" } : prev));
+    patchConversation(activeId, { status: "RESOLVED" });
+  }
+
+  async function handleRestart() {
+    if (!activeId) return;
+    setRestarting(true);
+    const result = await restartBotForConversation(activeId);
+    setRestarting(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) => (prev ? { ...prev, status: "OPEN" } : prev));
+    patchConversation(activeId, { status: "OPEN" });
+  }
+
+  async function handleArchiveToggle() {
+    if (!activeId || !detail) return;
+    const next = !detail.archived;
+    setArchiving(true);
+    const result = await setConversationArchived(activeId, next);
+    setArchiving(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) => (prev ? { ...prev, archived: next } : prev));
+    patchConversation(activeId, { archived: next });
+  }
+
+  async function handleDelete() {
+    if (!activeId) return;
+    setDeleting(true);
+    const result = await deleteConversation(activeId);
+    setDeleting(false);
+    setShowDeleteConfirm(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setConversations((prev) => prev.filter((c) => c.id !== activeId));
+    close();
+  }
+
+  async function handleMoveToFolder(folderId: string | null) {
+    if (!activeId) return;
+    const result = await assignConversationToFolder(activeId, folderId);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) => (prev ? { ...prev, folderId } : prev));
+    patchConversation(activeId, { folderId });
+  }
+
+  async function handleCreateFolder(name: string) {
+    setCreatingFolder(true);
+    const result = await createFolder(name);
+    setCreatingFolder(false);
+    if (result.error || !result.folder) return result.error ?? "Couldn't create folder.";
+
+    const folder = result.folder;
+    setFolders((prev) => [...prev, folder].sort((a, b) => a.name.localeCompare(b.name)));
+    if (typeof newFolderTarget === "string") {
+      const conversationId = newFolderTarget;
+      const assign = await assignConversationToFolder(conversationId, folder.id);
+      if (!assign.error) {
+        setDetail((prev) => (prev && prev.id === conversationId ? { ...prev, folderId: folder.id } : prev));
+        patchConversation(conversationId, { folderId: folder.id });
+      }
+    }
+    setNewFolderTarget("closed");
+    return null;
+  }
+
+  async function handleDeleteFolder(folderId: string) {
+    const result = await deleteFolder(folderId);
+    if (result.error) return;
+    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setConversations((prev) => prev.map((c) => (c.folderId === folderId ? { ...c, folderId: null } : c)));
+    if (detail?.folderId === folderId) setDetail((prev) => (prev ? { ...prev, folderId: null } : prev));
+    if (filter === `folder:${folderId}`) setFilter("all");
   }
 
   if (conversations.length === 0) {
@@ -113,7 +252,7 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
 
   return (
     <>
-      <div className="mb-3.5 flex flex-wrap gap-1.5">
+      <div className="mb-2 flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
           <button
             key={f.value}
@@ -129,6 +268,47 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
             {f.label}
           </button>
         ))}
+      </div>
+
+      <div className="mb-3.5 flex flex-wrap items-center gap-1.5">
+        {folders.map((folder) => (
+          <div
+            key={folder.id}
+            className={`flex items-center gap-1 rounded-full border py-1 pl-3 pr-1.5 text-[12px] font-semibold transition ${
+              filter === `folder:${folder.id}`
+                ? "border-orange-2/50 bg-orange/10 text-orange-2"
+                : "border-line-2 bg-card-2 text-muted"
+            }`}
+          >
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => setFilter(`folder:${folder.id}`)}
+              className="flex items-center gap-1.5 hover:text-text"
+            >
+              <ActionsFolderIcon size={11} />
+              {folder.name}
+            </button>
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => handleDeleteFolder(folder.id)}
+              aria-label={`Delete folder ${folder.name}`}
+              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-muted/70 transition hover:bg-white/10 hover:text-bad"
+            >
+              <ActionsCloseIcon size={9} />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          data-fx-skip
+          onClick={() => setNewFolderTarget(null)}
+          className="flex items-center gap-1 rounded-full border border-dashed border-line-2 px-3 py-1 text-[12px] font-semibold text-muted transition hover:border-orange-2/40 hover:text-text"
+        >
+          <ActionsPlusIcon size={10} />
+          New folder
+        </button>
       </div>
 
       {filtered.length === 0 ? (
@@ -214,18 +394,32 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
               <StatusBadge status={detail.status} />
               <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
             </div>
-            {detail.status !== "RESOLVED" && (
-              <button
-                type="button"
-                data-fx-skip
-                onClick={handleResolve}
-                disabled={resolving}
-                className="flex flex-shrink-0 items-center gap-1 rounded-full border border-line-2 bg-card-2 px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-orange-2/40 hover:text-text disabled:opacity-50"
-              >
-                {resolving ? <AnimatedSpinnerIcon size={11} /> : <ActionsCheckIcon size={11} />}
-                Mark resolved
-              </button>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              {detail.status !== "RESOLVED" && (
+                <button
+                  type="button"
+                  data-fx-skip
+                  onClick={handleResolve}
+                  disabled={resolving}
+                  className="flex items-center gap-1 rounded-full border border-line-2 bg-card-2 px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-orange-2/40 hover:text-text disabled:opacity-50"
+                >
+                  {resolving ? <AnimatedSpinnerIcon size={11} /> : <ActionsCheckIcon size={11} />}
+                  Mark resolved
+                </button>
+              )}
+              <ConversationMenu
+                folders={folders}
+                currentFolderId={detail.folderId}
+                archived={detail.archived}
+                restarting={restarting}
+                archiving={archiving}
+                onRestart={handleRestart}
+                onArchiveToggle={handleArchiveToggle}
+                onDelete={() => setShowDeleteConfirm(true)}
+                onMoveToFolder={handleMoveToFolder}
+                onNewFolder={() => setNewFolderTarget(activeId)}
+              />
+            </div>
           </div>
         )}
 
@@ -306,6 +500,294 @@ export function InboxView({ conversations }: { conversations: ConversationSummar
           </div>
         )}
       </aside>
+
+      {showDeleteConfirm && detail && (
+        <DeleteConversationConfirmModal
+          visitorId={detail.visitorId}
+          pending={deleting}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDelete}
+        />
+      )}
+
+      {newFolderTarget !== "closed" && (
+        <NewFolderModal
+          pending={creatingFolder}
+          onCancel={() => setNewFolderTarget("closed")}
+          onCreate={handleCreateFolder}
+        />
+      )}
+    </>
+  );
+}
+
+function ConversationMenu({
+  folders,
+  currentFolderId,
+  archived,
+  restarting,
+  archiving,
+  onRestart,
+  onArchiveToggle,
+  onDelete,
+  onMoveToFolder,
+  onNewFolder,
+}: {
+  folders: FolderSummary[];
+  currentFolderId: string | null;
+  archived: boolean;
+  restarting: boolean;
+  archiving: boolean;
+  onRestart: () => void;
+  onArchiveToggle: () => void;
+  onDelete: () => void;
+  onMoveToFolder: (folderId: string | null) => void;
+  onNewFolder: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const itemClass =
+    "flex w-full items-center gap-2 rounded-[11px] px-3 py-2 text-left text-[12.5px] transition-colors hover:bg-card-2 disabled:opacity-50";
+  const checkSlot = (selected: boolean) => (
+    <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+      {selected && <ActionsCheckIcon size={11} className="text-orange-2" />}
+    </span>
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        data-fx-skip
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Conversation actions"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
+      >
+        <ActionsMoreIcon size={14} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-[90] w-56 rounded-2xl border border-line-2 bg-[#161616] p-1.5 shadow-[0_30px_60px_-20px_rgba(0,0,0,.9)]">
+          <button
+            type="button"
+            data-fx-skip
+            disabled={restarting}
+            onClick={() => {
+              onRestart();
+              setOpen(false);
+            }}
+            className={itemClass}
+          >
+            {restarting ? <AnimatedSpinnerIcon size={13} /> : <ActionsRestartIcon size={13} />}
+            Restart bot
+          </button>
+
+          <div className="my-1 border-t border-line" />
+          <div className="px-3 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted">
+            Folder
+          </div>
+          <button
+            type="button"
+            data-fx-skip
+            onClick={() => {
+              onMoveToFolder(null);
+              setOpen(false);
+            }}
+            className={itemClass}
+          >
+            {checkSlot(currentFolderId === null)}
+            No folder
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              data-fx-skip
+              onClick={() => {
+                onMoveToFolder(folder.id);
+                setOpen(false);
+              }}
+              className={itemClass}
+            >
+              {checkSlot(currentFolderId === folder.id)}
+              <span className="truncate">{folder.name}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            data-fx-skip
+            onClick={() => {
+              onNewFolder();
+              setOpen(false);
+            }}
+            className={`${itemClass} text-orange-2`}
+          >
+            <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+              <ActionsPlusIcon size={10} />
+            </span>
+            New folder…
+          </button>
+
+          <div className="my-1 border-t border-line" />
+          <button
+            type="button"
+            data-fx-skip
+            disabled={archiving}
+            onClick={() => {
+              onArchiveToggle();
+              setOpen(false);
+            }}
+            className={itemClass}
+          >
+            {archiving ? <AnimatedSpinnerIcon size={13} /> : <ActionsArchiveIcon size={13} />}
+            {archived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            type="button"
+            data-fx-skip
+            onClick={() => {
+              onDelete();
+              setOpen(false);
+            }}
+            className={`${itemClass} text-bad`}
+          >
+            <ActionsTrashIcon size={13} />
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeleteConversationConfirmModal({
+  visitorId,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  visitorId: string;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div onClick={pending ? undefined : onCancel} aria-hidden="true" className="fixed inset-0 z-[105] bg-black/60" />
+      <div className="fixed inset-0 z-[106] flex items-center justify-center p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Delete conversation"
+          className="w-full max-w-[380px] rounded-2xl border border-line bg-[#111] p-5 shadow-[0_24px_80px_-16px_rgba(0,0,0,.7)]"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-bad/30 bg-bad/10 text-bad">
+              <StatusWarningIcon size={16} />
+            </span>
+            <h3 className="text-[14px] font-semibold">Delete conversation?</h3>
+          </div>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
+            This permanently deletes the full transcript with{" "}
+            <strong className="text-text">{visitorId}</strong>. Unlike archiving, this can&apos;t be undone —
+            consider archiving instead if you just want it out of the way.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={pending}
+              className="rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[12.5px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={pending}
+              className="rounded-full bg-bad px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
+            >
+              {pending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function NewFolderModal({
+  pending,
+  onCancel,
+  onCreate,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  onCreate: (name: string) => Promise<string | null>;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!name.trim()) return;
+    const result = await onCreate(name);
+    if (result) setError(result);
+  }
+
+  return (
+    <>
+      <div onClick={pending ? undefined : onCancel} aria-hidden="true" className="fixed inset-0 z-[105] bg-black/60" />
+      <div className="fixed inset-0 z-[106] flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="New folder"
+          className="w-full max-w-[380px] rounded-2xl border border-line bg-[#111] p-5 shadow-[0_24px_80px_-16px_rgba(0,0,0,.7)]"
+        >
+          <h3 className="text-[14px] font-semibold">New folder</h3>
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleSubmit();
+            }}
+            placeholder="Folder name"
+            className="mt-3 w-full rounded-xl border border-line-2 bg-card-2 px-3.5 py-2.5 text-[13px] text-text placeholder:text-muted focus:border-orange-2/50 focus:outline-none"
+          />
+          {error && <p className="mt-2 text-[11.5px] text-bad">{error}</p>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={pending}
+              className="rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[12.5px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={pending || !name.trim()}
+              className="rounded-full bg-grad-orange px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
+            >
+              {pending ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

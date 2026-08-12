@@ -294,6 +294,68 @@ export function ActionsTrashIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function ActionsRestartIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="7"
+        d="M17.15 46.85A21 21 0 1 1 46.85 46.85"
+      />
+      <path fill="currentColor" d="M46.85 46.85 60 44l-4.5 15.5a2.6 2.6 0 0 1-4.3 1.1l-8-8a2.6 2.6 0 0 1 1.2-4.4l2.45-.35Z" />
+    </svg>
+  );
+}
+
+export function ActionsFolderIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        fill="currentColor"
+        d="M9 15a5 5 0 0 1 5-5h13.5a5 5 0 0 1 3.9 1.9l3.6 4.6H50a5 5 0 0 1 5 5v27a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V15Z"
+      />
+    </svg>
+  );
+}
+
+export function ActionsArchiveIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="8" y="9" width="48" height="12" rx="4" fill="currentColor" />
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M11 25h42v24a6 6 0 0 1-6 6H17a6 6 0 0 1-6-6V25Zm14.5 8a3 3 0 0 0 0 6h13a3 3 0 0 0 0-6h-13Z"
+      />
+    </svg>
+  );
+}
+
 export function ActionsUndoIcon({ size = 16, className }: IconProps) {
   return (
     <svg
