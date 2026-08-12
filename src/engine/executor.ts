@@ -1,4 +1,5 @@
 import type {
+  AiNode,
   ConditionBranch,
   EngineDeps,
   EngineOutput,
@@ -206,6 +207,7 @@ export async function step(
   }
 
   const variables = { ...state.variables };
+  const aiReplyCounts = { ...(state.aiReplyCounts ?? {}) };
   const replies: Reply[] = [];
   const history: LlmChatMessage[] = [];
   let currentNodeId = state.currentNodeId;
@@ -287,6 +289,36 @@ export async function step(
       }
 
       case "ai": {
+        // The other place an AI node "stays put" (see below and the matchedRule branch) — pulled
+        // out since both need identical maxReplies bookkeeping. Once data.maxReplies consecutive
+        // loop turns have passed with nothing routing away from this node, it stops waiting
+        // forever: it follows its plain outgoing edge if the author wired one (same edge a
+        // routed-away turn would use), or otherwise hands off to a human, exactly like reaching
+        // a Handoff node — a stuck AI conversation shouldn't be able to loop indefinitely.
+        function loopOrEscalate(aiNode: AiNode): void {
+          const maxReplies = aiNode.data.maxReplies;
+          const count = (aiReplyCounts[aiNode.id] ?? 0) + 1;
+          if (!maxReplies || count < maxReplies) {
+            aiReplyCounts[aiNode.id] = count;
+            status = "AWAITING_INPUT";
+            currentNodeId = aiNode.id;
+            walking = false;
+            return;
+          }
+          delete aiReplyCounts[aiNode.id];
+          const fallbackEdge = nextEdge(graph, aiNode.id);
+          if (fallbackEdge) {
+            currentNodeId = fallbackEdge.target;
+            return;
+          }
+          if ((deps.channel ?? "web") === "web") {
+            replies.push({ content: HANDOFF_MESSAGE });
+          }
+          status = "HANDOFF";
+          currentNodeId = null;
+          walking = false;
+        }
+
         // A Logic node wired off this AI node's dedicated "logic" source handle gets first look
         // at the visitor's message — a matched rule pre-empts the LLM entirely for this turn
         // (reply and/or reroute). Only ever consulted when there's an actual visitor message
@@ -322,13 +354,13 @@ export async function step(
             history.push({ role: "assistant", content: text });
           }
           if (candidateBranchEdge) {
+            delete aiReplyCounts[node.id];
             currentNodeId = candidateBranchEdge.target;
           } else {
             // No route wired for this rule: same "nothing wired after this AI node" behavior as
-            // below — stay put and keep the conversation open rather than ending it.
-            status = "AWAITING_INPUT";
-            currentNodeId = node.id;
-            walking = false;
+            // below — stay put and keep the conversation open (subject to maxReplies) rather
+            // than ending it.
+            loopOrEscalate(node);
           }
           break;
         }
@@ -358,15 +390,14 @@ export async function step(
         history.push({ role: "assistant", content });
         const edge = nextEdge(graph, node.id);
         if (edge) {
+          delete aiReplyCounts[node.id];
           currentNodeId = edge.target;
         } else {
           // Nothing wired after this AI node: stay here and keep the conversation open rather
           // than ending it — an AI node replies automatically and keeps chatting by default,
           // only actually ending when something explicitly routes it elsewhere (a condition to
-          // Handoff, a dead-end Message node, etc.).
-          status = "AWAITING_INPUT";
-          currentNodeId = node.id;
-          walking = false;
+          // Handoff, a dead-end Message node, etc.) or maxReplies caps the loop (loopOrEscalate).
+          loopOrEscalate(node);
         }
         break;
       }
@@ -467,5 +498,14 @@ export async function step(
     }
   }
 
-  return { replies, state: { currentNodeId, variables, status, lastError } };
+  return {
+    replies,
+    state: {
+      currentNodeId,
+      variables,
+      status,
+      lastError,
+      ...(Object.keys(aiReplyCounts).length > 0 ? { aiReplyCounts } : {}),
+    },
+  };
 }

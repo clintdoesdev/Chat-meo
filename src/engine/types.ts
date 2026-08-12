@@ -30,8 +30,12 @@ export type AiNode = {
   id: string;
   type: "ai";
   /** provider is a ProviderId (see src/lib/ai/providers.ts) as a plain string, same reasoning
-   * as flow-types.ts's FlowNodeData.provider — undefined means "use the deployment default". */
-  data: { systemPrompt: string; model: string; temperature: number; provider?: string };
+   * as flow-types.ts's FlowNodeData.provider — undefined means "use the deployment default".
+   * maxReplies caps the free-form back-and-forth loop this node runs when nothing routes away
+   * from it (see the "ai" case in executor.ts) — undefined/0 means unlimited, matching today's
+   * behavior. Once the cap is hit, the node behaves as if it *did* have somewhere to go: it
+   * follows its plain outgoing edge if one exists, or hands off to a human otherwise. */
+  data: { systemPrompt: string; model: string; temperature: number; provider?: string; maxReplies?: number };
 };
 
 export type ConditionNode = {
@@ -125,6 +129,10 @@ export type EngineState = {
    * every call, so it only ever reflects that turn's outcome. Diagnostic only (never shown to
    * end visitors); the Studio Test drawer's Debug panel is what actually surfaces it. */
   lastError?: string;
+  /** Consecutive-loop reply counts, keyed by AI node id, for enforcing AiNode.data.maxReplies —
+   * see the "ai" case in executor.ts. Cleared for a node the moment it's actually left (routed
+   * away from), so re-entering it later starts a fresh count rather than resuming an old one. */
+  aiReplyCounts?: Record<string, number>;
 };
 
 export type Reply = {

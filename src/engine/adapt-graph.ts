@@ -22,6 +22,7 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           model: data.model ?? "grok-main",
           temperature: data.temperature ?? 0.35,
           provider: data.provider,
+          maxReplies: data.maxReplies,
         },
       };
     case "condition":

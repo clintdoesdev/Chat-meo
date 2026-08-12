@@ -244,6 +244,31 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 className="w-full accent-orange"
               />
             </div>
+            <div className="mb-3.5">
+              <label htmlFor="field-max-replies" className={labelClass()}>
+                Max replies before handoff
+              </label>
+              <input
+                id="field-max-replies"
+                type="number"
+                min={1}
+                max={50}
+                value={data.maxReplies ?? ""}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  onChange(node.id, {
+                    maxReplies: raw === "" ? undefined : Math.max(1, Math.min(50, Number(raw))),
+                  });
+                }}
+                placeholder="Unlimited"
+                className={fieldClass()}
+              />
+              <p className="mt-1.5 text-[11px] text-muted">
+                After this many back-and-forth replies with nothing resolved, the AI hands the
+                conversation to a human instead of continuing to answer questions forever. Leave
+                blank for unlimited.
+              </p>
+            </div>
             <KnowledgeUpload flowId={flowId} nodeId={node.id} />
           </>
         )}

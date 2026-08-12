@@ -437,6 +437,7 @@ describe("step: ai node with no outgoing edge stays open for more chatting", () 
       currentNodeId: "ai-1",
       variables: {},
       status: "AWAITING_INPUT",
+      aiReplyCounts: { "ai-1": 1 },
     });
   });
 
@@ -494,6 +495,98 @@ describe("step: ai node with no outgoing edge stays open for more chatting", () 
 
     expect(output.replies).toEqual([{ content: "One sec." }, { content: "Bye!" }]);
     expect(output.state.status).toBe("ENDED");
+  });
+});
+
+describe("step: ai node maxReplies cap", () => {
+  const graph: FlowGraph = {
+    nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 3 } }],
+    edges: [],
+  };
+
+  it("keeps looping under the cap, tracking the count in state", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const deps = createDeps({ llm: llmMock });
+    let state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const turn1 = await step(graph, state, "Hi", deps);
+    expect(turn1.state.status).toBe("AWAITING_INPUT");
+    expect(turn1.state.aiReplyCounts).toEqual({ "ai-1": 1 });
+    state = turn1.state;
+
+    const turn2 = await step(graph, state, "Another question", deps);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+    expect(turn2.state.aiReplyCounts).toEqual({ "ai-1": 2 });
+  });
+
+  it("hands off to a human once the cap is reached, with the fixed handoff message on the web channel", async () => {
+    const capOfOne: FlowGraph = {
+      nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 1 } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Here's what I found." }));
+    const deps = createDeps({ llm: llmMock, channel: "web" });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(capOfOne, state, "First question", deps);
+
+    expect(output.replies).toEqual([
+      { content: "Here's what I found." },
+      { content: "Your message is being sent to a live team to assist you." },
+    ]);
+    expect(output.state.status).toBe("HANDOFF");
+    expect(output.state.aiReplyCounts).toBeUndefined();
+  });
+
+  it("stays silent on a non-web channel when the cap forces a handoff", async () => {
+    const capOfOne: FlowGraph = {
+      nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 1 } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Here's what I found." }));
+    const deps = createDeps({ llm: llmMock, channel: "webhook" });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(capOfOne, state, "First question", deps);
+
+    expect(output.replies).toEqual([{ content: "Here's what I found." }]);
+    expect(output.state.status).toBe("HANDOFF");
+  });
+
+  it("follows the plain outgoing edge instead of handing off, when one is wired", async () => {
+    const routedGraph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 1 } },
+        { id: "msg-1", type: "message", data: { text: "Let's move on." } },
+      ],
+      edges: [{ id: "e1", source: "ai-1", target: "msg-1" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Here's what I found." }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(routedGraph, state, "First question", deps);
+
+    expect(output.replies).toEqual([{ content: "Here's what I found." }, { content: "Let's move on." }]);
+    expect(output.state.status).toBe("ENDED");
+    expect(output.state.aiReplyCounts).toBeUndefined();
+  });
+
+  it("treats maxReplies: 0 (or unset) as unlimited", async () => {
+    const unlimited: FlowGraph = {
+      nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 0 } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Still here." }));
+    const deps = createDeps({ llm: llmMock });
+    let state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    for (let i = 0; i < 5; i += 1) {
+      const output = await step(unlimited, state, `question ${i}`, deps);
+      expect(output.state.status).toBe("AWAITING_INPUT");
+      state = output.state;
+    }
+    expect(llmMock).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -779,7 +872,7 @@ describe("step: logic node attached to an AI node", () => {
 
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
-    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT", aiReplyCounts: { "ai-1": 1 } });
   });
 
   it("falls through to the LLM as normal when no rule matches, and stays open afterward", async () => {
@@ -795,7 +888,7 @@ describe("step: logic node attached to an AI node", () => {
     // next edge in buildGraph()) — after the LLM replies, the engine must NOT mistake that
     // logic edge for "what comes next" and wander into the Logic node a second time. It should
     // behave exactly like an AI node with no outgoing edge at all: stay open on itself.
-    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT", aiReplyCounts: { "ai-1": 1 } });
   });
 
   it("stays open (not ENDED) when attached to a Logic node with an unwired catch-all rule and no plain next edge", async () => {
@@ -833,7 +926,7 @@ describe("step: logic node attached to an AI node", () => {
 
     expect(llmMock).toHaveBeenCalledTimes(1);
     expect(output.replies).toEqual([{ content: "Hi Dave! I'm Meo. What can I help you with?" }]);
-    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT" });
+    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT", aiReplyCounts: { "ai-1": 1 } });
   });
 
   it("never fires rules on the unprompted first turn (no visitor message yet)", async () => {

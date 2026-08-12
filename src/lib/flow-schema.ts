@@ -27,6 +27,7 @@ const FlowNodeDataSchema = z.object({
   // validate — adapt-graph.ts/llm.ts already fall back gracefully for any unrecognized value.
   model: z.string().optional(),
   temperature: z.number().min(0).max(1).optional(),
+  maxReplies: z.number().int().min(1).max(50).optional(),
   variable: z.string().optional(),
   branches: z.array(ConditionBranchSchema).optional(),
   rules: z.array(LogicRuleSchema).optional(),

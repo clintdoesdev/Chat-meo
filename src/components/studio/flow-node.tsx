@@ -299,6 +299,13 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         </div>
       )}
 
+      {type === "ai" && data.maxReplies && (
+        <div className="mt-1.5 flex items-center gap-1.5 rounded-[8px] bg-white/[.04] px-2 py-1 text-[10.5px] font-medium text-muted">
+          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "rgba(255,255,255,.25)" }} />
+          Max {data.maxReplies} {data.maxReplies === 1 ? "reply" : "replies"} before handoff
+        </div>
+      )}
+
       {type !== "handoff" && type !== "silentHandoff" && !hasBranchHandles && (
         <Handle
           type="source"

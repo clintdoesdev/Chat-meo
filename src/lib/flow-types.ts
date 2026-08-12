@@ -54,6 +54,10 @@ export type FlowNodeData = {
   provider?: string;
   model?: AiModel;
   temperature?: number;
+  // Caps how many consecutive back-and-forth replies this AI node will give before handing off
+  // to a human (or following its plain outgoing edge, if one's wired) — see the "ai" case in
+  // engine/executor.ts. Unset/0 means unlimited, matching the node's original behavior.
+  maxReplies?: number;
   // condition
   variable?: string;
   branches?: ConditionBranch[];
