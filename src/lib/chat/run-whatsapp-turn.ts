@@ -65,13 +65,14 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   const graph = flowRow ? adaptPersistedGraph(parseFlowGraph(flowRow.graph) ?? defaultFlowGraph()) : null;
   if (graph && flowRow) await attachAiNodeDocuments(graph, flowRow.id);
 
-  // HANDOFF is included alongside OPEN so a customer who's been handed off keeps landing in the
-  // *same* conversation — otherwise, since only OPEN ever matched here, their very next message
-  // would find nothing, open a brand-new conversation, and restart the bot from Start, silently
-  // undoing the handoff. RESOLVED is deliberately excluded: once a flow finishes naturally, the
-  // next message from that visitor starting a fresh conversation is the correct behavior.
+  // One Conversation row per (bot, visitor) — permanently, regardless of status. A different
+  // visitorId (a different WhatsApp number messaging in) always gets its own conversation, but
+  // this same customer's messages must never fragment into multiple rows in the Inbox. Status is
+  // deliberately not filtered here: excluding RESOLVED (as this used to) meant a flow finishing
+  // naturally caused the very next message to find nothing, open a brand-new conversation, and
+  // split that customer's history into a growing list of near-duplicate "sub-conversations".
   let conversation = await prisma.conversation.findFirst({
-    where: { botId: params.botId, visitorId: params.visitorId, status: { in: ["OPEN", "HANDOFF"] } },
+    where: { botId: params.botId, visitorId: params.visitorId },
     orderBy: { createdAt: "desc" },
   });
 
@@ -90,6 +91,14 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     // An out-of-order/replayed webhook delivery shouldn't be able to rewind the window back
     // past a more recent message we've already recorded.
     lastInboundAt = conversation.lastInboundAt && conversation.lastInboundAt > inboundAt ? conversation.lastInboundAt : inboundAt;
+    // A RESOLVED conversation's flow already ran to completion (step() would no-op on its ENDED
+    // state forever, same as HANDOFF) — reusing the row but restarting the engine from Start is
+    // what makes this next message read as a fresh interaction instead of going nowhere, while
+    // keeping it in the same thread rather than a new one. HANDOFF is untouched here: that one
+    // stays quiet until the seller resolves it themselves (see resolveConversation).
+    if (conversation.status === "RESOLVED" && graph) {
+      conversation = { ...conversation, engineState: createInitialState(graph), status: "OPEN" };
+    }
   }
 
   // Fetched before persisting this turn's inbound message, same reasoning as run-turn.ts: the
