@@ -816,6 +816,30 @@ describe("step: logic node (standalone)", () => {
     expect(output.replies).toEqual([]);
     expect(output.state.status).toBe("ENDED");
   });
+
+  it("still literal-matches a bare generic-word trigger, since this path has no semantic fallback to defer to", async () => {
+    // The excludeGeneric behavior is opt-in and only wired up for the AI-attached path (which has
+    // a classifier to fall back to). A standalone Logic node has no such fallback, so a generic
+    // word remains a valid literal trigger here — excluding it would just make the rule unfireable.
+    const genericGraph: FlowGraph = {
+      nodes: [
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              { id: "rule-confirm", label: "Confirmation", triggers: "done, yes", reply: "Great, thanks!" },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(genericGraph, state, "done", createDeps());
+
+    expect(output.replies).toEqual([{ content: "Great, thanks!" }]);
+  });
 });
 
 describe("step: logic node attached to an AI node", () => {
@@ -952,6 +976,60 @@ describe("step: logic node attached to an AI node", () => {
 
     const output = await step(graph, state, "send me an invoice please", deps);
 
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
+  });
+
+  it("does not let a bare generic word win the literal pass, so the classifier gets to weigh in", async () => {
+    // Regression for the "yes"/"done" problem: a rule whose triggers are ONLY generic, ambiguous
+    // words (words that mean nothing on their own — "yes" could agree to anything) must not
+    // short-circuit the LLM/classifier just because the visitor happened to say one of them.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout, I'm ready, yes",
+                reply: "Perfect! You're just one step away from getting started.",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "Great, glad to hear it!" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    // "yes" alone here means "yes I already paid", not "yes send me the link" — a bare literal
+    // match on "yes" would wrongly fire the payment-link rule.
+    const output = await step(graph, state, "yes", deps);
+
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Great, glad to hear it!" }]);
+  });
+
+  it("still literal-matches a rule via its non-generic keywords even when it also lists generic ones", async () => {
+    // Excluding generic words only takes away their ability to win the match *alone* — a rule
+    // that also has a real, specific keyword should still short-circuit the LLM as before.
+    const graph = buildGraph();
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "yes, I need an invoice please", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
   });

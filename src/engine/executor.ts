@@ -72,13 +72,45 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function matchLogicKeyword(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
+// Bare words too common and ambiguous to trust as a *literal* match on their own — "yes" alone
+// could mean "yes, send the payment link", "yes, I already paid", or a dozen other things
+// depending on what was just asked. Letting one of these win the free keyword pass outright is
+// exactly how a rule ends up firing on the wrong intent before the smarter semantic pass (which
+// actually reads the message in context) ever gets a chance to weigh in. Excluding them here
+// only takes away their ability to win *alone*; the rule's full trigger text (including these
+// words) is still handed to the classifier as-is. Only applied where a semantic fallback
+// actually exists to catch what this excludes — see excludeGeneric below.
+const GENERIC_KEYWORDS = new Set([
+  "yes",
+  "yeah",
+  "yep",
+  "yup",
+  "sure",
+  "ok",
+  "okay",
+  "no",
+  "nope",
+  "done",
+  "please",
+  "thanks",
+  "thank you",
+  "hi",
+  "hello",
+  "hey",
+]);
+
+function matchLogicKeyword(
+  rules: LogicRule[],
+  rawMessage: string,
+  options?: { excludeGeneric?: boolean },
+): LogicRule | undefined {
   const message = rawMessage.toLowerCase();
   return rules.find((rule) => {
     const keywords = rule.triggers
       .split(",")
       .map((keyword) => keyword.trim().toLowerCase())
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((keyword) => !(options?.excludeGeneric && GENERIC_KEYWORDS.has(keyword)));
     // Word-boundary, not raw substring — a plain .includes() would let trigger "payment" match
     // inside "payments", "repayment", "prepayment", etc., firing the rule for messages that
     // aren't actually asking for what the trigger describes (e.g. "I've made payments" —
@@ -336,7 +368,7 @@ export async function step(
         let candidateRule: LogicRule | undefined;
         if (input !== undefined && logicRules) {
           candidateRule =
-            matchLogicKeyword(logicRules, input) ??
+            matchLogicKeyword(logicRules, input, { excludeGeneric: true }) ??
             (await classifySemanticMatch(logicRules, history, deps, node.data.model, node.data.provider)) ??
             catchAllRule(logicRules);
         }
