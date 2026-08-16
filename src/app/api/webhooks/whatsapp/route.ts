@@ -109,25 +109,27 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     return;
   }
 
-  // Best-effort and fire-before-the-engine-runs: an AI node's LLM call can take a few seconds,
-  // so this gives the customer a "typing…" indicator to look at instead of dead air. A failure
-  // here (rate limit, transient network) shouldn't block the reply that follows.
-  await markWhatsAppMessageReadWithTyping(message.phoneNumberId, message.waMessageId, accessToken).catch((error) => {
-    console.error("[whatsapp webhook] failed to send typing indicator", {
-      botId: connection.botId,
-      phoneNumberId: message.phoneNumberId,
-      error,
-    });
-  });
-
   const result = await runWhatsAppTurn(
     { botId: connection.botId, visitorId: message.from, message: message.content, receivedAt: message.receivedAt },
     { llm: providerLlm, classify: classifierLlm },
   );
   // Outside the 24h window, runWhatsAppTurn already persisted a warning in place of the reply
   // (see OUTSIDE_WINDOW_WARNING there) — Graph API would just reject a normal send anyway, so
-  // there's nothing left to do here but leave it unsent.
+  // there's nothing left to do here but leave it unsent. Same for a locked AI node (see
+  // logicLocked in engine/types.ts) that had nothing matching to say this turn: zero replies.
   if (result.kind !== "success" || result.replies.length === 0 || !result.withinWindow) return;
+
+  // Only marked as read (the customer-visible blue double-tick) once a reply is actually about
+  // to go out — doing this up front, before knowing whether the engine would even reply, made
+  // the business look like it saw the message and chose to ignore it whenever no reply followed.
+  // Best-effort: a failure here shouldn't block the reply itself.
+  await markWhatsAppMessageReadWithTyping(message.phoneNumberId, message.waMessageId, accessToken).catch((error) => {
+    console.error("[whatsapp webhook] failed to send read receipt/typing indicator", {
+      botId: connection.botId,
+      phoneNumberId: message.phoneNumberId,
+      error,
+    });
+  });
 
   for (const reply of result.replies) {
     // Markdown is what the engine/Studio speak natively (Logic rule replies, LLM output) — WhatsApp
