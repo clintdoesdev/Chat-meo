@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { ActionsTrashIcon, AnimatedSpinnerIcon, StatusWarningIcon, WhatsAppIcon } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
+import { WhatsAppBusinessProfilePanel } from "@/components/app/whatsapp-business-profile-panel";
+import { WhatsAppShortLinksPanel } from "@/components/app/whatsapp-short-links-panel";
 import {
   disconnectWhatsApp,
   getWhatsAppConnectConfig,
@@ -117,6 +119,7 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
         </p>
       ) : (
         connection && (
+          <>
           <div className="rounded-xl border border-line-2 bg-card-2 p-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -190,6 +193,12 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
               </button>
             </div>
           </div>
+          {/* Needs a live access token to call Meta, unlike short links below — hidden while a
+              connection needs reauthorizing so it doesn't show a confusing API error on top of
+              the "needs reconnecting" banner already shown above. */}
+          {connection.status !== "TOKEN_EXPIRED" && <WhatsAppBusinessProfilePanel botId={botId} />}
+          <WhatsAppShortLinksPanel botId={botId} />
+          </>
         )
       )}
 

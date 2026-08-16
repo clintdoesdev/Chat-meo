@@ -149,6 +149,7 @@ model Bot {
   conversations      Conversation[]
   apiKeys            BotApiKey[]
   whatsappConnection WhatsAppConnection?
+  whatsAppShortLinks WhatsAppShortLink[]
 
   @@index([userId])
   @@map("bots")
@@ -300,4 +301,32 @@ model WhatsAppConnection {
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_connections")
+}
+
+/// A WhatsApp click-to-chat link: visiting /l/{slug} redirects straight to a WhatsApp chat with
+/// this bot's connected number, message box already filled in with `message` — e.g. for pasting
+/// into ads, bios, or posts. See src/app/l/[slug]/route.ts.
+model WhatsAppShortLink {
+  id    String @id @default(cuid())
+  botId String
+  /// Random, URL-safe, unique across all bots (the redirect route looks up by this alone, not
+  /// scoped to a bot) — see newShortLinkSlug in src/lib/actions/whatsapp-short-links.ts.
+  slug  String @unique
+  /// The seller's own name for this link (e.g. "Instagram bio", "Facebook ad") — never shown to
+  /// whoever clicks it, just for telling links apart in the management list.
+  label String
+  /// Pre-filled into WhatsApp's message box for whoever clicks the link — they still have to hit
+  /// send themselves, same as any wa.me link.
+  message String @db.Text
+  /// Snapshot (E.164 digits, no leading +) of the bot's connected WhatsApp number at the moment
+  /// this link was created — kept even if the bot's connection is later replaced or disconnected,
+  /// so a link already shared out in the world keeps pointing at the right number.
+  phoneNumber String
+  clickCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@map("whatsapp_short_links")
 }

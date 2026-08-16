@@ -343,6 +343,129 @@ export async function downloadWhatsAppMedia(mediaUrl: string, accessToken: strin
   return `data:${mimeType};base64,${bytes.toString("base64")}`;
 }
 
+export type WhatsAppBusinessProfile = {
+  /** Current verified display name, if Meta has one on file yet. */
+  name: string | null;
+  /** Meta's review state for `name` (e.g. "APPROVED", "PENDING_REVIEW", "REJECTED") — whatever
+   * string Meta returns, passed through as-is rather than mapped to our own enum, since this is
+   * display-only and Meta's exact set of values isn't stable/documented enough to lock in. */
+  nameStatus: string | null;
+  profilePictureUrl: string | null;
+};
+
+/** Reads this number's live verified display name (and Meta's review status for it) plus the
+ * current profile picture URL. Always fetched fresh rather than cached anywhere — name_status in
+ * particular changes asynchronously as Meta's own review completes, so a stale cache would show
+ * the wrong thing right when it matters most. */
+export async function getWhatsAppBusinessProfile(
+  phoneNumberId: string,
+  accessToken: string,
+): Promise<WhatsAppBusinessProfile> {
+  const [numberInfo, profile] = await Promise.all([
+    graphFetch<{ verified_name?: string; name_status?: string }>(`/${phoneNumberId}`, "business profile lookup", {
+      access_token: accessToken,
+      fields: "verified_name,name_status",
+    }),
+    graphFetch<{ data?: { profile_picture_url?: string }[] }>(
+      `/${phoneNumberId}/whatsapp_business_profile`,
+      "business profile lookup",
+      { access_token: accessToken, fields: "profile_picture_url" },
+    ),
+  ]);
+  return {
+    name: numberInfo.verified_name ?? null,
+    nameStatus: numberInfo.name_status ?? null,
+    profilePictureUrl: profile.data?.[0]?.profile_picture_url ?? null,
+  };
+}
+
+/** Step 1+2 of Meta's Resumable Upload API: registers an upload session sized for this exact
+ * file against our own app id, then uploads the full byte payload to that session in one shot —
+ * a profile picture is small enough that Meta's chunked/resumable retry dance (meant for large
+ * media) isn't worth the complexity here. Returns the resulting file handle, which is short-lived
+ * and only good for the one follow-up call that actually sets it as the profile picture. */
+async function uploadMediaForHandle(bytes: Buffer, mimeType: string, accessToken: string): Promise<string> {
+  const { appId } = requireMetaAppConfig();
+  const session = await graphFetch<{ id?: string }>(
+    `/${appId}/uploads`,
+    "profile picture upload session",
+    { file_length: String(bytes.length), file_type: mimeType, access_token: accessToken },
+    "POST",
+  );
+  if (!session.id) {
+    throw new MetaGraphError("Meta did not return an upload session id.", "profile picture upload session");
+  }
+
+  // The session id (shaped like "upload:...") IS the next request's path, and that request wants
+  // the raw bytes as its body with an OAuth-style auth header — different enough from every other
+  // call in this file (JSON body, access_token query param) that it can't reuse graphFetch.
+  const response = await fetch(new URL(`${GRAPH_BASE}/${session.id}`), {
+    method: "POST",
+    headers: { Authorization: `OAuth ${accessToken}`, file_offset: "0" },
+    body: new Uint8Array(bytes),
+  });
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const errorObj =
+      json && typeof json === "object" && "error" in json && json.error && typeof json.error === "object"
+        ? (json.error as { message?: unknown })
+        : undefined;
+    throw new MetaGraphError(
+      `Meta API error during profile picture upload: ${String(errorObj?.message ?? response.statusText)}`,
+      "profile picture upload",
+    );
+  }
+  const handle = (json as { h?: string } | null)?.h;
+  if (!handle) {
+    throw new MetaGraphError("Meta did not return a file handle for the uploaded image.", "profile picture upload");
+  }
+  return handle;
+}
+
+/** Uploads a new profile picture and sets it as this number's WhatsApp Business Profile photo —
+ * two Graph API calls under the hood (see uploadMediaForHandle above): get a file handle for the
+ * bytes, then hand that handle to whatsapp_business_profile. Takes effect immediately, no review
+ * required (unlike the display name below). */
+export async function updateWhatsAppProfilePicture(
+  phoneNumberId: string,
+  imageBytes: Buffer,
+  mimeType: string,
+  accessToken: string,
+): Promise<void> {
+  const handle = await uploadMediaForHandle(imageBytes, mimeType, accessToken);
+  await graphFetch(
+    `/${phoneNumberId}/whatsapp_business_profile`,
+    "profile picture update",
+    { access_token: accessToken },
+    "POST",
+    { messaging_product: "whatsapp", profile_picture_handle: handle },
+  );
+}
+
+/** Best-effort request to change this number's verified display name. Unlike everything else in
+ * this file, changing a WhatsApp display name isn't a plain instant PATCH: Meta reviews every
+ * change (typically up to ~24h, and only once the WABA's messaging limit has been raised past the
+ * starter tier), and a display name is limited to 10 changes per rolling 30 days. There's also no
+ * fully public, stable Cloud API endpoint for *submitting* the change documented outside Meta's
+ * own WhatsApp Manager UI — this targets the same phone-number resource and field name
+ * (verified_name) that number *creation* uses, the most REST-consistent shape Meta uses elsewhere
+ * in this API for partial updates, but treat a failure here as a real possibility, not a bug:
+ * callers must surface Meta's own error message rather than assume this always works. A
+ * successful call means "submitted for review," never "changed immediately." */
+export async function requestWhatsAppDisplayNameChange(
+  phoneNumberId: string,
+  newName: string,
+  accessToken: string,
+): Promise<void> {
+  await graphFetch(
+    `/${phoneNumberId}`,
+    "display name change request",
+    { access_token: accessToken },
+    "POST",
+    { messaging_product: "whatsapp", verified_name: newName },
+  );
+}
+
 /** Verifies Meta's X-Hub-Signature-256 header against the raw request body — must pass before
  * anything else touches an inbound webhook payload. Without this check, anyone who finds the
  * webhook URL could post fabricated messages and trigger the runtime engine (at our AI-provider
