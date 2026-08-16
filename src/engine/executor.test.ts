@@ -519,7 +519,10 @@ describe("step: ai node maxReplies cap", () => {
     expect(turn2.state.aiReplyCounts).toEqual({ "ai-1": 2 });
   });
 
-  it("hands off to a human once the cap is reached, with the fixed handoff message on the web channel", async () => {
+  it("silently hands off to a human once the cap is reached on the web channel — no announcement", async () => {
+    // Deliberately silent, like SilentHandoffNode: the AI has already been chatting for a while
+    // by the time the cap hits, so bolting on "you're being sent to a live team" reads as an
+    // abrupt non-sequitur. Going quiet and letting a human continue the thread is more natural.
     const capOfOne: FlowGraph = {
       nodes: [{ id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies: 1 } }],
       edges: [],
@@ -530,10 +533,7 @@ describe("step: ai node maxReplies cap", () => {
 
     const output = await step(capOfOne, state, "First question", deps);
 
-    expect(output.replies).toEqual([
-      { content: "Here's what I found." },
-      { content: "Your message is being sent to a live team to assist you." },
-    ]);
+    expect(output.replies).toEqual([{ content: "Here's what I found." }]);
     expect(output.state.status).toBe("HANDOFF");
     expect(output.state.aiReplyCounts).toBeUndefined();
   });

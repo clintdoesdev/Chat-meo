@@ -264,9 +264,9 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 className={fieldClass()}
               />
               <p className="mt-1.5 text-[11px] text-muted">
-                After this many back-and-forth replies with nothing resolved, the AI hands the
-                conversation to a human instead of continuing to answer questions forever. Leave
-                blank for unlimited.
+                After this many back-and-forth replies with nothing resolved, the AI quietly hands
+                the conversation to a human — no &quot;you&apos;re being transferred&quot; message,
+                it just goes quiet and shows up in your Inbox. Leave blank for unlimited.
               </p>
             </div>
             <KnowledgeUpload flowId={flowId} nodeId={node.id} />

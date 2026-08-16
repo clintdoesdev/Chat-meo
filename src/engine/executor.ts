@@ -343,9 +343,10 @@ export async function step(
             currentNodeId = fallbackEdge.target;
             return;
           }
-          if ((deps.channel ?? "web") === "web") {
-            replies.push({ content: HANDOFF_MESSAGE });
-          }
+          // Same end state as SilentHandoffNode, deliberately: the AI has already been replying
+          // for a while by the time the cap is hit, so announcing "you're being sent to a live
+          // team" on top of that reads as an abrupt, robotic non-sequitur. Going quiet and letting
+          // a human pick up the thread reads far more natural — on every channel, not just web.
           status = "HANDOFF";
           currentNodeId = null;
           walking = false;
