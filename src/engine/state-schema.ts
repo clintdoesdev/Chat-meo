@@ -8,6 +8,7 @@ export const EngineStateSchema = z.object({
   status: z.enum(["RUNNING", "AWAITING_INPUT", "ENDED", "HANDOFF"]),
   lastError: z.string().optional(),
   aiReplyCounts: z.record(z.string(), z.number()).optional(),
+  logicLocked: z.record(z.string(), z.boolean()).optional(),
 });
 
 /** Parses a persisted engineState JSON blob, falling back to a fresh initial state for the

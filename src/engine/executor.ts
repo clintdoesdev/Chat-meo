@@ -240,6 +240,7 @@ export async function step(
 
   const variables = { ...state.variables };
   const aiReplyCounts = { ...(state.aiReplyCounts ?? {}) };
+  const logicLocked = { ...(state.logicLocked ?? {}) };
   const replies: Reply[] = [];
   const history: LlmChatMessage[] = [];
   let currentNodeId = state.currentNodeId;
@@ -388,13 +389,29 @@ export async function step(
           }
           if (candidateBranchEdge) {
             delete aiReplyCounts[node.id];
+            delete logicLocked[node.id];
             currentNodeId = candidateBranchEdge.target;
           } else {
             // No route wired for this rule: same "nothing wired after this AI node" behavior as
             // below — stay put and keep the conversation open (subject to maxReplies) rather
-            // than ending it.
+            // than ending it. A rule that actually said something (rather than just routing) has
+            // put this conversation into a rules-only phase from here on — see logicLocked's doc
+            // comment in types.ts.
+            if (matchedRule.reply.trim()) logicLocked[node.id] = true;
             loopOrEscalate(node);
           }
+          break;
+        }
+
+        if (logicLocked[node.id]) {
+          // Locked: an attached Logic rule already spoke for this node once, so the LLM doesn't
+          // get to freelance a reply of its own that might contradict or duplicate it (e.g.
+          // inventing its own payment link after a rule already sent the real one). Nothing
+          // matched this turn, so there's nothing to say — stay open and wait for a message that
+          // actually matches one of the rules (a confirmation, a receipt mention, etc.).
+          status = "AWAITING_INPUT";
+          currentNodeId = node.id;
+          walking = false;
           break;
         }
 
@@ -539,6 +556,7 @@ export async function step(
       status,
       lastError,
       ...(Object.keys(aiReplyCounts).length > 0 ? { aiReplyCounts } : {}),
+      ...(Object.keys(logicLocked).length > 0 ? { logicLocked } : {}),
     },
   };
 }

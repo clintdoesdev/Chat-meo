@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildEmbeddedSignupUrl, chunkWhatsAppText, verifyWebhookSignature } from "./meta-graph";
+import { buildEmbeddedSignupUrl, chunkWhatsAppText, toWhatsAppText, verifyWebhookSignature } from "./meta-graph";
 
 const APP_SECRET = "test-app-secret-do-not-use-in-production";
 
@@ -62,6 +62,45 @@ describe("chunkWhatsAppText", () => {
       expect(chunk.endsWith(" ")).toBe(false); // trimmed
     }
     expect(chunks.every((c) => c.length <= 30)).toBe(true);
+  });
+});
+
+describe("toWhatsAppText", () => {
+  it("converts a Markdown link with bold link text into plain \"label: url\"", () => {
+    // Regression: exactly the shape a Logic rule reply produced in production — a bold label
+    // wrapping a markdown link — which showed up on WhatsApp as literal asterisks and brackets.
+    const markdown =
+      "Here is your secure payment link: [**Click here to complete your registration for ₦14,500**](https://vireonwebsite.com.ng/payments)";
+    expect(toWhatsAppText(markdown)).toBe(
+      "Here is your secure payment link: Click here to complete your registration for ₦14,500: https://vireonwebsite.com.ng/payments",
+    );
+  });
+
+  it("uses the bare url when the link label just repeats it", () => {
+    expect(toWhatsAppText("[https://example.com/pay](https://example.com/pay)")).toBe("https://example.com/pay");
+  });
+
+  it("strips bold markers without leaving stray asterisks", () => {
+    expect(toWhatsAppText("*Surveys:* Up to £5 each.")).toBe("Surveys: Up to £5 each.");
+    expect(toWhatsAppText("**Surveys:** Up to £5 each.")).toBe("Surveys: Up to £5 each.");
+  });
+
+  it("converts markdown bullets to a plain bullet character", () => {
+    expect(toWhatsAppText("- Surveys\n- Remote work\n* Referrals")).toBe("• Surveys\n• Remote work\n• Referrals");
+  });
+
+  it("strips headings, strikethrough, and inline code markers", () => {
+    expect(toWhatsAppText("# Welcome\nSome ~~old~~ new text and `code`.")).toBe(
+      "Welcome\nSome old new text and code.",
+    );
+  });
+
+  it("leaves plain text with no markdown untouched", () => {
+    expect(toWhatsAppText("Hey there! How can I help today?")).toBe("Hey there! How can I help today?");
+  });
+
+  it("leaves a lone, unpaired asterisk alone rather than eating the rest of the message", () => {
+    expect(toWhatsAppText("5*3=15, easy math.")).toBe("5*3=15, easy math.");
   });
 });
 

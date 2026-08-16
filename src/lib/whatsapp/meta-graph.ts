@@ -219,6 +219,36 @@ export async function unsubscribeAppFromWaba(wabaId: string, accessToken: string
   await graphFetch(`/${wabaId}/subscribed_apps`, "webhook unsubscription", { access_token: accessToken }, "DELETE");
 }
 
+/** Converts an engine reply's Markdown (the same syntax the Studio/widget render properly) down
+ * to plain text for WhatsApp. Deliberately doesn't translate to WhatsApp's own *bold* syntax:
+ * a long reply can get split across multiple WhatsApp messages (see chunkWhatsAppText below),
+ * which can separate a formatting marker's opening half from its closing half and leave literal
+ * asterisks visible on the customer's phone — dropping the markers entirely instead is simpler
+ * and always correct. Only applied to bot-generated replies (AI/Logic), never to a seller's own
+ * typed Inbox reply — see the two call sites. Exported for direct unit testing. */
+export function toWhatsAppText(markdown: string): string {
+  let text = markdown;
+  // [label](url) -> "label: url" — stripped of any emphasis markers inside the label itself,
+  // since the emphasis passes below only run on what's left *outside* this replacement.
+  text = text.replace(/\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label: string, url: string) => {
+    const cleanLabel = label.replace(/[*_`]/g, "").trim();
+    return cleanLabel && cleanLabel !== url ? `${cleanLabel}: ${url}` : url;
+  });
+  // "- item" / "* item" bullets -> "• item", before the "*" emphasis pass below would otherwise
+  // treat a bullet marker as the start of a bold/italic span.
+  text = text.replace(/^[ \t]*[-*][ \t]+/gm, "• ");
+  // Heading markers ("# ", "## ", …)
+  text = text.replace(/^#{1,6}[ \t]+/gm, "");
+  // Bold, italic, strikethrough, inline code — order matters: ** before single * so a bold span
+  // doesn't get read as two adjacent italic ones.
+  text = text.replace(/\*\*(.+?)\*\*/g, "$1");
+  text = text.replace(/(?<![\w*])\*(?!\s)([^*]+?)(?<!\s)\*(?![\w*])/g, "$1");
+  text = text.replace(/(?<!\w)_(?!\s)([^_]+?)(?<!\s)_(?!\w)/g, "$1");
+  text = text.replace(/~~(.+?)~~/g, "$1");
+  text = text.replace(/`([^`]+)`/g, "$1");
+  return text;
+}
+
 const WHATSAPP_TEXT_MESSAGE_LIMIT = 4096;
 
 /** Splits a reply into pieces that fit WhatsApp's hard 4096-character text message limit —

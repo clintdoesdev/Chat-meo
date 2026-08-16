@@ -885,7 +885,7 @@ describe("step: logic node attached to an AI node", () => {
     expect(output.state.status).toBe("HANDOFF");
   });
 
-  it("stays open on the AI node when a matched rule has no route wired", async () => {
+  it("stays open on the AI node when a matched rule has no route wired, and locks out the LLM", async () => {
     const graph = buildGraph();
     graph.edges = graph.edges.filter((edge) => edge.sourceHandle !== "rule-pay");
     const llmMock = vi.fn(async () => ({ content: "unused" }));
@@ -896,7 +896,13 @@ describe("step: logic node attached to an AI node", () => {
 
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
-    expect(output.state).toEqual({ currentNodeId: "ai-1", variables: {}, status: "AWAITING_INPUT", aiReplyCounts: { "ai-1": 1 } });
+    expect(output.state).toEqual({
+      currentNodeId: "ai-1",
+      variables: {},
+      status: "AWAITING_INPUT",
+      aiReplyCounts: { "ai-1": 1 },
+      logicLocked: { "ai-1": true },
+    });
   });
 
   it("falls through to the LLM as normal when no rule matches, and stays open afterward", async () => {
@@ -1032,6 +1038,83 @@ describe("step: logic node attached to an AI node", () => {
     expect(classifyMock).not.toHaveBeenCalled();
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
+  });
+});
+
+describe("step: logic lock — once a rule replies, the AI stops freelancing", () => {
+  // Mirrors a real "send payment link, then wait for confirmation" flow: two rules, neither
+  // routed anywhere, so both leave the conversation sitting on the AI node.
+  function buildGraph(): FlowGraph {
+    return {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Here's your payment link: https://pay.example.com",
+              },
+              {
+                id: "rule-confirm",
+                label: "Confirmation rule",
+                triggers: "I have made payments, done",
+                reply: "Alright, drop your payment receipt.",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+  }
+
+  it("gives no reply (and never calls the LLM) for a message that matches no rule, once locked", async () => {
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+
+    const turn1 = await step(buildGraph(), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "invoice please", deps);
+    expect(turn1.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+    expect(turn1.state.logicLocked).toEqual({ "ai-1": true });
+
+    const turn2 = await step(buildGraph(), turn1.state, "Okay", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(turn2.replies).toEqual([]);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+    expect(turn2.state.currentNodeId).toBe("ai-1");
+    expect(turn2.state.logicLocked).toEqual({ "ai-1": true });
+  });
+
+  it("still fires a different rule once locked, without ever touching the LLM", async () => {
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+
+    const turn1 = await step(buildGraph(), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "invoice please", deps);
+    // A full-phrase trigger, not a bare generic word — matches literally regardless of the
+    // excludeGeneric denylist (see the "logic keyword" tests), so this doesn't depend on the
+    // classifier at all.
+    const turn2 = await step(buildGraph(), turn1.state, "I have made payments", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(turn2.replies).toEqual([{ content: "Alright, drop your payment receipt." }]);
+    expect(turn2.state.logicLocked).toEqual({ "ai-1": true });
+  });
+
+  it("does not lock a node the LLM handled on its own (no rule ever fired)", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+
+    const output = await step(buildGraph(), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "hello", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.state.logicLocked).toBeUndefined();
   });
 });
 

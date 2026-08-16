@@ -8,6 +8,7 @@ import {
   getWhatsAppMediaUrl,
   markWhatsAppMessageReadWithTyping,
   sendWhatsAppTextMessage,
+  toWhatsAppText,
   verifyWebhookSignature,
 } from "@/lib/whatsapp/meta-graph";
 import { extractInboundMessages, type InboundWhatsAppMessage } from "@/lib/whatsapp/webhook-payload";
@@ -129,7 +130,11 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   if (result.kind !== "success" || result.replies.length === 0 || !result.withinWindow) return;
 
   for (const reply of result.replies) {
-    await sendWhatsAppTextMessage(message.phoneNumberId, message.from, reply.content, accessToken).catch((error) => {
+    // Markdown is what the engine/Studio speak natively (Logic rule replies, LLM output) — WhatsApp
+    // itself gets the plain-text conversion (see toWhatsAppText) so a link or **bold** doesn't show
+    // up as literal brackets/asterisks on the customer's phone; the stored Message keeps the
+    // original Markdown, same as every other channel, so the Inbox still renders it properly.
+    await sendWhatsAppTextMessage(message.phoneNumberId, message.from, toWhatsAppText(reply.content), accessToken).catch((error) => {
       // Reply is already persisted to Message by runWhatsAppTurn regardless of delivery — a
       // failed send shows up in the seller's inbox either way, just not on the customer's phone.
       console.error("[whatsapp webhook] failed to send reply", {

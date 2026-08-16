@@ -134,6 +134,14 @@ export type EngineState = {
    * see the "ai" case in executor.ts. Cleared for a node the moment it's actually left (routed
    * away from), so re-entering it later starts a fresh count rather than resuming an old one. */
   aiReplyCounts?: Record<string, number>;
+  /** Keyed by AI node id: set once an attached Logic rule has actually replied while the
+   * conversation stayed on that node (see the "ai" case in executor.ts) — the flow author has
+   * moved this conversation into a rules-only phase (e.g. "send payment link, then only listen
+   * for a confirmation"), so the LLM must not jump back in with its own free-form take on
+   * something a rule already handled. Once set, a visitor message that matches no rule gets no
+   * reply at all rather than falling through to the LLM. Cleared the moment the node is actually
+   * left (routed away from), same as aiReplyCounts, so returning to it later starts fresh. */
+  logicLocked?: Record<string, boolean>;
 };
 
 export type Reply = {
