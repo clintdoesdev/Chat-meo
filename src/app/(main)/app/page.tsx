@@ -6,7 +6,7 @@ import { BotsPanel } from "@/components/app/bots-panel";
 import { StatCard } from "@/components/app/stat-card";
 import { WhatsAppConnectRedirectHandler } from "@/components/app/whatsapp-connect-redirect-handler";
 import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
-import { BETA_BOT_CAP, BETA_MESSAGE_CAP, startOfCurrentMonth } from "@/lib/beta-limits";
+import { BETA_MESSAGE_CAP, startOfCurrentMonth } from "@/lib/beta-limits";
 import { prisma } from "@/lib/prisma";
 import { bucketByDay, weekOverWeekTrend } from "@/lib/stats";
 
@@ -110,8 +110,6 @@ export default async function OverviewPage() {
       </div>
 
       <BetaUsagePanel
-        botCap={BETA_BOT_CAP}
-        botCount={bots.length}
         messageCap={BETA_MESSAGE_CAP}
         bots={bots.map((bot) => ({
           id: bot.id,

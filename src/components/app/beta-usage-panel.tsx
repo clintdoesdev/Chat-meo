@@ -14,13 +14,9 @@ function ProgressBar({ value, cap }: { value: number; cap: number }) {
  * deliberately no "Upgrade" CTA and no red/alarm styling even when a bot is at its cap.
  */
 export function BetaUsagePanel({
-  botCap,
-  botCount,
   messageCap,
   bots,
 }: {
-  botCap: number;
-  botCount: number;
   messageCap: number;
   bots: BotUsage[];
 }) {
@@ -28,9 +24,6 @@ export function BetaUsagePanel({
     <div className="mb-3.5 rounded-2xl border border-line bg-card p-[18px]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <b className="text-sm font-semibold">Beta usage</b>
-        <span className="text-[11.5px] text-muted">
-          {botCount} / {botCap} bots
-        </span>
       </div>
 
       {bots.length === 0 ? (

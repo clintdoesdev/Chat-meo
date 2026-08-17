@@ -108,16 +108,15 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
     async signIn({ user, account }) {
       if (account?.provider === "google") {
         if (!user.email) return false;
-        await prisma.user.upsert({
+        // Closed beta: Google can only sign an *existing* account back in, never mint a new
+        // one — without this check, Google was effectively an ungated signup path around the
+        // closed "Create account" flow on the sign-in page (see sign-in-card.tsx).
+        const existing = await prisma.user.findUnique({ where: { email: user.email } });
+        if (!existing) return false;
+        await prisma.user.update({
           where: { email: user.email },
-          update: {
+          data: {
             name: user.name ?? undefined,
-            image: user.image ?? undefined,
-            emailVerified: new Date(),
-          },
-          create: {
-            email: user.email,
-            name: user.name ?? user.email,
             image: user.image ?? undefined,
             emailVerified: new Date(),
           },

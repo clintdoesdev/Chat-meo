@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { BETA_BOT_CAP } from "@/lib/beta-limits";
 import { isValidHexColor } from "@/lib/color";
 import { prisma } from "@/lib/prisma";
 
@@ -29,13 +28,6 @@ export async function createBot(formData: FormData): Promise<{ error: string | n
   }
 
   const welcomeMessage = String(formData.get("welcomeMessage") ?? "").trim();
-
-  const existingCount = await prisma.bot.count({ where: { userId: session.user.id } });
-  if (existingCount >= BETA_BOT_CAP) {
-    return {
-      error: `You've hit the beta limit of ${BETA_BOT_CAP} bots — reply to our waitlist email if you need more.`,
-    };
-  }
 
   const base = slugify(name);
   let slug = base;
