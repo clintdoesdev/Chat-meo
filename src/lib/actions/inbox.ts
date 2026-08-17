@@ -11,6 +11,82 @@ import { prisma } from "@/lib/prisma";
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/meta-graph";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
+export type ConversationSummary = {
+  id: string;
+  botName: string;
+  botSlug: string;
+  status: "OPEN" | "RESOLVED" | "HANDOFF";
+  visitorId: string;
+  messageCount: number;
+  lastMessageAt: string;
+  lastMessagePreview: string;
+  lastMessageRole: "BOT" | "USER" | "AGENT" | null;
+  archived: boolean;
+  folderId: string | null;
+};
+
+const MAX_CONVERSATIONS = 200;
+
+/** Every conversation across every bot this seller owns, newest-activity-first — the Inbox list's
+ * data source, both for the initial page load and for InboxView's polling refresh (see its
+ * useEffect) so an incoming message shows up without a manual reload. */
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const session = await auth();
+  if (!session?.user?.id) return [];
+
+  const bots = await prisma.bot.findMany({
+    where: { userId: session.user.id },
+    select: { id: true, name: true, slug: true },
+  });
+  if (bots.length === 0) return [];
+  const botById = new Map(bots.map((bot) => [bot.id, bot]));
+
+  const conversations = await prisma.conversation.findMany({
+    where: { botId: { in: bots.map((bot) => bot.id) } },
+    orderBy: { createdAt: "desc" },
+    take: MAX_CONVERSATIONS,
+    select: {
+      id: true,
+      botId: true,
+      status: true,
+      visitorId: true,
+      createdAt: true,
+      archived: true,
+      folderId: true,
+      _count: { select: { messages: true } },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { role: true, content: true, contentType: true, createdAt: true },
+      },
+    },
+  });
+
+  return conversations
+    .map((conversation): ConversationSummary => {
+      const bot = botById.get(conversation.botId);
+      const lastMessage = conversation.messages[0] ?? null;
+      return {
+        id: conversation.id,
+        botName: bot?.name ?? "Unknown bot",
+        botSlug: bot?.slug ?? "",
+        status: conversation.status,
+        visitorId: conversation.visitorId,
+        messageCount: conversation._count.messages,
+        lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
+        lastMessagePreview: !lastMessage
+          ? "No messages yet"
+          : lastMessage.contentType === "IMAGE"
+            ? "📷 Photo"
+            : lastMessage.content,
+        lastMessageRole: lastMessage?.role ?? null,
+        archived: conversation.archived,
+        folderId: conversation.folderId,
+      };
+    })
+    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+}
+
 export type ConversationDetail = {
   id: string;
   status: "OPEN" | "RESOLVED" | "HANDOFF";

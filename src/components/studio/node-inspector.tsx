@@ -152,6 +152,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               rows={4}
               className={`${fieldClass()} resize-y leading-relaxed`}
             />
+            <p className="mt-1.5 text-[11px] text-muted">
+              Use <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{variableName}}"}</code> to
+              insert something a Capture node saved earlier — e.g. a Capture node saving to
+              &quot;name&quot; means <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{name}}"}</code> here.
+              Typed plainly (like &quot;name&quot; in quotes) it&apos;s sent as literal text instead.
+            </p>
           </div>
         )}
 
@@ -179,7 +185,9 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               ) : (
                 <p className="mt-1.5 text-[11px] text-muted">
                   Just describe how the AI should behave — the real conversation so far is
-                  included automatically, so there&apos;s no need to write it into this prompt.
+                  included automatically, so there&apos;s no need to write it into this prompt. Use{" "}
+                  <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{variableName}}"}</code> to
+                  insert something a Capture node saved earlier.
                 </p>
               )}
             </div>
@@ -288,7 +296,10 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               reply helps it pick the right rule, not just the customer. A rule that has a reply
               and/or a route wins and skips the AI for that turn; a rule with no triggers matches
               anything, so it&apos;s a good catch-all — but leave both its reply and route blank
-              and it&apos;s a no-op, so the AI still handles that turn normally.
+              and it&apos;s a no-op, so the AI still handles that turn normally. In a reply, use{" "}
+              <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{variableName}}"}</code>{" "}
+              to insert something a Capture node saved earlier — typed plainly in quotes, it&apos;s
+              sent as literal text instead.
             </p>
             <div className="mb-1.5 flex items-center justify-between">
               <span className={labelClass().replace("mb-1.5 ", "")}>Rules</span>
@@ -340,7 +351,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                       next[index] = { ...rule, reply: event.target.value };
                       onChange(node.id, { rules: next });
                     }}
-                    placeholder="Reply to send (blank = just route, no reply)"
+                    placeholder="Reply to send — {{name}} inserts a captured value (blank = just route, no reply)"
                     rows={2}
                     className="w-full resize-y bg-transparent text-[11.5px] text-text placeholder:text-[#5C5C5C] focus:outline-none"
                   />

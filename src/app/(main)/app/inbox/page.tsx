@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { InboxView, type ConversationSummary } from "@/components/app/inbox-view";
+import { InboxView } from "@/components/app/inbox-view";
+import { listConversations, listFolders } from "@/lib/actions/inbox";
 import { prisma } from "@/lib/prisma";
 import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 
@@ -10,18 +11,13 @@ export const metadata: Metadata = {
   title: "Inbox — Chatmeo",
 };
 
-const MAX_CONVERSATIONS = 200;
-
 export default async function InboxPage() {
   const session = await auth();
   if (!session?.user) redirect("/signin");
 
-  const bots = await prisma.bot.findMany({
-    where: { userId: session.user.id },
-    select: { id: true, name: true, slug: true },
-  });
+  const botCount = await prisma.bot.count({ where: { userId: session.user.id } });
 
-  if (bots.length === 0) {
+  if (botCount === 0) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
         <LazyGlassIcon icon="bubble" size={64} />
@@ -39,60 +35,7 @@ export default async function InboxPage() {
     );
   }
 
-  const botById = new Map(bots.map((bot) => [bot.id, bot]));
-
-  const [conversations, folders] = await Promise.all([
-    prisma.conversation.findMany({
-      where: { botId: { in: bots.map((bot) => bot.id) } },
-      orderBy: { createdAt: "desc" },
-      take: MAX_CONVERSATIONS,
-      select: {
-        id: true,
-        botId: true,
-        status: true,
-        visitorId: true,
-        createdAt: true,
-        archived: true,
-        folderId: true,
-        _count: { select: { messages: true } },
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { role: true, content: true, contentType: true, createdAt: true },
-        },
-      },
-    }),
-    prisma.conversationFolder.findMany({
-      where: { userId: session.user.id },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-  ]);
-
-  const summaries: ConversationSummary[] = conversations
-    .map((conversation) => {
-      const bot = botById.get(conversation.botId);
-      const lastMessage = conversation.messages[0] ?? null;
-      return {
-        id: conversation.id,
-        botName: bot?.name ?? "Unknown bot",
-        botSlug: bot?.slug ?? "",
-        status: conversation.status,
-        visitorId: conversation.visitorId,
-        messageCount: conversation._count.messages,
-        lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
-        lastMessagePreview: !lastMessage
-          ? "No messages yet"
-          : lastMessage.contentType === "IMAGE"
-            ? "📷 Photo"
-            : lastMessage.content,
-        lastMessageRole: lastMessage?.role ?? null,
-        archived: conversation.archived,
-        folderId: conversation.folderId,
-      };
-    })
-    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
-
+  const [summaries, folders] = await Promise.all([listConversations(), listFolders()]);
   const activeCount = summaries.filter((s) => !s.archived).length;
 
   return (
@@ -101,7 +44,7 @@ export default async function InboxPage() {
         <h1 className="text-[22px] font-bold tracking-tight">Inbox</h1>
         <p className="mt-0.5 text-[12.5px] text-muted">
           {activeCount} {activeCount === 1 ? "conversation" : "conversations"} across{" "}
-          {bots.length} {bots.length === 1 ? "bot" : "bots"}
+          {botCount} {botCount === 1 ? "bot" : "bots"}
         </p>
       </div>
 

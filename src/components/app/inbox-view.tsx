@@ -8,6 +8,7 @@ import {
   ActionsMoreIcon,
   ActionsPlusIcon,
   ActionsRestartIcon,
+  ActionsSearchIcon,
   ActionsTrashIcon,
   AnimatedSpinnerIcon,
   CommsSendIcon,
@@ -23,28 +24,32 @@ import {
   deleteConversation,
   deleteFolder,
   getConversationMessages,
+  listConversations,
   resolveConversation,
   restartBotForConversation,
   sendAgentReply,
   setConversationArchived,
   type ConversationDetail,
+  type ConversationSummary,
   type FolderSummary,
 } from "@/lib/actions/inbox";
 import { timeAgo } from "@/lib/time";
 
-export type ConversationSummary = {
-  id: string;
-  botName: string;
-  botSlug: string;
-  status: "OPEN" | "RESOLVED" | "HANDOFF";
-  visitorId: string;
-  messageCount: number;
-  lastMessageAt: string;
-  lastMessagePreview: string;
-  lastMessageRole: "BOT" | "USER" | "AGENT" | null;
-  archived: boolean;
-  folderId: string | null;
-};
+export type { ConversationSummary };
+
+// How often the conversation list and an open conversation's transcript re-fetch from the
+// server, so an incoming message shows up without the seller having to reload — plain polling
+// rather than a websocket/SSE channel, consistent with the rest of this app's beta-scale "keep
+// it simple" approach (see run-whatsapp-turn.ts's own no-queue reasoning). Skipped while the tab
+// is hidden (see the `document.hidden` checks below) so a backgrounded Inbox tab doesn't spend a
+// request every few seconds for nothing.
+const LIST_POLL_MS = 6000;
+const DETAIL_POLL_MS = 3000;
+const BASE_TITLE = "Inbox — Chatmeo";
+// Scroll container is considered "at the bottom" within this many px — new messages keep
+// auto-scrolling if the seller is basically already there, but not if they've scrolled up to
+// read history (matches how every mainstream messaging app behaves).
+const NEAR_BOTTOM_PX = 80;
 
 // "all" | "HANDOFF" | "OPEN" | "RESOLVED" | "ARCHIVED" | `folder:${id}` — kept as plain string
 // rather than a template-literal union since it's compared, never pattern-matched.
@@ -84,6 +89,7 @@ export function InboxView({
   const [conversations, setConversations] = useState(initialConversations);
   const [folders, setFolders] = useState(initialFolders);
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -100,13 +106,108 @@ export function InboxView({
   // to folder" menu, so the new folder gets assigned to that conversation immediately on create.
   const [newFolderTarget, setNewFolderTarget] = useState<string | null | "closed">("closed");
   const [creatingFolder, setCreatingFolder] = useState(false);
+  // Session-only "have I looked at this conversation's latest message" tracking, keyed by
+  // conversation id → the lastMessageAt it had the moment it was last opened. Not persisted (no
+  // schema for it) — resets on reload, which is an acceptable trade for something this cheap.
+  const [lastSeenAt, setLastSeenAt] = useState<Record<string, string>>({});
 
-  const filtered = conversations.filter((c) => {
-    if (filter === "ARCHIVED") return c.archived;
-    if (filter.startsWith("folder:")) return !c.archived && c.folderId === filter.slice("folder:".length);
-    if (c.archived) return false;
-    return filter === "all" || c.status === filter;
-  });
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const sendingReplyRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
+
+  const filtered = conversations
+    .filter((c) => {
+      if (filter === "ARCHIVED") return c.archived;
+      if (filter.startsWith("folder:")) return !c.archived && c.folderId === filter.slice("folder:".length);
+      if (c.archived) return false;
+      return filter === "all" || c.status === filter;
+    })
+    .filter((c) => {
+      const query = search.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        c.visitorId.toLowerCase().includes(query) ||
+        c.botName.toLowerCase().includes(query) ||
+        c.lastMessagePreview.toLowerCase().includes(query)
+      );
+    });
+
+  function isUnread(c: ConversationSummary): boolean {
+    if (c.lastMessageRole !== "USER") return false;
+    const seenAt = lastSeenAt[c.id];
+    return !seenAt || c.lastMessageAt > seenAt;
+  }
+
+  // Backgrounded-tab affordance, same idea as an unread email count in a browser tab — only
+  // counts what's actually visible under the current filter/search so it matches what a click on
+  // the tab would show, not every unread conversation buried behind a different filter.
+  useEffect(() => {
+    const unreadCount = filtered.filter(isUnread).length;
+    document.title = unreadCount > 0 ? `(${unreadCount}) ${BASE_TITLE}` : BASE_TITLE;
+    return () => {
+      document.title = BASE_TITLE;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `filtered` is a fresh array every render; its length/roles are what actually matter here, not identity
+  }, [conversations, lastSeenAt, filter, search]);
+
+  // List refresh — catches a new conversation, or an existing one's new message, without a
+  // manual reload. Skipped while a conversation is open (its own faster poll below covers that
+  // row's own change) only in the sense that both run; this one still needs to run regardless so
+  // *other* rows update too.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (document.hidden) return;
+      const result = await listConversations();
+      setConversations(result);
+    }, LIST_POLL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Open-conversation transcript refresh — this is the one that actually shows an incoming
+  // message live while the seller is looking at that conversation. Paused mid-send (see
+  // sendingReplyRef) so a poll can't land between the optimistic append in handleSendReply and
+  // that call's own response and make the just-sent message flicker away and back.
+  useEffect(() => {
+    if (!activeId) return;
+    const interval = setInterval(async () => {
+      if (document.hidden || sendingReplyRef.current) return;
+      const result = await getConversationMessages(activeId);
+      if (!result || activeIdRef.current !== activeId) return;
+      setDetail((prev) =>
+        prev && prev.messages.length === result.messages.length && prev.status === result.status ? prev : result,
+      );
+    }, DETAIL_POLL_MS);
+    return () => clearInterval(interval);
+  }, [activeId]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }
+
+  // Auto-scroll to the newest message — always on first opening a conversation (nearBottomRef
+  // starts true), otherwise only if the seller was already near the bottom, so a poll-driven
+  // update never yanks them away from history they scrolled up to read.
+  useEffect(() => {
+    if (!detail) return;
+    const el = scrollRef.current;
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed on message *count*, not `detail` itself, so an in-place status/folder patch doesn't re-trigger a scroll
+  }, [detail?.messages.length, activeId]);
+
+  // Escape closes the conversation panel, same as clicking the backdrop — a small but
+  // near-universal messaging-app convention.
+  useEffect(() => {
+    if (!activeId) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") close();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [activeId]);
 
   function patchConversation(id: string, patch: Partial<ConversationSummary>) {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -117,10 +218,13 @@ export function InboxView({
     setDetail(null);
     setReplyText("");
     setReplyError(null);
+    nearBottomRef.current = true;
     setLoadingDetail(true);
     const result = await getConversationMessages(id);
     setLoadingDetail(false);
     setDetail(result);
+    const summary = conversations.find((c) => c.id === id);
+    if (summary) setLastSeenAt((prev) => ({ ...prev, [id]: summary.lastMessageAt }));
   }
 
   function close() {
@@ -131,15 +235,34 @@ export function InboxView({
   async function handleSendReply() {
     const trimmed = replyText.trim();
     if (!trimmed || !activeId) return;
+
+    // Optimistic: shows up instantly instead of waiting on the round trip (WhatsApp send +
+    // DB write) — rolled back below if the send actually fails.
+    const optimisticId = `optimistic-${Date.now()}`;
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              { id: optimisticId, role: "AGENT", content: trimmed, contentType: "TEXT", caption: null, createdAt: new Date().toISOString() },
+            ],
+          }
+        : prev,
+    );
+    setReplyText("");
     setSendingReply(true);
+    sendingReplyRef.current = true;
     setReplyError(null);
     const result = await sendAgentReply(activeId, trimmed);
     setSendingReply(false);
+    sendingReplyRef.current = false;
     if (result.error) {
       setReplyError(result.error);
+      setDetail((prev) => (prev ? { ...prev, messages: prev.messages.filter((m) => m.id !== optimisticId) } : prev));
+      setReplyText(trimmed);
       return;
     }
-    setReplyText("");
     setDetail(await getConversationMessages(activeId));
     patchConversation(activeId, { status: "HANDOFF" });
   }
@@ -252,6 +375,17 @@ export function InboxView({
 
   return (
     <>
+      <div className="relative mb-3">
+        <ActionsSearchIcon size={13} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by visitor, bot, or message…"
+          aria-label="Search conversations"
+          className="w-full rounded-full border border-line-2 bg-card-2 py-2 pl-9 pr-3.5 text-[12.5px] text-text placeholder:text-muted focus:border-orange-2/50 focus:outline-none"
+        />
+      </div>
+
       <div className="mb-2 flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
           <button
@@ -313,27 +447,38 @@ export function InboxView({
 
       {filtered.length === 0 ? (
         <div className="flex min-h-[30vh] flex-col items-center justify-center gap-2 rounded-2xl border border-line bg-card p-8 text-center">
-          <p className="text-[13px] text-muted">No conversations match this filter.</p>
+          <p className="text-[13px] text-muted">
+            {search.trim() ? "No conversations match your search." : "No conversations match this filter."}
+          </p>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map((conversation) => (
+          {filtered.map((conversation) => {
+            const unread = isUnread(conversation);
+            return (
             <button
               key={conversation.id}
               type="button"
               data-fx-skip
               onClick={() => openConversation(conversation.id)}
-              className="flex items-center gap-3 rounded-2xl border border-line bg-card px-3.5 py-3 text-left transition hover:border-orange-2/40 hover:bg-card-2"
+              className={`flex items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition hover:border-orange-2/40 hover:bg-card-2 ${
+                unread ? "border-orange-2/30 bg-card-2" : "border-line bg-card"
+              }`}
             >
               <span
-                className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full"
+                className="relative flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full"
                 style={{ background: "rgba(255,92,22,.15)" }}
               >
                 <NodesMessageIcon size={17} className="text-orange-2" />
+                {unread && (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-orange-2" />
+                )}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 shrink truncate text-[13.5px] font-semibold">
+                  <span
+                    className={`min-w-0 shrink truncate text-[13.5px] ${unread ? "font-bold text-text" : "font-semibold"}`}
+                  >
                     {conversation.botName}
                   </span>
                   <span className="flex-shrink-0 text-[11px] text-muted">·</span>
@@ -341,7 +486,7 @@ export function InboxView({
                     {conversation.visitorId}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-[12.5px] text-muted">
+                <p className={`mt-0.5 truncate text-[12.5px] ${unread ? "font-medium text-text/90" : "text-muted"}`}>
                   {conversation.lastMessageRole === "USER" && (
                     <span className="text-text/70">Visitor: </span>
                   )}
@@ -353,7 +498,8 @@ export function InboxView({
                 <span className="text-[11px] text-muted">{timeAgo(conversation.lastMessageAt)}</span>
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -423,7 +569,7 @@ export function InboxView({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-4 py-5">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-5">
           {loadingDetail && (
             <div className="flex h-full items-center justify-center">
               <AnimatedSpinnerIcon size={20} className="text-muted" />
