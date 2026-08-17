@@ -386,20 +386,31 @@ export async function getWhatsAppBusinessProfile(
  * and only good for the one follow-up call that actually sets it as the profile picture. */
 async function uploadMediaForHandle(bytes: Buffer, mimeType: string, accessToken: string): Promise<string> {
   const { appId } = requireMetaAppConfig();
+  // file_name is required by this endpoint (confirmed against Meta's own curl example) even
+  // though nothing downstream ever displays it — any name with the right extension satisfies it.
+  const extension = mimeType.split("/")[1]?.split("+")[0] || "jpg";
   const session = await graphFetch<{ id?: string }>(
     `/${appId}/uploads`,
     "profile picture upload session",
-    { file_length: String(bytes.length), file_type: mimeType, access_token: accessToken },
+    {
+      file_name: `profile-picture.${extension}`,
+      file_length: String(bytes.length),
+      file_type: mimeType,
+      access_token: accessToken,
+    },
     "POST",
   );
   if (!session.id) {
     throw new MetaGraphError("Meta did not return an upload session id.", "profile picture upload session");
   }
 
-  // The session id (shaped like "upload:...") IS the next request's path, and that request wants
-  // the raw bytes as its body with an OAuth-style auth header — different enough from every other
-  // call in this file (JSON body, access_token query param) that it can't reuse graphFetch.
-  const response = await fetch(new URL(`${GRAPH_BASE}/${session.id}`), {
+  // The session id is the next request's path, and that request wants the raw bytes as its body
+  // with an OAuth-style auth header — different enough from every other call in this file (JSON
+  // body, access_token query param) that it can't reuse graphFetch. Meta's own docs show the id
+  // already carrying its "upload:" prefix, but this tolerates either shape rather than silently
+  // sending a malformed path if that's ever not the case.
+  const sessionPath = session.id.startsWith("upload:") ? session.id : `upload:${session.id}`;
+  const response = await fetch(new URL(`${GRAPH_BASE}/${sessionPath}`), {
     method: "POST",
     headers: { Authorization: `OAuth ${accessToken}`, file_offset: "0" },
     body: new Uint8Array(bytes),
