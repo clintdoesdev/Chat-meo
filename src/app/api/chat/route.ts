@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { classifierLlm, createStreamingProviderLlm, providerLlm } from "@/engine/llm";
-import { BETA_LIMIT_REPLY, isBotOverMessageCap } from "@/lib/chat/beta-quota";
 import { corsHeaders } from "@/lib/chat/cors";
 import { isChatRequestAllowed, isOwnHost, resolveEmbedHostname } from "@/lib/chat/origin-check";
 import { resolveBotAccess, runChatTurn } from "@/lib/chat/run-turn";
@@ -55,14 +54,6 @@ export async function POST(request: NextRequest) {
       { error: "Too many requests.", replies: [{ content: RATE_LIMIT_REPLY }], status: "RUNNING" },
       { status: 429, headers: cors },
     );
-  }
-
-  // Soft beta guardrail, not billing enforcement — checked before touching the engine so a
-  // capped bot doesn't rack up further LLM cost, and surfaced as a normal bot reply (200) since
-  // this is expected beta behavior from the visitor's side, not an error to alarm them with.
-  if (await isBotOverMessageCap(access.botId)) {
-    console.log("[chat] beta message cap reached", { botId: access.botId });
-    return NextResponse.json({ replies: [{ content: BETA_LIMIT_REPLY }], status: "ENDED" }, { headers: cors });
   }
 
   const streaming = request.nextUrl.searchParams.get("stream") === "1";
