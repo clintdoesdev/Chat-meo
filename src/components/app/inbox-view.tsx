@@ -11,8 +11,9 @@ import {
   ActionsSearchIcon,
   ActionsTrashIcon,
   AnimatedSpinnerIcon,
+  ChannelsWhatsappIcon,
+  ChannelsWidgetIcon,
   CommsSendIcon,
-  NodesMessageIcon,
   StatusWarningIcon,
 } from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
@@ -75,6 +76,23 @@ function StatusBadge({ status }: { status: ConversationSummary["status"] }) {
       className={`flex-shrink-0 rounded-full border px-[11px] py-1 text-[11px] font-semibold ${config.className}`}
     >
       {config.label}
+    </span>
+  );
+}
+
+// Distinguishes a live WhatsApp conversation from a widget "web preview" one — both land in the
+// same Inbox, so without this the visitorId alone (a phone number vs. a "preview-…" test id) was
+// the only tell, easy to miss at a glance.
+function ChannelBadge({ channel }: { channel: ConversationSummary["channel"] }) {
+  const isWhatsApp = channel === "WHATSAPP";
+  return (
+    <span
+      className={`flex flex-shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10.5px] font-semibold ${
+        isWhatsApp ? "border-ok/30 bg-ok/10 text-ok" : "border-line-2 bg-card-2 text-muted"
+      }`}
+    >
+      {isWhatsApp ? <ChannelsWhatsappIcon size={10} /> : <ChannelsWidgetIcon size={10} />}
+      {isWhatsApp ? "WhatsApp" : "Web preview"}
     </span>
   );
 }
@@ -467,9 +485,15 @@ export function InboxView({
             >
               <span
                 className="relative flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full"
-                style={{ background: "rgba(255,92,22,.15)" }}
+                style={{
+                  background: conversation.channel === "WHATSAPP" ? "rgba(78,216,142,.15)" : "rgba(255,92,22,.15)",
+                }}
               >
-                <NodesMessageIcon size={17} className="text-orange-2" />
+                {conversation.channel === "WHATSAPP" ? (
+                  <ChannelsWhatsappIcon size={17} className="text-ok" />
+                ) : (
+                  <ChannelsWidgetIcon size={17} className="text-orange-2" />
+                )}
                 {unread && (
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-orange-2" />
                 )}
@@ -494,7 +518,10 @@ export function InboxView({
                 </p>
               </div>
               <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
-                <StatusBadge status={conversation.status} />
+                <div className="flex items-center gap-1.5">
+                  <ChannelBadge channel={conversation.channel} />
+                  <StatusBadge status={conversation.status} />
+                </div>
                 <span className="text-[11px] text-muted">{timeAgo(conversation.lastMessageAt)}</span>
               </div>
             </button>
@@ -537,6 +564,7 @@ export function InboxView({
         {detail && (
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <div className="flex items-center gap-2">
+              <ChannelBadge channel={detail.channel} />
               <StatusBadge status={detail.status} />
               <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
             </div>

@@ -23,6 +23,9 @@ export type ConversationSummary = {
   lastMessageRole: "BOT" | "USER" | "AGENT" | null;
   archived: boolean;
   folderId: string | null;
+  // Same signal sendAgentReply already uses to route the reply — a widget conversation never gets
+  // a WhatsApp webhook hit, so lastInboundAt stays null for it forever.
+  channel: "WHATSAPP" | "WEB";
 };
 
 const MAX_CONVERSATIONS = 200;
@@ -53,6 +56,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
       createdAt: true,
       archived: true,
       folderId: true,
+      lastInboundAt: true,
       _count: { select: { messages: true } },
       messages: {
         orderBy: { createdAt: "desc" },
@@ -82,6 +86,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
         lastMessageRole: lastMessage?.role ?? null,
         archived: conversation.archived,
         folderId: conversation.folderId,
+        channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
       };
     })
     .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
@@ -94,6 +99,7 @@ export type ConversationDetail = {
   createdAt: string;
   archived: boolean;
   folderId: string | null;
+  channel: "WHATSAPP" | "WEB";
   botName: string;
   botSlug: string;
   messages: {
@@ -120,6 +126,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
       createdAt: true,
       archived: true,
       folderId: true,
+      lastInboundAt: true,
       bot: { select: { name: true, slug: true, userId: true } },
       messages: {
         orderBy: { createdAt: "asc" },
@@ -137,6 +144,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
     createdAt: conversation.createdAt.toISOString(),
     archived: conversation.archived,
     folderId: conversation.folderId,
+    channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
     botName: conversation.bot.name,
     botSlug: conversation.bot.slug,
     messages: conversation.messages.map((m) => ({
