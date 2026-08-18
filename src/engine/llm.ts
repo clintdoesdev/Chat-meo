@@ -34,13 +34,18 @@ const PERSONA_GUARD =
 // Deterministic backstop for the persona-guard failure that keeps recurring in practice: an AI
 // node fabricating a request for sensitive personal/identifying info even though PERSONA_GUARD
 // above already tells it never to invent an unrequested field. Prompt-only enforcement isn't
-// reliable enough by itself — this kept coming back in new forms (first a phone number "to
-// confirm registration," then a name-matches-your-bank-account check, then a bare "what's your
-// gender?") even after the guard was strengthened and a phone-number-only version of this filter
-// shipped — so this covers the same category PERSONA_GUARD already names (plus a couple more
-// that showed up in practice: gender and banking details), stripping any paragraph asking for one
-// of them out of the actual reply after generation, unless the bot's own system prompt
-// explicitly asks for that specific thing (in which case it's a deliberate, legitimate field and
+// reliable enough by itself — this kept coming back in new forms (a phone number "to confirm
+// registration," a name-matches-your-bank-account check, a bare "what's your gender?", an
+// "are you 18 or older?" age gate) even after the guard was strengthened and earlier, narrower
+// versions of this filter shipped. This is a losing game played reactively: an AI node asked to
+// freely recall/reword a whole scripted sequence (see attach-ai-documents.ts) rather than recite
+// literal Message/Capture-input nodes will keep drifting into new fields no fixed list can fully
+// anticipate — this filter is a backstop, not a substitute for building that kind of fixed intake
+// script out of deterministic nodes instead of an AI node. It covers the category PERSONA_GUARD
+// already names (plus a couple more that showed up in practice: gender, banking details, age),
+// stripping any paragraph asking for one of them out of the actual reply after generation, unless
+// the bot's own system prompt explicitly asks for that specific thing (in which case it's a
+// deliberate, legitimate field and
 // this does nothing for that category).
 const REQUEST_LEAD_IN =
   "(?:what(?:'s| is)|please\\s+(?:share|provide|send|give|drop)|can\\s+(?:i|you)\\s+(?:get|have)|send\\s+(?:me|us)|confirm|need\\s+you\\s+to\\s+(?:provide|confirm|share)|enter)";
@@ -61,6 +66,13 @@ const SENSITIVE_FIELD_RULES: SensitiveFieldRule[] = [
     permitted: /\b(?:date\s+of\s+birth|birth\s*date|d\.?o\.?b\.?)\b/i,
   },
   { request: /\bnext\s+of\s+kin\b/i, permitted: /\bnext\s+of\s+kin\b/i },
+  {
+    request: new RegExp(
+      `\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,60}\\b(?:(?:18|eighteen)\\s*(?:years?\\s*(?:of\\s+age|old)?)?(?:\\s*or\\s*older)?|your\\s+age)\\b|\\bhow\\s+old\\s+are\\s+you\\b`,
+      "i",
+    ),
+    permitted: /\bage\b|\b(?:18|eighteen)\s*years?\s*(?:of\s+age|old)?\b/i,
+  },
   {
     request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,40}\\b(?:gender|sex)\\b`, "i"),
     permitted: /\b(?:gender|sex)\b/i,

@@ -217,6 +217,20 @@ describe("stripUnauthorizedSensitiveFieldRequests", () => {
     ).toBe("Is there anything else I can help you with?");
   });
 
+  it("strips a fabricated age-gate question", () => {
+    const content = "Thank you, Wakes.\n\nNext, please confirm if you are 18 years or older.";
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "Collect the visitor's name and say thanks.")).toBe(
+      "Thank you, Wakes.",
+    );
+  });
+
+  it("leaves an age-gate reply untouched when the system prompt explicitly asks for it", () => {
+    const content = "Please confirm if you are 18 years or older.";
+    expect(
+      stripUnauthorizedSensitiveFieldRequests(content, "This service is 18+ — confirm the visitor's age before continuing."),
+    ).toBe(content);
+  });
+
   it("leaves a bank-details reply untouched when the system prompt explicitly asks for it", () => {
     const content = "What's your bank account number for the refund?";
     expect(
