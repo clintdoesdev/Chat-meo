@@ -14,7 +14,8 @@ vi.mock("openai", () => {
   return { default: MockOpenAI };
 });
 
-const { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel } = await import("./llm");
+const { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel, stripUnauthorizedPhoneNumberRequest } =
+  await import("./llm");
 
 function mockStream(chunks: Array<{ content?: string; finishReason?: string | null }>) {
   return {
@@ -166,6 +167,33 @@ describe("providerLlm with a per-node provider override", () => {
   });
 });
 
+describe("stripUnauthorizedPhoneNumberRequest", () => {
+  it("strips a paragraph asking for a WhatsApp number when the system prompt never authorized it", () => {
+    const content =
+      "Great, Stephen.\n\nWhat is your WhatsApp number?\nWe'll use this to confirm your registration and for important updates.";
+    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly greeter bot.")).toBe("Great, Stephen.");
+  });
+
+  it("leaves the reply untouched when the system prompt explicitly asks for a phone number", () => {
+    const content = "What is your WhatsApp number? We'll use this to confirm your booking.";
+    expect(
+      stripUnauthorizedPhoneNumberRequest(content, "Collect the visitor's name, then ask for their phone number."),
+    ).toBe(content);
+  });
+
+  it("leaves an unrelated reply untouched", () => {
+    const content = "Sure, our support hours are 9am to 5pm on weekdays.";
+    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly support bot.")).toBe(content);
+  });
+
+  it("falls back to a generic line when the entire reply is the disallowed request", () => {
+    const content = "Can I get your contact number?";
+    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly support bot.")).toBe(
+      "Is there anything else I can help you with?",
+    );
+  });
+});
+
 describe("providerLlm / createStreamingProviderLlm empty-reply handling", () => {
   const originalKey = process.env.XAI_API_KEY;
   const originalProvider = process.env.AI_PROVIDER;
@@ -242,5 +270,25 @@ describe("providerLlm / createStreamingProviderLlm empty-reply handling", () => 
       llm({ systemPrompt: "Be helpful.", history: [], temperature: 0.3, model: "grok-main" }),
     ).rejects.toThrow(/ran out of tokens/);
     expect(createCompletionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("providerLlm scrubs an unauthorized phone-number request out of the returned reply", async () => {
+    createCompletionMock.mockResolvedValueOnce({
+      choices: [
+        {
+          message: { content: "Great, Stephen.\n\nWhat is your WhatsApp number? We need it to confirm your registration." },
+          finish_reason: "stop",
+        },
+      ],
+      usage: null,
+    });
+
+    const result = await providerLlm({
+      systemPrompt: "You are a friendly greeter bot.",
+      history: [],
+      temperature: 0.3,
+      model: "grok-main",
+    });
+    expect(result.content).toBe("Great, Stephen.");
   });
 });

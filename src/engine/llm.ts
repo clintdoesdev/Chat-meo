@@ -29,6 +29,29 @@ const PERSONA_GUARD =
   "you've been told to do, say so plainly instead of improvising an answer or inventing the next " +
   "logical-sounding step yourself.";
 
+// Deterministic backstop for the single persona-guard failure that keeps recurring in practice:
+// an AI node fabricating a request for the visitor's phone/WhatsApp number even though
+// PERSONA_GUARD above already tells it never to invent an unrequested field. Prompt-only
+// enforcement isn't reliable enough by itself — this exact failure came back after the guard was
+// already strengthened once — so this strips it out of the actual reply after generation,
+// whole paragraph at a time, unless the bot's own system prompt explicitly asks for a
+// phone/WhatsApp/mobile/contact number (in which case that's a deliberate, legitimate field and
+// this does nothing).
+const PHONE_NUMBER_REQUEST_RE =
+  /\b(?:what(?:'s| is)|please\s+(?:share|provide|send|give|drop)|can\s+(?:i|you)\s+(?:get|have)|send\s+(?:me|us))\b[^.?!\n]{0,60}\b(?:whatsapp|phone|mobile|contact)\s*(?:number|#)\b/i;
+const PHONE_NUMBER_PERMITTED_RE = /\b(?:whatsapp|phone|mobile|contact)\s*number\b/i;
+
+// Exported for direct unit testing, same as resolveModel/resolveActiveProvider below.
+export function stripUnauthorizedPhoneNumberRequest(content: string, systemPrompt: string): string {
+  if (PHONE_NUMBER_PERMITTED_RE.test(systemPrompt)) return content;
+
+  const blocks = content.split(/\n\s*\n/);
+  const kept = blocks.filter((block) => !PHONE_NUMBER_REQUEST_RE.test(block));
+  if (kept.length === blocks.length) return content;
+
+  return kept.join("\n\n").trim() || "Is there anything else I can help you with?";
+}
+
 const MAX_HISTORY_MESSAGES = 12;
 // 400 was too tight in practice: reasoning-capable models (several popular free OpenRouter
 // models, e.g. DeepSeek R1/QwQ) spend a chunk of the token budget on hidden "thinking" tokens
@@ -189,7 +212,7 @@ export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, 
       attempts += 1;
     }
     if (!result.content) throw new Error(emptyReplyMessage(active.provider.name, result.finishReason));
-    return { content: result.content, usage: result.usage };
+    return { content: stripUnauthorizedPhoneNumberRequest(result.content, systemPrompt), usage: result.usage };
   } catch (error) {
     const message = describeError(error, active.provider.name);
     console.error(`[providerLlm:${active.provider.id}] request failed:`, message);
@@ -275,7 +298,12 @@ export function createStreamingProviderLlm(onChunk: (delta: string) => void): Ll
         attempts += 1;
       }
       if (!result.content) throw new Error(emptyReplyMessage(active.provider.name, result.finishReason));
-      return { content: result.content, usage: result.usage };
+      // Note: this can only scrub the *returned/persisted* reply — any offending text has
+      // already reached onChunk (and so the browser) by the time the full content is known, since
+      // streaming is inherently token-by-token. In practice this is enough: every report of this
+      // failure so far has come through WhatsApp, which uses providerLlm (non-streaming) above,
+      // not this path.
+      return { content: stripUnauthorizedPhoneNumberRequest(result.content, systemPrompt), usage: result.usage };
     } catch (error) {
       const message = describeError(error, active.provider.name);
       console.error(`[createStreamingProviderLlm:${active.provider.id}] request failed:`, message);
