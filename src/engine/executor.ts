@@ -11,6 +11,7 @@ import type {
   LlmUsage,
   LogicRule,
   Reply,
+  ReplyNode,
 } from "./types";
 
 const MAX_HOPS_PER_STEP = 25;
@@ -223,6 +224,156 @@ async function callWebhook(
   }
 }
 
+type LogicAttachedResult = {
+  currentNodeId: string | null;
+  status: EngineState["status"];
+  walking: boolean;
+  lastError?: string;
+};
+
+/**
+ * Shared control flow for any node type that can have a Logic node attached via its dedicated
+ * "logic" source handle — currently AiNode and ReplyNode. Runs the attached rules against the
+ * visitor's message first (a match pre-empts everything else this turn), handles the
+ * logicLocked rules-only phase, and otherwise calls `generateReply()` for whatever this node's
+ * own kind of content actually is (an LLM call for AiNode, the fixed/reworded text for
+ * ReplyNode) — that's the one piece each node type supplies for itself; everything else
+ * (maxReplies bookkeeping, the matchedRule/logicLocked branches, looping vs. escalating) is
+ * identical between them, which is exactly why this is shared rather than duplicated. Returns
+ * the new currentNodeId/status/walking rather than mutating them directly, since this is called
+ * from two different `switch` cases in step() that each own those bindings themselves.
+ */
+async function runLogicAttachedNode(
+  node: AiNode | ReplyNode,
+  graph: FlowGraph,
+  input: string | undefined,
+  variables: Record<string, string>,
+  history: LlmChatMessage[],
+  replies: Reply[],
+  aiReplyCounts: Record<string, number>,
+  logicLocked: Record<string, boolean>,
+  deps: EngineDeps,
+  classifierModel: string,
+  classifierProvider: string | undefined,
+  generateReply: () => Promise<{ content: string; usage?: LlmUsage; lastError?: string }>,
+): Promise<LogicAttachedResult> {
+  // A Logic node wired off this node's dedicated "logic" source handle gets first look at the
+  // visitor's message — a matched rule pre-empts this node's own reply entirely for this turn
+  // (reply and/or reroute). Only ever consulted when there's an actual visitor message driving
+  // this turn, so it can't fire on the very first (unprompted) greeting.
+  const logicEdge = graph.edges.find((edge) => edge.source === node.id && edge.sourceHandle === "logic");
+  const logicNode = logicEdge ? findNode(graph, logicEdge.target) : undefined;
+  const logicRules = logicNode?.type === "logic" ? logicNode.data.rules : undefined;
+
+  // Once data.maxReplies consecutive loop turns have passed with nothing routing away from this
+  // node, it stops waiting forever: it follows its plain outgoing edge if the author wired one
+  // (same edge a routed-away turn would use); otherwise, if a Logic node is attached, it locks
+  // onto that instead of ending (its rules — a payment confirmation, etc. — should still get a
+  // chance to fire even though this node's own reply budget is spent); otherwise it hands off to
+  // a human, exactly like reaching a Handoff node — a stuck conversation shouldn't be able to
+  // loop indefinitely.
+  function loopOrEscalate(): LogicAttachedResult {
+    const maxReplies = node.data.maxReplies;
+    const count = (aiReplyCounts[node.id] ?? 0) + 1;
+    if (!maxReplies || count < maxReplies) {
+      aiReplyCounts[node.id] = count;
+      return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false };
+    }
+    delete aiReplyCounts[node.id];
+    const fallbackEdge = nextEdge(graph, node.id);
+    if (fallbackEdge) {
+      return { currentNodeId: fallbackEdge.target, status: "RUNNING", walking: true };
+    }
+    if (logicNode) {
+      logicLocked[node.id] = true;
+      return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false };
+    }
+    // No Logic node to fall back on, so there's nothing left that could ever respond to another
+    // message here — same end state as SilentHandoffNode, deliberately: this node has already
+    // been replying for a while by the time the cap is hit, so announcing "you're being sent to
+    // a live team" on top of that reads as an abrupt, robotic non-sequitur. Going quiet and
+    // letting a human pick up the thread reads far more natural — on every channel, not just web.
+    return { currentNodeId: null, status: "HANDOFF", walking: false };
+  }
+
+  // Three passes, cheapest first: literal keywords (free, instant) → semantic similarity via a
+  // small classification call (only when keywords found nothing, and only against rules that
+  // actually have trigger text to compare meaning against) → the empty-triggers catch-all, if
+  // the author has one, as the final fallback.
+  let candidateRule: LogicRule | undefined;
+  if (input !== undefined && logicRules) {
+    candidateRule =
+      matchLogicKeyword(logicRules, input, { excludeGeneric: true }) ??
+      (await classifySemanticMatch(logicRules, history, deps, classifierModel, classifierProvider)) ??
+      catchAllRule(logicRules);
+  }
+  const candidateBranchEdge = candidateRule ? edgeForBranch(graph, logicNode!.id, candidateRule.id) : undefined;
+  // A rule with no reply and no route configured is a no-op — most often the default, still-blank
+  // "Anything else" catch-all — so it must NOT preempt this node's own reply. Only an
+  // author-configured rule (a reply, a route, or both) actually pre-empts this turn.
+  const matchedRule = candidateRule && (candidateRule.reply.trim() || candidateBranchEdge) ? candidateRule : undefined;
+
+  if (matchedRule) {
+    if (matchedRule.reply.trim()) {
+      const text = interpolate(matchedRule.reply, variables);
+      replies.push({ content: text });
+      history.push({ role: "assistant", content: text });
+    }
+    if (candidateBranchEdge) {
+      delete aiReplyCounts[node.id];
+      delete logicLocked[node.id];
+      return { currentNodeId: candidateBranchEdge.target, status: "RUNNING", walking: true };
+    }
+    // No route wired for this rule: same "nothing wired after this node" behavior as below —
+    // stay put and keep the conversation open (subject to maxReplies) rather than ending it. A
+    // rule that actually said something (rather than just routing) has put this conversation
+    // into a rules-only phase from here on — see logicLocked's doc comment in types.ts.
+    if (matchedRule.reply.trim()) logicLocked[node.id] = true;
+    return loopOrEscalate();
+  }
+
+  if (logicLocked[node.id]) {
+    // Locked: an attached Logic rule already spoke for this node once, so it doesn't get to
+    // freelance a reply of its own that might contradict or duplicate it (e.g. inventing its own
+    // payment link after a rule already sent the real one). Nothing matched this turn, so
+    // there's nothing to say — stay open and wait for a message that actually matches one of the
+    // rules (a confirmation, a receipt mention, etc.).
+    return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false };
+  }
+
+  const result = await generateReply();
+  replies.push({
+    content: result.content,
+    ...(result.usage ? { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } : {}),
+  });
+  history.push({ role: "assistant", content: result.content });
+  const edge = nextEdge(graph, node.id);
+  if (edge) {
+    delete aiReplyCounts[node.id];
+    return { currentNodeId: edge.target, status: "RUNNING", walking: true, lastError: result.lastError };
+  }
+  // Nothing wired after this node: stay here and keep the conversation open rather than ending
+  // it — this node replies automatically and keeps chatting by default, only actually ending
+  // when something explicitly routes it elsewhere (a condition to Handoff, a dead-end Message
+  // node, etc.) or maxReplies caps the loop (loopOrEscalate).
+  return { ...loopOrEscalate(), lastError: result.lastError };
+}
+
+// Deliberately narrow: this only ever reworks wording, never decides content — the actual
+// message text is fixed by the flow author (ReplyNode.data.text) and embedded verbatim into the
+// prompt below, so this is a paraphrase pass, not a conversation. Mainly exists so a Reply node
+// that keeps sending the "same" message doesn't look like an identical copy-pasted broadcast.
+function buildRewordPrompt(text: string): string {
+  return (
+    "Reword the message below so it reads a little differently than it might have last time, " +
+    "without changing its meaning, tone, or any specific detail — no link, number, name, date, " +
+    "or instruction may be added, removed, or altered. This is purely a wording pass, not an " +
+    "opportunity to say more, less, or anything different from the original. Reply with ONLY the " +
+    "reworded message text, nothing else — no quotes, no explanation, no preamble.\n\n" +
+    `Message:\n${text}`
+  );
+}
+
 /**
  * Advances the conversation from its current node until it needs visitor input (capture),
  * terminates (handoff, dead end, loop guard), or runs out of graph to walk. A single call can
@@ -249,11 +400,11 @@ export async function step(
 
   if (state.status === "AWAITING_INPUT") {
     const waitingNode = findNode(graph, currentNodeId);
-    // Capture nodes wait to store the answer into a variable and move on; AI nodes with
-    // nowhere to go next (see the "ai" case below) wait to keep the conversation itself going —
-    // the visitor's next message just re-runs the same AI node with the reply already in
+    // Capture nodes wait to store the answer into a variable and move on; AI and Reply nodes
+    // with nowhere to go next (see runLogicAttachedNode) wait to keep the conversation itself
+    // going — the visitor's next message just re-runs the same node with the reply already in
     // history. Anything else waiting is unexpected persisted state; end rather than loop.
-    if (!waitingNode || (waitingNode.type !== "capture" && waitingNode.type !== "ai")) {
+    if (!waitingNode || (waitingNode.type !== "capture" && waitingNode.type !== "ai" && waitingNode.type !== "reply")) {
       return { replies: [], state: { ...state, status: "ENDED" } };
     }
     if (input === undefined) {
@@ -322,147 +473,86 @@ export async function step(
       }
 
       case "ai": {
-        // The other place an AI node "stays put" (see below and the matchedRule branch) — pulled
-        // out since both need identical maxReplies bookkeeping. Once data.maxReplies consecutive
-        // loop turns have passed with nothing routing away from this node, it stops waiting
-        // forever: it follows its plain outgoing edge if the author wired one (same edge a
-        // routed-away turn would use), or otherwise hands off to a human, exactly like reaching
-        // a Handoff node — a stuck AI conversation shouldn't be able to loop indefinitely.
-        function loopOrEscalate(aiNode: AiNode): void {
-          const maxReplies = aiNode.data.maxReplies;
-          const count = (aiReplyCounts[aiNode.id] ?? 0) + 1;
-          if (!maxReplies || count < maxReplies) {
-            aiReplyCounts[aiNode.id] = count;
-            status = "AWAITING_INPUT";
-            currentNodeId = aiNode.id;
-            walking = false;
-            return;
-          }
-          delete aiReplyCounts[aiNode.id];
-          const fallbackEdge = nextEdge(graph, aiNode.id);
-          if (fallbackEdge) {
-            currentNodeId = fallbackEdge.target;
-            return;
-          }
-          if (logicNode) {
-            // A Logic node is attached to this AI node — its rules (a payment confirmation, etc.)
-            // should still get a chance to fire on future messages even though the AI's own
-            // free-form reply budget is spent, rather than the conversation going fully silent
-            // and unreachable by anything but a human. Same state the "rule spoke, no route
-            // wired" branch above already uses — see logicLocked's doc comment in types.ts.
-            logicLocked[aiNode.id] = true;
-            status = "AWAITING_INPUT";
-            currentNodeId = aiNode.id;
-            walking = false;
-            return;
-          }
-          // No Logic node to fall back on, so there's nothing left that could ever respond to
-          // another message here — same end state as SilentHandoffNode, deliberately: the AI has
-          // already been replying for a while by the time the cap is hit, so announcing "you're
-          // being sent to a live team" on top of that reads as an abrupt, robotic non-sequitur.
-          // Going quiet and letting a human pick up the thread reads far more natural — on every
-          // channel, not just web.
-          status = "HANDOFF";
-          currentNodeId = null;
-          walking = false;
-        }
-
-        // A Logic node wired off this AI node's dedicated "logic" source handle gets first look
-        // at the visitor's message — a matched rule pre-empts the LLM entirely for this turn
-        // (reply and/or reroute). Only ever consulted when there's an actual visitor message
-        // driving this turn, so it can't fire on the very first (unprompted) greeting.
-        const logicEdge = graph.edges.find(
-          (edge) => edge.source === node.id && edge.sourceHandle === "logic",
+        const result = await runLogicAttachedNode(
+          node,
+          graph,
+          input,
+          variables,
+          history,
+          replies,
+          aiReplyCounts,
+          logicLocked,
+          deps,
+          node.data.model,
+          node.data.provider,
+          async () => {
+            const systemPrompt = interpolate(node.data.systemPrompt ?? "", variables);
+            try {
+              const llmResult = await deps.llm({
+                systemPrompt,
+                history,
+                temperature: node.data.temperature,
+                model: node.data.model,
+                provider: node.data.provider,
+              });
+              return { content: llmResult.content, usage: llmResult.usage };
+            } catch (error) {
+              deps.logger.error("[engine] LLM call failed", error);
+              return {
+                content: "Sorry, I couldn't come up with a reply just now.",
+                lastError: error instanceof Error ? error.message : String(error),
+              };
+            }
+          },
         );
-        const logicNode = logicEdge ? findNode(graph, logicEdge.target) : undefined;
-        const logicRules = logicNode?.type === "logic" ? logicNode.data.rules : undefined;
+        currentNodeId = result.currentNodeId;
+        status = result.status;
+        walking = result.walking;
+        if (result.lastError) lastError = result.lastError;
+        break;
+      }
 
-        // Three passes, cheapest first: literal keywords (free, instant) → semantic similarity
-        // via a small classification call (only when keywords found nothing, and only against
-        // rules that actually have trigger text to compare meaning against) → the empty-triggers
-        // catch-all, if the author has one, as the final fallback.
-        let candidateRule: LogicRule | undefined;
-        if (input !== undefined && logicRules) {
-          candidateRule =
-            matchLogicKeyword(logicRules, input, { excludeGeneric: true }) ??
-            (await classifySemanticMatch(logicRules, history, deps, node.data.model, node.data.provider)) ??
-            catchAllRule(logicRules);
-        }
-        const candidateBranchEdge = candidateRule ? edgeForBranch(graph, logicNode!.id, candidateRule.id) : undefined;
-        // A rule with no reply and no route configured is a no-op — most often the default,
-        // still-blank "Anything else" catch-all — so it must NOT preempt the LLM. Only an
-        // author-configured rule (a reply, a route, or both) actually pre-empts this turn.
-        const matchedRule =
-          candidateRule && (candidateRule.reply.trim() || candidateBranchEdge) ? candidateRule : undefined;
-
-        if (matchedRule) {
-          if (matchedRule.reply.trim()) {
-            const text = interpolate(matchedRule.reply, variables);
-            replies.push({ content: text });
-            history.push({ role: "assistant", content: text });
-          }
-          if (candidateBranchEdge) {
-            delete aiReplyCounts[node.id];
-            delete logicLocked[node.id];
-            currentNodeId = candidateBranchEdge.target;
-          } else {
-            // No route wired for this rule: same "nothing wired after this AI node" behavior as
-            // below — stay put and keep the conversation open (subject to maxReplies) rather
-            // than ending it. A rule that actually said something (rather than just routing) has
-            // put this conversation into a rules-only phase from here on — see logicLocked's doc
-            // comment in types.ts.
-            if (matchedRule.reply.trim()) logicLocked[node.id] = true;
-            loopOrEscalate(node);
-          }
-          break;
-        }
-
-        if (logicLocked[node.id]) {
-          // Locked: an attached Logic rule already spoke for this node once, so the LLM doesn't
-          // get to freelance a reply of its own that might contradict or duplicate it (e.g.
-          // inventing its own payment link after a rule already sent the real one). Nothing
-          // matched this turn, so there's nothing to say — stay open and wait for a message that
-          // actually matches one of the rules (a confirmation, a receipt mention, etc.).
-          status = "AWAITING_INPUT";
-          currentNodeId = node.id;
-          walking = false;
-          break;
-        }
-
-        const systemPrompt = interpolate(node.data.systemPrompt ?? "", variables);
-        let content: string;
-        let usage: LlmUsage | undefined;
-        try {
-          const result = await deps.llm({
-            systemPrompt,
-            history,
-            temperature: node.data.temperature,
-            model: node.data.model,
-            provider: node.data.provider,
-          });
-          content = result.content;
-          usage = result.usage;
-        } catch (error) {
-          deps.logger.error("[engine] LLM call failed", error);
-          lastError = error instanceof Error ? error.message : String(error);
-          content = "Sorry, I couldn't come up with a reply just now.";
-        }
-        replies.push({
-          content,
-          ...(usage ? { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens } : {}),
-        });
-        history.push({ role: "assistant", content });
-        const edge = nextEdge(graph, node.id);
-        if (edge) {
-          delete aiReplyCounts[node.id];
-          currentNodeId = edge.target;
-        } else {
-          // Nothing wired after this AI node: stay here and keep the conversation open rather
-          // than ending it — an AI node replies automatically and keeps chatting by default,
-          // only actually ending when something explicitly routes it elsewhere (a condition to
-          // Handoff, a dead-end Message node, etc.) or maxReplies caps the loop (loopOrEscalate).
-          loopOrEscalate(node);
-        }
+      case "reply": {
+        const result = await runLogicAttachedNode(
+          node,
+          graph,
+          input,
+          variables,
+          history,
+          replies,
+          aiReplyCounts,
+          logicLocked,
+          deps,
+          node.data.model ?? "",
+          node.data.provider,
+          async () => {
+            const text = interpolate(node.data.text ?? "", variables);
+            if (!node.data.randomizeWording) return { content: text };
+            try {
+              const llmResult = await deps.llm({
+                systemPrompt: buildRewordPrompt(text),
+                history: [],
+                temperature: node.data.temperature ?? 0.7,
+                model: node.data.model ?? "",
+                provider: node.data.provider,
+              });
+              // An empty/unparseable reword falls back to the literal text, same as a thrown
+              // error below — this node's whole point is that it never has nothing to say.
+              return { content: llmResult.content || text, usage: llmResult.usage };
+            } catch (error) {
+              // Deliberately silent (no lastError, no apology reply): unlike the AI node, this
+              // node's content was never actually at risk — it always has the exact right thing
+              // to say (node.data.text). A failed rewording pass just means it says that,
+              // unreworded, which is a perfectly good outcome, not a degraded one worth
+              // surfacing to the Studio Test drawer's Debug panel.
+              deps.logger.error("[engine] Reply node rewording failed — using the original text", error);
+              return { content: text };
+            }
+          },
+        );
+        currentNodeId = result.currentNodeId;
+        status = result.status;
+        walking = result.walking;
         break;
       }
 

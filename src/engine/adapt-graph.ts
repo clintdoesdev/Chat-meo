@@ -25,6 +25,19 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           maxReplies: data.maxReplies,
         },
       };
+    case "reply":
+      return {
+        id: node.id,
+        type: "reply",
+        data: {
+          text: data.text ?? "",
+          randomizeWording: data.randomizeWording,
+          model: data.model,
+          temperature: data.temperature,
+          provider: data.provider,
+          maxReplies: data.maxReplies,
+        },
+      };
     case "condition":
       return {
         id: node.id,

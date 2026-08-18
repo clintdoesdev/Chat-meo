@@ -26,6 +26,8 @@ function previewText(data: FlowNodeData, kind?: FlowNodeKind): string {
       return data.text || "No message set";
     case "ai":
       return data.systemPrompt || "No system prompt set";
+    case "reply":
+      return data.text || "No message set";
     case "capture":
       return data.question || "No question set";
     case "webhook":
@@ -62,7 +64,8 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
   const branchItems = branchItemsFor(data, type);
   const hasBranchHandles = type === "condition" || type === "logic";
   const logicConnections = useNodeConnections({ id, handleType: "source", handleId: "logic" });
-  const hasLogicAttached = type === "ai" && logicConnections.length > 0;
+  const canAttachLogic = type === "ai" || type === "reply";
+  const hasLogicAttached = canAttachLogic && logicConnections.length > 0;
   const issue = useNodeIssue(id);
   const { openDetails } = useStudioNodeActions();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -248,7 +251,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
           style={{
             background: `${color}26`,
             color,
-            boxShadow: type === "ai" ? `0 0 8px 1px ${color}55` : undefined,
+            boxShadow: canAttachLogic ? `0 0 8px 1px ${color}55` : undefined,
           }}
         >
           <Icon size={11} />
@@ -281,7 +284,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         <p className="line-clamp-2 text-[11px] text-muted">{previewText(data, type)}</p>
       )}
 
-      {type === "ai" && (
+      {canAttachLogic && (
         <div
           className="mt-1.5 flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[10.5px] font-medium"
           style={{
@@ -299,10 +302,10 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         </div>
       )}
 
-      {type === "ai" && data.maxReplies && (
+      {canAttachLogic && data.maxReplies && (
         <div className="mt-1.5 flex items-center gap-1.5 rounded-[8px] bg-white/[.04] px-2 py-1 text-[10.5px] font-medium text-muted">
           <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "rgba(255,255,255,.25)" }} />
-          Max {data.maxReplies} {data.maxReplies === 1 ? "reply" : "replies"} before handoff
+          Max {data.maxReplies} {data.maxReplies === 1 ? "send" : "sends"} before handoff
         </div>
       )}
 
@@ -315,7 +318,7 @@ export function FlowNodeView({ id, data, selected, type }: NodeProps<FlowNode>) 
         />
       )}
 
-      {type === "ai" && (
+      {canAttachLogic && (
         <Handle
           type="source"
           position={Position.Bottom}

@@ -47,10 +47,15 @@ import {
   type NodeKindMeta,
 } from "@/lib/flow-types";
 
-const nodeTypes = {
+// Typed as a full Record rather than an untyped object literal deliberately: React Flow silently
+// falls back to its own generic, unstyled default node for any type missing here (no error, no
+// warning — it just quietly renders wrong), so this needs a compile-time guarantee that every
+// FlowNodeKind actually has an entry rather than relying on remembering to update this by hand.
+const nodeTypes: Record<FlowNodeKind, typeof FlowNodeView> = {
   start: FlowNodeView,
   message: FlowNodeView,
   ai: FlowNodeView,
+  reply: FlowNodeView,
   condition: FlowNodeView,
   capture: FlowNodeView,
   webhook: FlowNodeView,
@@ -167,6 +172,13 @@ function computeNodeIssues(nodes: FlowNode[], edges: FlowEdge[]): NodeIssue[] {
           issues.push({ nodeId: node.id, message: "Missing a system prompt" });
         } else if (!(node.data.model ?? "").trim()) {
           issues.push({ nodeId: node.id, message: "Missing a model" });
+        }
+        break;
+      case "reply":
+        if (!(node.data.text ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "No message text set" });
+        } else if (node.data.randomizeWording && !(node.data.model ?? "").trim()) {
+          issues.push({ nodeId: node.id, message: "Missing a model for wording variation" });
         }
         break;
       case "condition": {
@@ -294,13 +306,13 @@ function StudioCanvas({
     [setEdges],
   );
 
-  // An AI node's dedicated "logic" handle only ever makes sense wired to a Logic node — block
-  // anything else so a stray connection can't silently do nothing at runtime.
+  // An AI or Reply node's dedicated "logic" handle only ever makes sense wired to a Logic node —
+  // block anything else so a stray connection can't silently do nothing at runtime.
   const isValidConnection = useCallback(
     (connection: Connection | FlowEdge) => {
       if (connection.sourceHandle !== "logic") return true;
       const sourceNode = nodes.find((n) => n.id === connection.source);
-      if (sourceNode?.type !== "ai") return true;
+      if (sourceNode?.type !== "ai" && sourceNode?.type !== "reply") return true;
       const targetNode = nodes.find((n) => n.id === connection.target);
       return targetNode?.type === "logic";
     },
@@ -360,10 +372,13 @@ function StudioCanvas({
 
     const fromNode = connectionState.fromNode;
     const fromHandle = connectionState.fromHandle;
-    // Mirrors isValidConnection: an AI node's "logic" dot can only ever lead to a Logic node, so
-    // that's the only option worth offering. Everything else can lead anywhere in the palette.
+    // Mirrors isValidConnection: an AI or Reply node's "logic" dot can only ever lead to a Logic
+    // node, so that's the only option worth offering. Everything else can lead anywhere in the
+    // palette.
     const kinds =
-      fromHandle.type === "source" && fromHandle.id === "logic" && fromNode.type === "ai"
+      fromHandle.type === "source" &&
+      fromHandle.id === "logic" &&
+      (fromNode.type === "ai" || fromNode.type === "reply")
         ? [NODE_KIND_META.logic]
         : PALETTE_KINDS;
 

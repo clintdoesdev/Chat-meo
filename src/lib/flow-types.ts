@@ -4,6 +4,7 @@ export type FlowNodeKind =
   | "start"
   | "message"
   | "ai"
+  | "reply"
   | "condition"
   | "capture"
   | "webhook"
@@ -54,11 +55,16 @@ export type FlowNodeData = {
   provider?: string;
   model?: AiModel;
   temperature?: number;
-  // Caps how many consecutive back-and-forth replies this AI node will give before silently
-  // handing off to a human — no "you're being transferred" message, on any channel — or
-  // following its plain outgoing edge, if one's wired. See the "ai" case in engine/executor.ts.
-  // Unset/0 means unlimited, matching the node's original behavior.
+  // Caps how many consecutive back-and-forth replies this AI or Reply node will give before
+  // silently handing off to a human — no "you're being transferred" message, on any channel —
+  // or following its plain outgoing edge, if one's wired. See runLogicAttachedNode in
+  // engine/executor.ts. Unset/0 means unlimited, matching the node's original behavior.
   maxReplies?: number;
+  // reply — when true, the fixed `text` above is lightly reworded by the model (provider/model
+  // above) before each send, purely so repeated sends don't look like an identical
+  // copy-pasted broadcast; the content itself never changes. Off (undefined) means the reply
+  // node makes zero LLM calls of its own — see ReplyNode.data in engine/types.ts.
+  randomizeWording?: boolean;
   // condition
   variable?: string;
   branches?: ConditionBranch[];
@@ -128,6 +134,22 @@ export const NODE_KINDS: NodeKindMeta[] = [
       "hard rules the AI should always follow.",
   },
   {
+    kind: "reply",
+    label: "Reply",
+    color: "#FFB454",
+    defaultData: {
+      label: "Reply",
+      text: "Thanks for reaching out! Someone will follow up shortly.",
+    },
+    inPalette: true,
+    description:
+      "Sends a fixed reply, word for word — like Send message, but it stays in the conversation " +
+      "and can have a Logic node attached to its bottom dot for hard rules to check on later " +
+      "messages, the same way an AI node can. No AI involved unless you turn on \"Vary wording,\" " +
+      "which only lightly rewords the message each time (same content, different phrasing) so " +
+      "repeated sends don't look like an identical copy-pasted broadcast.",
+  },
+  {
     kind: "logic",
     label: "Logic",
     color: "#B98CFF",
@@ -145,12 +167,12 @@ export const NODE_KINDS: NodeKindMeta[] = [
     },
     inPalette: true,
     description:
-      "Drag this off an AI node's bottom dot to give it hard rules to check before it replies — " +
-      "\"if they ask for a payment link, send this\", \"if they say X, route to Y instead.\" Triggers " +
-      "don't need to be exact — the AI catches similar phrasing too, so \"I have made payments\" as " +
-      "a trigger also matches \"just sent the money over.\" A rule can send a canned reply, jump the " +
-      "conversation to another node, or both. Anything that doesn't match falls through to the AI as " +
-      "normal.",
+      "Drag this off an AI or Reply node's bottom dot to give it hard rules to check before it " +
+      "replies — \"if they ask for a payment link, send this\", \"if they say X, route to Y " +
+      "instead.\" Triggers don't need to be exact — the AI catches similar phrasing too, so " +
+      "\"I have made payments\" as a trigger also matches \"just sent the money over.\" A rule " +
+      "can send a canned reply, jump the conversation to another node, or both. Anything that " +
+      "doesn't match falls through to the attached node as normal.",
   },
   {
     kind: "condition",

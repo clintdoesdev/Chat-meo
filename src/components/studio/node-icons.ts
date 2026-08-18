@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   ActionsLinkIcon,
+  CommsSendIcon,
   NodesActionIcon,
   NodesAiIcon,
   NodesConditionIcon,
@@ -19,6 +20,7 @@ export const NODE_KIND_ICON: Record<FlowNodeKind, ComponentType<IconProps>> = {
   start: NodesMessageIcon,
   message: NodesMessageIcon,
   ai: NodesAiIcon,
+  reply: CommsSendIcon,
   condition: NodesConditionIcon,
   capture: NodesQuestionIcon,
   webhook: NodesActionIcon,

@@ -138,7 +138,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
           />
         </div>
 
-        {(node.type === "start" || node.type === "message") && (
+        {(node.type === "start" || node.type === "message" || node.type === "reply") && (
           <div className="mb-3.5">
             <label htmlFor="field-text" className={labelClass()}>
               Message
@@ -280,6 +280,103 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               </p>
             </div>
             <KnowledgeUpload flowId={flowId} nodeId={node.id} />
+          </>
+        )}
+
+        {node.type === "reply" && (
+          <>
+            <div className="mb-3.5 flex items-center justify-between gap-3 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12.5px] font-medium text-text">Vary wording with AI</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
+                  Sends the message above, lightly reworded each time (same meaning, different
+                  phrasing) so repeated sends don&apos;t look like an identical copy-pasted
+                  broadcast. Nothing about what&apos;s actually said ever changes, and if a
+                  rewording attempt ever fails, the message above is sent exactly as written.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(data.randomizeWording)}
+                onClick={() => onChange(node.id, { randomizeWording: !data.randomizeWording })}
+                className={`flex-shrink-0 rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold transition ${
+                  data.randomizeWording
+                    ? "bg-grad-orange text-white shadow-[inset_0_1px_0_rgba(255,255,255,.3)]"
+                    : "border border-line-2 bg-card-2 text-muted"
+                }`}
+              >
+                {data.randomizeWording ? "On" : "Off"}
+              </button>
+            </div>
+
+            {data.randomizeWording && (
+              <>
+                <div className="mb-3.5">
+                  <label className={labelClass()}>Provider</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.values(PROVIDERS).map((provider) => {
+                      const active = effectiveProviderId(data.provider) === provider.id;
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() =>
+                            onChange(node.id, { provider: provider.id, model: provider.defaultModel })
+                          }
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                            active
+                              ? "border-orange-2/50 bg-orange/10 text-text"
+                              : "border-line-2 bg-card-2 text-muted hover:text-text"
+                          }`}
+                        >
+                          {provider.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mb-3.5">
+                  <label htmlFor="field-reply-model" className={labelClass()}>
+                    Model
+                  </label>
+                  <ModelPicker
+                    id="field-reply-model"
+                    provider={effectiveProviderId(data.provider)}
+                    value={data.model ?? ""}
+                    onChange={(modelId) => onChange(node.id, { model: modelId })}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="mb-3.5">
+              <label htmlFor="field-reply-max-replies" className={labelClass()}>
+                Max sends before handoff
+              </label>
+              <input
+                id="field-reply-max-replies"
+                type="number"
+                min={1}
+                max={50}
+                value={data.maxReplies ?? ""}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  onChange(node.id, {
+                    maxReplies: raw === "" ? undefined : Math.max(1, Math.min(50, Number(raw))),
+                  });
+                }}
+                placeholder="Unlimited"
+                className={fieldClass()}
+              />
+              <p className="mt-1.5 text-[11px] text-muted">
+                After this many turns with nothing resolved, this node stops repeating its
+                message. If a Logic node is attached below, its rules stay active and can still
+                reply or route (e.g. a payment confirmation) — otherwise the conversation quietly
+                hands to a human, no &quot;you&apos;re being transferred&quot; message, it just
+                goes quiet and shows up in your Inbox. Leave blank for unlimited.
+              </p>
+            </div>
           </>
         )}
 

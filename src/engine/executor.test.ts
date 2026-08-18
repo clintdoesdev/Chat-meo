@@ -660,6 +660,191 @@ describe("step: ai node maxReplies cap with an attached Logic node", () => {
   });
 });
 
+describe("step: reply node (non-AI replacement for the ai node)", () => {
+  it("sends the fixed text and never calls the LLM when randomizeWording is off", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Thanks for reaching out!" } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Thanks for reaching out!" }]);
+    expect(output.state.status).toBe("AWAITING_INPUT");
+    expect(output.state.currentNodeId).toBe("reply-1");
+  });
+
+  it("interpolates variables into the fixed text", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Thanks, {{name}}!" } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: { name: "Idris" }, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "Thanks, Idris!" }]);
+  });
+
+  it("follows its plain outgoing edge instead of looping, when one is wired", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "reply-1", type: "reply", data: { text: "Got it." } },
+        { id: "msg-1", type: "message", data: { text: "Anything else?" } },
+      ],
+      edges: [{ id: "e1", source: "reply-1", target: "msg-1" }],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "Got it." }, { content: "Anything else?" }]);
+    expect(output.state.status).toBe("ENDED");
+  });
+
+  it("respects maxReplies, silently handing off once the cap is reached with nowhere to go", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here.", maxReplies: 1 } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "Still here." }]);
+    expect(output.state.status).toBe("HANDOFF");
+    expect(output.state.aiReplyCounts).toBeUndefined();
+  });
+
+  it("locks onto an attached Logic node instead of handing off once the cap is reached", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "reply-1", type: "reply", data: { text: "Here to help.", maxReplies: 1 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "reply-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+
+    const turn1 = await step(graph, { currentNodeId: "reply-1", variables: {}, status: "RUNNING" }, "hi", deps);
+    expect(turn1.state.status).toBe("AWAITING_INPUT");
+    expect(turn1.state.logicLocked).toEqual({ "reply-1": true });
+
+    const turn2 = await step(graph, turn1.state, "invoice please", deps);
+    expect(turn2.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+  });
+
+  it("lets a matched Logic rule pre-empt the fixed reply and route away", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "reply-1", type: "reply", data: { text: "Default reply." } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [{ id: "rule-pay", label: "Payment", triggers: "invoice", reply: "Your link: https://pay.example.com" }],
+          },
+        },
+        { id: "next-1", type: "message", data: { text: "Anything else?" } },
+      ],
+      edges: [
+        { id: "e-logic", source: "reply-1", target: "logic-1", sourceHandle: "logic" },
+        { id: "e-branch", source: "logic-1", target: "next-1", sourceHandle: "rule-pay" },
+      ],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "invoice please", deps);
+    expect(output.replies).toEqual([
+      { content: "Your link: https://pay.example.com" },
+      { content: "Anything else?" },
+    ]);
+  });
+
+  it("rewords the fixed text via the LLM when randomizeWording is on", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "We'll be with you shortly.", randomizeWording: true } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async ({ systemPrompt, history }) => {
+      expect(systemPrompt).toContain("We'll be with you shortly.");
+      expect(history).toEqual([]);
+      return { content: "Someone will reach out to you soon." };
+    });
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "Someone will reach out to you soon." }]);
+    expect(output.state.lastError).toBeUndefined();
+  });
+
+  it("falls back to the literal text, silently, when the rewording call fails", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "We'll be with you shortly.", randomizeWording: true } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => {
+      throw new Error("provider down");
+    });
+    const loggerError = vi.fn();
+    const deps = createDeps({ llm: llmMock, logger: { error: loggerError } });
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "We'll be with you shortly." }]);
+    expect(output.state.lastError).toBeUndefined();
+    expect(loggerError).toHaveBeenCalled();
+  });
+
+  it("falls back to the literal text when the rewording call returns empty content", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "We'll be with you shortly.", randomizeWording: true } }],
+      edges: [],
+    };
+    const llmMock = vi.fn(async () => ({ content: "" }));
+    const deps = createDeps({ llm: llmMock });
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "We'll be with you shortly." }]);
+  });
+
+  it("resumes correctly from AWAITING_INPUT on the next turn (same as an ai node)", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here." } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const turn1 = await step(graph, { currentNodeId: "reply-1", variables: {}, status: "RUNNING" }, "hi", deps);
+    expect(turn1.state.status).toBe("AWAITING_INPUT");
+
+    const turn2 = await step(graph, turn1.state, "again", deps);
+    expect(turn2.replies).toEqual([{ content: "Still here." }]);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+  });
+});
+
 describe("step: handoff", () => {
   it("emits the fixed customer-facing message and sets status HANDOFF, ignoring the internal note", async () => {
     const graph: FlowGraph = {
