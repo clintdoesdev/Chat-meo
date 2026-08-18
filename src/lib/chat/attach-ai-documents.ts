@@ -44,11 +44,18 @@ export async function attachAiNodeDocuments(graph: FlowGraph, flowId: string): P
 
     node.data.systemPrompt =
       `${node.data.systemPrompt}\n\n` +
-      "Reference material — this is your only source of knowledge for this conversation. " +
-      "Answer strictly from what's in it; never rely on outside knowledge or guess, even if you " +
+      "STRICT KNOWLEDGE-BASE MODE. The reference material below is your ONLY source of " +
+      "information for this conversation — full stop. This overrides anything above that asks " +
+      "you to improvise, deep-dive, embellish, or freely vary what you cover: you may reword " +
+      "sentences for natural phrasing, but every fact, field, question, and step you say must " +
+      "come directly from what's below. Never add, invent, omit, or reorder anything — including " +
+      "something that feels like a natural or obvious next step — even if you're confident it's " +
+      "correct or expected for this kind of conversation. If this material lays out a sequence " +
+      "of steps or questions, follow that exact sequence in that exact order: everything in it, " +
+      "nothing beyond it. Never rely on outside knowledge, training data, or a guess, even if you " +
       "think you know the answer. If the visitor asks about something this material doesn't " +
-      "cover, don't attempt to answer it — let them know that's outside what this conversation " +
-      "covers. Don't mention that this material was provided as uploaded documents.\n\n" +
+      "cover, say so plainly instead of attempting an answer — don't improvise one. Don't mention " +
+      "that this material was provided as uploaded documents.\n\n" +
       reference;
   }
 }
