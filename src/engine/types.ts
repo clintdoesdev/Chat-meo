@@ -34,8 +34,12 @@ export type AiNode = {
    * maxReplies caps the free-form back-and-forth loop this node runs when nothing routes away
    * from it (see the "ai" case in executor.ts) — undefined/0 means unlimited, matching today's
    * behavior. Once the cap is hit, the node behaves as if it *did* have somewhere to go: it
-   * follows its plain outgoing edge if one exists, or silently hands off to a human otherwise
-   * (same customer-facing behavior as SilentHandoffNode — no announcement, on any channel). */
+   * follows its plain outgoing edge if one exists; otherwise, if a Logic node is attached (the
+   * "logic" source handle), it locks onto that instead of ending — same as logicLocked below —
+   * so the Logic node's rules can still fire on later messages (a payment confirmation, etc.)
+   * even though the LLM itself is done freelancing. Only silently hands off to a human (same
+   * customer-facing behavior as SilentHandoffNode — no announcement, on any channel) when there's
+   * neither a plain edge nor a Logic node to fall back on. */
   data: { systemPrompt: string; model: string; temperature: number; provider?: string; maxReplies?: number };
 };
 

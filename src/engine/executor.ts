@@ -344,10 +344,24 @@ export async function step(
             currentNodeId = fallbackEdge.target;
             return;
           }
-          // Same end state as SilentHandoffNode, deliberately: the AI has already been replying
-          // for a while by the time the cap is hit, so announcing "you're being sent to a live
-          // team" on top of that reads as an abrupt, robotic non-sequitur. Going quiet and letting
-          // a human pick up the thread reads far more natural — on every channel, not just web.
+          if (logicNode) {
+            // A Logic node is attached to this AI node — its rules (a payment confirmation, etc.)
+            // should still get a chance to fire on future messages even though the AI's own
+            // free-form reply budget is spent, rather than the conversation going fully silent
+            // and unreachable by anything but a human. Same state the "rule spoke, no route
+            // wired" branch above already uses — see logicLocked's doc comment in types.ts.
+            logicLocked[aiNode.id] = true;
+            status = "AWAITING_INPUT";
+            currentNodeId = aiNode.id;
+            walking = false;
+            return;
+          }
+          // No Logic node to fall back on, so there's nothing left that could ever respond to
+          // another message here — same end state as SilentHandoffNode, deliberately: the AI has
+          // already been replying for a while by the time the cap is hit, so announcing "you're
+          // being sent to a live team" on top of that reads as an abrupt, robotic non-sequitur.
+          // Going quiet and letting a human pick up the thread reads far more natural — on every
+          // channel, not just web.
           status = "HANDOFF";
           currentNodeId = null;
           walking = false;

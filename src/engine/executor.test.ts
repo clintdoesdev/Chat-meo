@@ -590,6 +590,76 @@ describe("step: ai node maxReplies cap", () => {
   });
 });
 
+describe("step: ai node maxReplies cap with an attached Logic node", () => {
+  // Mirrors a real flow: the AI chats freely up to its reply budget, then a Logic node attached
+  // via the "logic" handle should keep listening for a payment confirmation etc. instead of the
+  // conversation going fully silent to a human the moment the budget runs out.
+  function buildGraph(maxReplies: number): FlowGraph {
+    return {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3, maxReplies } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+  }
+
+  it("locks onto the Logic node instead of handing off once the cap is reached", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+
+    const output = await step(buildGraph(1), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "hello", deps);
+
+    expect(output.replies).toEqual([{ content: "How can I help?" }]);
+    expect(output.state.status).toBe("AWAITING_INPUT");
+    expect(output.state.currentNodeId).toBe("ai-1");
+    expect(output.state.aiReplyCounts).toBeUndefined();
+    expect(output.state.logicLocked).toEqual({ "ai-1": true });
+  });
+
+  it("still fires a Logic rule on a later message, after the cap has locked the node", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+
+    const turn1 = await step(buildGraph(1), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "hello", deps);
+    const turn2 = await step(buildGraph(1), turn1.state, "invoice please", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(turn2.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+    expect(turn2.state.logicLocked).toEqual({ "ai-1": true });
+  });
+
+  it("stays silent (no LLM call) for a message matching no rule, once locked by the cap", async () => {
+    const llmMock = vi.fn(async () => ({ content: "How can I help?" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+
+    const turn1 = await step(buildGraph(1), { currentNodeId: "ai-1", variables: {}, status: "RUNNING" }, "hello", deps);
+    const turn2 = await step(buildGraph(1), turn1.state, "just checking in", deps);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(turn2.replies).toEqual([]);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+    expect(turn2.state.logicLocked).toEqual({ "ai-1": true });
+  });
+});
+
 describe("step: handoff", () => {
   it("emits the fixed customer-facing message and sets status HANDOFF, ignoring the internal note", async () => {
     const graph: FlowGraph = {
