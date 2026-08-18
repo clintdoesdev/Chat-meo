@@ -14,7 +14,7 @@ vi.mock("openai", () => {
   return { default: MockOpenAI };
 });
 
-const { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel, stripUnauthorizedPhoneNumberRequest } =
+const { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel, stripUnauthorizedSensitiveFieldRequests } =
   await import("./llm");
 
 function mockStream(chunks: Array<{ content?: string; finishReason?: string | null }>) {
@@ -167,30 +167,61 @@ describe("providerLlm with a per-node provider override", () => {
   });
 });
 
-describe("stripUnauthorizedPhoneNumberRequest", () => {
+describe("stripUnauthorizedSensitiveFieldRequests", () => {
   it("strips a paragraph asking for a WhatsApp number when the system prompt never authorized it", () => {
     const content =
       "Great, Stephen.\n\nWhat is your WhatsApp number?\nWe'll use this to confirm your registration and for important updates.";
-    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly greeter bot.")).toBe("Great, Stephen.");
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "You are a friendly greeter bot.")).toBe("Great, Stephen.");
   });
 
   it("leaves the reply untouched when the system prompt explicitly asks for a phone number", () => {
     const content = "What is your WhatsApp number? We'll use this to confirm your booking.";
     expect(
-      stripUnauthorizedPhoneNumberRequest(content, "Collect the visitor's name, then ask for their phone number."),
+      stripUnauthorizedSensitiveFieldRequests(content, "Collect the visitor's name, then ask for their phone number."),
     ).toBe(content);
   });
 
   it("leaves an unrelated reply untouched", () => {
     const content = "Sure, our support hours are 9am to 5pm on weekdays.";
-    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly support bot.")).toBe(content);
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "You are a friendly support bot.")).toBe(content);
   });
 
   it("falls back to a generic line when the entire reply is the disallowed request", () => {
     const content = "Can I get your contact number?";
-    expect(stripUnauthorizedPhoneNumberRequest(content, "You are a friendly support bot.")).toBe(
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "You are a friendly support bot.")).toBe(
       "Is there anything else I can help you with?",
     );
+  });
+
+  it("strips a fabricated bank-account name-confirmation request", () => {
+    const content =
+      "Great, Idris.\n\nNow I need you to confirm your full name exactly as it appears on your bank account.";
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "Collect the visitor's name and say thanks.")).toBe(
+      "Great, Idris.",
+    );
+  });
+
+  it("strips a fabricated gender question", () => {
+    const content = "Perfect! What's your gender?";
+    expect(stripUnauthorizedSensitiveFieldRequests(content, "Collect the visitor's name and say thanks.")).toBe(
+      "Is there anything else I can help you with?",
+    );
+  });
+
+  it("strips a fabricated date-of-birth or next-of-kin request", () => {
+    expect(
+      stripUnauthorizedSensitiveFieldRequests("What is your date of birth?", "You are a friendly support bot."),
+    ).toBe("Is there anything else I can help you with?");
+    expect(
+      stripUnauthorizedSensitiveFieldRequests("Please provide your next of kin's details.", "You are a friendly support bot."),
+    ).toBe("Is there anything else I can help you with?");
+  });
+
+  it("leaves a bank-details reply untouched when the system prompt explicitly asks for it", () => {
+    const content = "What's your bank account number for the refund?";
+    expect(
+      stripUnauthorizedSensitiveFieldRequests(content, "Ask for the visitor's bank account number to process refunds."),
+    ).toBe(content);
   });
 });
 

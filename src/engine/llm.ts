@@ -24,29 +24,72 @@ const PERSONA_GUARD =
   "below: if the instructions above don't explicitly name a specific piece of information and " +
   "tell you to ask for it, you may not ask for it — full stop, regardless of how natural or " +
   "expected it might seem for this kind of conversation (a phone/WhatsApp number, email, ID " +
-  "number, physical address, date of birth, next of kin, a verification/OTP code, etc. are all " +
-  "off-limits unless named explicitly above). If a visitor asks for something outside what " +
-  "you've been told to do, say so plainly instead of improvising an answer or inventing the next " +
-  "logical-sounding step yourself.";
+  "number, physical address, date of birth, next of kin, gender, banking/account details, a " +
+  "verification/OTP code, etc. are all off-limits unless named explicitly above). Never ask the " +
+  "visitor to re-confirm or verify something they already gave you in a different form (e.g. " +
+  "matching their name against a bank account) unless that verification step is explicitly " +
+  "described above. If a visitor asks for something outside what you've been told to do, say so " +
+  "plainly instead of improvising an answer or inventing the next logical-sounding step yourself.";
 
-// Deterministic backstop for the single persona-guard failure that keeps recurring in practice:
-// an AI node fabricating a request for the visitor's phone/WhatsApp number even though
-// PERSONA_GUARD above already tells it never to invent an unrequested field. Prompt-only
-// enforcement isn't reliable enough by itself — this exact failure came back after the guard was
-// already strengthened once — so this strips it out of the actual reply after generation,
-// whole paragraph at a time, unless the bot's own system prompt explicitly asks for a
-// phone/WhatsApp/mobile/contact number (in which case that's a deliberate, legitimate field and
-// this does nothing).
-const PHONE_NUMBER_REQUEST_RE =
-  /\b(?:what(?:'s| is)|please\s+(?:share|provide|send|give|drop)|can\s+(?:i|you)\s+(?:get|have)|send\s+(?:me|us))\b[^.?!\n]{0,60}\b(?:whatsapp|phone|mobile|contact)\s*(?:number|#)\b/i;
-const PHONE_NUMBER_PERMITTED_RE = /\b(?:whatsapp|phone|mobile|contact)\s*number\b/i;
+// Deterministic backstop for the persona-guard failure that keeps recurring in practice: an AI
+// node fabricating a request for sensitive personal/identifying info even though PERSONA_GUARD
+// above already tells it never to invent an unrequested field. Prompt-only enforcement isn't
+// reliable enough by itself — this kept coming back in new forms (first a phone number "to
+// confirm registration," then a name-matches-your-bank-account check, then a bare "what's your
+// gender?") even after the guard was strengthened and a phone-number-only version of this filter
+// shipped — so this covers the same category PERSONA_GUARD already names (plus a couple more
+// that showed up in practice: gender and banking details), stripping any paragraph asking for one
+// of them out of the actual reply after generation, unless the bot's own system prompt
+// explicitly asks for that specific thing (in which case it's a deliberate, legitimate field and
+// this does nothing for that category).
+const REQUEST_LEAD_IN =
+  "(?:what(?:'s| is)|please\\s+(?:share|provide|send|give|drop)|can\\s+(?:i|you)\\s+(?:get|have)|send\\s+(?:me|us)|confirm|need\\s+you\\s+to\\s+(?:provide|confirm|share)|enter)";
+
+type SensitiveFieldRule = { request: RegExp; permitted: RegExp };
+
+const SENSITIVE_FIELD_RULES: SensitiveFieldRule[] = [
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,60}\\b(?:whatsapp|phone|mobile|contact)\\s*(?:number|#)\\b`, "i"),
+    permitted: /\b(?:whatsapp|phone|mobile|contact)\s*number\b/i,
+  },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,60}\\bemail\\s*(?:address)?\\b`, "i"),
+    permitted: /\bemail\s*(?:address)?\b/i,
+  },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,60}\\b(?:date\\s+of\\s+birth|birth\\s*date|d\\.?o\\.?b\\.?)\\b`, "i"),
+    permitted: /\b(?:date\s+of\s+birth|birth\s*date|d\.?o\.?b\.?)\b/i,
+  },
+  { request: /\bnext\s+of\s+kin\b/i, permitted: /\bnext\s+of\s+kin\b/i },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,40}\\b(?:gender|sex)\\b`, "i"),
+    permitted: /\b(?:gender|sex)\b/i,
+  },
+  {
+    request: /\bbank\s+(?:account|details)\b|\baccount\s+number\b|\bBVN\b|\bsort\s+code\b/i,
+    permitted: /\bbank\s+(?:account|details)\b|\baccount\s+number\b|\bBVN\b/i,
+  },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,40}\\b(?:id|passport|nin)\\s*(?:number|#)\\b`, "i"),
+    permitted: /\b(?:id|passport|nin)\s*(?:number|#)\b/i,
+  },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,40}\\b(?:home|physical|residential|postal)\\s+address\\b`, "i"),
+    permitted: /\b(?:home|physical|residential|postal)\s+address\b/i,
+  },
+  {
+    request: new RegExp(`\\b${REQUEST_LEAD_IN}\\b[^.?!\\n]{0,40}\\b(?:otp|verification)\\s*code\\b`, "i"),
+    permitted: /\b(?:otp|verification)\s*code\b/i,
+  },
+];
 
 // Exported for direct unit testing, same as resolveModel/resolveActiveProvider below.
-export function stripUnauthorizedPhoneNumberRequest(content: string, systemPrompt: string): string {
-  if (PHONE_NUMBER_PERMITTED_RE.test(systemPrompt)) return content;
+export function stripUnauthorizedSensitiveFieldRequests(content: string, systemPrompt: string): string {
+  const activeRules = SENSITIVE_FIELD_RULES.filter((rule) => !rule.permitted.test(systemPrompt));
+  if (activeRules.length === 0) return content;
 
   const blocks = content.split(/\n\s*\n/);
-  const kept = blocks.filter((block) => !PHONE_NUMBER_REQUEST_RE.test(block));
+  const kept = blocks.filter((block) => !activeRules.some((rule) => rule.request.test(block)));
   if (kept.length === blocks.length) return content;
 
   return kept.join("\n\n").trim() || "Is there anything else I can help you with?";
@@ -212,7 +255,7 @@ export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, 
       attempts += 1;
     }
     if (!result.content) throw new Error(emptyReplyMessage(active.provider.name, result.finishReason));
-    return { content: stripUnauthorizedPhoneNumberRequest(result.content, systemPrompt), usage: result.usage };
+    return { content: stripUnauthorizedSensitiveFieldRequests(result.content, systemPrompt), usage: result.usage };
   } catch (error) {
     const message = describeError(error, active.provider.name);
     console.error(`[providerLlm:${active.provider.id}] request failed:`, message);
@@ -303,7 +346,7 @@ export function createStreamingProviderLlm(onChunk: (delta: string) => void): Ll
       // streaming is inherently token-by-token. In practice this is enough: every report of this
       // failure so far has come through WhatsApp, which uses providerLlm (non-streaming) above,
       // not this path.
-      return { content: stripUnauthorizedPhoneNumberRequest(result.content, systemPrompt), usage: result.usage };
+      return { content: stripUnauthorizedSensitiveFieldRequests(result.content, systemPrompt), usage: result.usage };
     } catch (error) {
       const message = describeError(error, active.provider.name);
       console.error(`[createStreamingProviderLlm:${active.provider.id}] request failed:`, message);
