@@ -67,10 +67,14 @@ enum TwoFactorMethod {
 // own pause/live toggle. A connection can be CONNECTED but isActive: false (seller paused it), or
 // isActive: true but TOKEN_EXPIRED (seller never paused, Meta cut it off) — the two track
 // different things and shouldn't be collapsed into one flag.
+// BANNED is set from the "account_update" webhook field (see processAccountEvent in
+// src/app/api/webhooks/whatsapp/route.ts) when Meta disables the WABA — isActive is forced false
+// alongside it, and flips back to CONNECTED/true automatically if Meta later reinstates it.
 enum WhatsAppConnectionStatus {
   CONNECTED
   DISCONNECTED
   TOKEN_EXPIRED
+  BANNED
 }
 
 model User {

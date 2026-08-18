@@ -96,3 +96,65 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
   }
   return out;
 }
+
+// A separate, deliberately loose schema for "account_update" changes — a different webhook field
+// from "messages" above (only delivered if the WABA's webhook subscription includes it; see the
+// README's WhatsApp webhook setup section), keyed by the WABA id on the entry rather than a
+// phone_number_id in the change value. Meta doesn't publish a machine-checkable schema for this
+// field the way it does for "messages", so every value field below is read defensively rather
+// than validated by shape.
+const LooseChangeSchema = z.object({ field: z.string().optional(), value: z.unknown() });
+const LoosePayloadSchema = z.object({
+  entry: z.array(z.object({ id: z.string().optional(), changes: z.array(LooseChangeSchema).optional() })).optional(),
+});
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export type WhatsAppAccountEvent = {
+  /** The WABA id an "account_update" delivery is keyed by (entry.id) — matched against
+   * WhatsAppConnection.wabaId, not phoneNumberId, since Meta doesn't include a phone number here. */
+  wabaId: string;
+  kind: "BANNED" | "REINSTATED";
+  /** Meta's own state string (e.g. "DISABLE"/"REINSTATE"), kept for the alert email's detail line
+   * so a seller sees exactly what Meta reported rather than just our own label for it. */
+  detail: string;
+};
+
+/**
+ * Pulls WABA ban/reinstate events out of "account_update" webhook deliveries. Best-effort against
+ * Meta's documented shape for this field (entry[].id = WABA id, changes[].value.banned_info
+ * .waba_ban_state = "DISABLE" | "SCHEDULE_FOR_DISABLE" | "REINSTATE", sometimes alongside a
+ * top-level value.event = "DISABLED") — has not been verified against a live delivery, so this
+ * intentionally only acts on the two states it's confident about (DISABLE and REINSTATE) rather
+ * than guessing at every possible shape Meta might send.
+ */
+export function extractAccountEvents(payload: unknown): WhatsAppAccountEvent[] {
+  const parsed = LoosePayloadSchema.safeParse(payload);
+  if (!parsed.success) return [];
+
+  const out: WhatsAppAccountEvent[] = [];
+  for (const entry of parsed.data.entry ?? []) {
+    const wabaId = entry.id;
+    if (!wabaId) continue;
+
+    for (const change of entry.changes ?? []) {
+      if (change.field !== "account_update") continue;
+      const value = asRecord(change.value);
+      const banState = asString(asRecord(value?.banned_info)?.waba_ban_state);
+      const event = asString(value?.event);
+
+      if (banState === "DISABLE" || event === "DISABLED") {
+        out.push({ wabaId, kind: "BANNED", detail: banState ?? event ?? "DISABLE" });
+      } else if (banState === "REINSTATE") {
+        out.push({ wabaId, kind: "REINSTATED", detail: banState });
+      }
+    }
+  }
+  return out;
+}

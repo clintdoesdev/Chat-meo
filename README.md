@@ -77,7 +77,22 @@ setup below.
    `https://<your-domain>/api/webhooks/whatsapp` and paste the same token into "Verify token".
    Meta immediately calls the URL with `hub.mode=subscribe`; the route echoes `hub.challenge`
    back only if the token matches, which confirms the subscription.
-3. Under "Webhook fields", subscribe to **messages** — that's the only field this app reads.
+3. Under "Webhook fields", subscribe to **messages** (required) and **account_update**
+   (optional but recommended — it's what lets the app detect a WABA ban and email you; see
+   below). No other field is read.
+
+### Ban alert email
+
+If **account_update** is subscribed above, `processAccountEvent` in the webhook route watches
+for Meta disabling a connected WABA and, when it sees one, marks that bot's connection
+`BANNED` (pausing it automatically) and emails the bot owner via the existing Resend setup
+(`RESEND_API_KEY`/`EMAIL_FROM` in `.env.example` — already used for verification/2FA/security
+emails, nothing extra to configure here). It emails again, and un-pauses the bot, if Meta
+later reinstates the WABA. This is best-effort: Meta doesn't publish a machine-checkable schema
+for `account_update`, so the parser (`extractAccountEvents` in
+`src/lib/whatsapp/webhook-payload.ts`) only acts on the two states documented with reasonable
+confidence (`banned_info.waba_ban_state: "DISABLE"`/`"REINSTATE"`, or a bare `event: "DISABLED"`)
+rather than guessing at the rest — it has not been verified against a live delivery.
 
 This is a local-network-only deployment, so Meta can't reach `localhost` directly for either the
 verification handshake or live delivery; testing the inbound flow end-to-end requires a real

@@ -23,7 +23,7 @@ async function requireBotOwnership(botId: string) {
 }
 
 export type WhatsAppConnectionInfo = {
-  status: "CONNECTED" | "DISCONNECTED" | "TOKEN_EXPIRED";
+  status: "CONNECTED" | "DISCONNECTED" | "TOKEN_EXPIRED" | "BANNED";
   isActive: boolean;
   displayPhoneNumber: string;
   connectedAt: string;

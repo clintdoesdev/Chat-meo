@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractInboundMessages } from "./webhook-payload";
+import { extractAccountEvents, extractInboundMessages } from "./webhook-payload";
 
 function textMessagePayload(overrides?: {
   type?: string;
@@ -176,5 +176,46 @@ describe("extractInboundMessages", () => {
     expect(extractInboundMessages(null)).toEqual([]);
     expect(extractInboundMessages("not an object")).toEqual([]);
     expect(extractInboundMessages({})).toEqual([]);
+  });
+});
+
+describe("extractAccountEvents", () => {
+  function accountUpdatePayload(value: Record<string, unknown>, wabaId = "waba-1") {
+    return { entry: [{ id: wabaId, changes: [{ field: "account_update", value }] }] };
+  }
+
+  it("reports BANNED for banned_info.waba_ban_state DISABLE", () => {
+    const result = extractAccountEvents(accountUpdatePayload({ banned_info: { waba_ban_state: "DISABLE" } }));
+    expect(result).toEqual([{ wabaId: "waba-1", kind: "BANNED", detail: "DISABLE" }]);
+  });
+
+  it("reports BANNED for a bare event: DISABLED with no banned_info", () => {
+    const result = extractAccountEvents(accountUpdatePayload({ event: "DISABLED" }));
+    expect(result).toEqual([{ wabaId: "waba-1", kind: "BANNED", detail: "DISABLED" }]);
+  });
+
+  it("reports REINSTATED for banned_info.waba_ban_state REINSTATE", () => {
+    const result = extractAccountEvents(accountUpdatePayload({ banned_info: { waba_ban_state: "REINSTATE" } }));
+    expect(result).toEqual([{ wabaId: "waba-1", kind: "REINSTATED", detail: "REINSTATE" }]);
+  });
+
+  it("ignores an account_update change with neither a recognized ban state nor event", () => {
+    expect(extractAccountEvents(accountUpdatePayload({ event: "PARTNER_APP_INSTALLED" }))).toEqual([]);
+  });
+
+  it("ignores non-account_update fields (e.g. messages)", () => {
+    const payload = { entry: [{ id: "waba-1", changes: [{ field: "messages", value: { event: "DISABLED" } }] }] };
+    expect(extractAccountEvents(payload)).toEqual([]);
+  });
+
+  it("skips an entry with no id", () => {
+    const payload = { entry: [{ changes: [{ field: "account_update", value: { event: "DISABLED" } }] }] };
+    expect(extractAccountEvents(payload)).toEqual([]);
+  });
+
+  it("returns an empty array for a malformed payload rather than throwing", () => {
+    expect(extractAccountEvents(null)).toEqual([]);
+    expect(extractAccountEvents("not an object")).toEqual([]);
+    expect(extractAccountEvents({})).toEqual([]);
   });
 });

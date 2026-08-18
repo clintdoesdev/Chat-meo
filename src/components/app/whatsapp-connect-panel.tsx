@@ -22,6 +22,9 @@ function statusLabel(connection: WhatsAppConnectionInfo): { text: string; classN
   if (connection.status === "DISCONNECTED") {
     return { text: "Disconnected", className: "border-line-2 bg-card-2 text-muted" };
   }
+  if (connection.status === "BANNED") {
+    return { text: "Banned by Meta", className: "border-bad/30 bg-bad/10 text-bad" };
+  }
   if (connection.status === "TOKEN_EXPIRED") {
     return { text: "Needs reconnecting", className: "border-bad/30 bg-bad/10 text-bad" };
   }
@@ -150,6 +153,22 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
               </p>
             )}
 
+            {connection.status === "BANNED" && (
+              <p className="mt-2.5 flex items-start gap-1.5 text-[11.5px] text-bad">
+                <StatusWarningIcon size={13} className="mt-0.5 flex-shrink-0" />
+                Meta has disabled this number — we&apos;ve paused the bot and emailed you. Check{" "}
+                <a
+                  href="https://business.facebook.com/wa/manage"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:no-underline"
+                >
+                  WhatsApp Manager
+                </a>{" "}
+                for the reason and how to appeal.
+              </p>
+            )}
+
             <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-line-2 pt-3.5">
               <div>
                 <p className="text-[12.5px] font-semibold text-text">
@@ -193,10 +212,12 @@ export function WhatsAppConnectPanel({ botId }: { botId: string }) {
               </button>
             </div>
           </div>
-          {/* Needs a live access token to call Meta, unlike short links below — hidden while a
-              connection needs reauthorizing so it doesn't show a confusing API error on top of
-              the "needs reconnecting" banner already shown above. */}
-          {connection.status !== "TOKEN_EXPIRED" && <WhatsAppBusinessProfilePanel botId={botId} />}
+          {/* Needs a live, working connection to call Meta, unlike short links below — hidden
+              while the connection needs reauthorizing or is banned so it doesn't show a
+              confusing API error on top of the banner already shown above. */}
+          {connection.status !== "TOKEN_EXPIRED" && connection.status !== "BANNED" && (
+            <WhatsAppBusinessProfilePanel botId={botId} />
+          )}
           <WhatsAppShortLinksPanel botId={botId} />
           </>
         )

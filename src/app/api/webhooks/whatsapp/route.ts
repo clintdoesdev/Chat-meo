@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { classifierLlm, providerLlm } from "@/engine/llm";
 import { runWhatsAppTurn } from "@/lib/chat/run-whatsapp-turn";
 import { decrypt } from "@/lib/crypto";
+import { sendSecurityAlertEmail } from "@/lib/email/send";
 import { prisma } from "@/lib/prisma";
 import {
   downloadWhatsAppMedia,
@@ -11,7 +12,12 @@ import {
   toWhatsAppText,
   verifyWebhookSignature,
 } from "@/lib/whatsapp/meta-graph";
-import { extractInboundMessages, type InboundWhatsAppMessage } from "@/lib/whatsapp/webhook-payload";
+import {
+  extractAccountEvents,
+  extractInboundMessages,
+  type InboundWhatsAppMessage,
+  type WhatsAppAccountEvent,
+} from "@/lib/whatsapp/webhook-payload";
 
 /**
  * Meta's verification handshake, run once when this URL is registered (or re-verified) as the
@@ -149,6 +155,54 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
 }
 
 /**
+ * Reacts to a WABA-level ban/reinstate event (see extractAccountEvents) by flagging every
+ * connection on that WABA as BANNED — forcing isActive off so the engine stops trying to send
+ * through a number Meta has cut off — and emailing the bot's owner. Gated on the connection's
+ * current status so a duplicate/retried webhook delivery (Meta doesn't guarantee at-most-once)
+ * doesn't re-send the alert or stomp a status change that already happened for another reason.
+ */
+async function processAccountEvent(event: WhatsAppAccountEvent): Promise<void> {
+  const connections = await prisma.whatsAppConnection.findMany({
+    where: { wabaId: event.wabaId, status: { notIn: ["DISCONNECTED"] } },
+    select: {
+      id: true,
+      botId: true,
+      status: true,
+      displayPhoneNumber: true,
+      bot: { select: { name: true, user: { select: { email: true } } } },
+    },
+  });
+
+  for (const connection of connections) {
+    if (event.kind === "BANNED" && connection.status !== "BANNED") {
+      await prisma.whatsAppConnection.update({
+        where: { id: connection.id },
+        data: { status: "BANNED", isActive: false },
+      });
+      await sendSecurityAlertEmail(
+        connection.bot.user.email,
+        "WhatsApp number banned",
+        `Meta has disabled the WhatsApp connection for "${connection.bot.name}" (${connection.displayPhoneNumber}, reported state: ${event.detail}). The bot has been paused automatically — it can't send messages through this number until the ban is resolved. Check WhatsApp Manager (business.facebook.com/wa/manage) for the reason and how to appeal.`,
+      ).catch((error) => {
+        console.error("[whatsapp webhook] failed to send ban alert email", { botId: connection.botId, error });
+      });
+    } else if (event.kind === "REINSTATED" && connection.status === "BANNED") {
+      await prisma.whatsAppConnection.update({
+        where: { id: connection.id },
+        data: { status: "CONNECTED", isActive: true },
+      });
+      await sendSecurityAlertEmail(
+        connection.bot.user.email,
+        "WhatsApp number reinstated",
+        `Meta has reinstated the WhatsApp connection for "${connection.bot.name}" (${connection.displayPhoneNumber}) — the bot has been resumed automatically.`,
+      ).catch((error) => {
+        console.error("[whatsapp webhook] failed to send reinstated email", { botId: connection.botId, error });
+      });
+    }
+  }
+}
+
+/**
  * Receives inbound WhatsApp message deliveries. Verifies the request actually came from Meta
  * before touching the payload, then acknowledges immediately — Meta expects a fast 200 and will
  * retry (and eventually disable the webhook) if it doesn't get one — and does the real work
@@ -166,6 +220,7 @@ export async function POST(request: NextRequest) {
 
   const payload = JSON.parse(rawBody) as unknown;
   const messages = extractInboundMessages(payload);
+  const accountEvents = extractAccountEvents(payload);
 
   after(async () => {
     for (const message of messages) {
@@ -175,6 +230,11 @@ export async function POST(request: NextRequest) {
           waMessageId: message.waMessageId,
           error,
         });
+      });
+    }
+    for (const event of accountEvents) {
+      await processAccountEvent(event).catch((error) => {
+        console.error("[whatsapp webhook] failed to process account event", { wabaId: event.wabaId, error });
       });
     }
   });
