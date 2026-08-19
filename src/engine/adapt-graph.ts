@@ -35,7 +35,7 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           model: data.model,
           temperature: data.temperature,
           provider: data.provider,
-          maxReplies: data.maxReplies,
+          delaySeconds: data.delaySeconds,
         },
       };
     case "condition":

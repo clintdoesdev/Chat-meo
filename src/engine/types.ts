@@ -45,16 +45,23 @@ export type AiNode = {
 
 /**
  * A drop-in, non-AI alternative to AiNode for the same "chat freely, with a Logic node attached
- * for the parts that actually need to be reliable" slot — same maxReplies/logic-attachment
- * control flow (see runLogicAttachedNode in executor.ts), but the reply is always the author's
- * own fixed `text` rather than something an LLM decided to say, so there's nothing for it to
- * invent or drift on. `randomizeWording` is the only place AI enters the picture at all: when on,
- * the fixed text gets lightly reworded (same meaning, different phrasing) before each send,
- * purely so repeated sends don't look like an identical copy-pasted broadcast — the model is
- * never given license to add, remove, or change what's actually being said, and a failed
- * rewording call just falls back to the literal text rather than surfacing an error. model/
- * provider are only consulted when randomizeWording is on, or when a Logic node is attached
- * (its semantic-match pass needs something to call) — otherwise this node makes zero LLM calls. */
+ * for the parts that actually need to be reliable" slot — same logic-attachment control flow
+ * (see runLogicAttachedNode in executor.ts), but the reply is always the author's own fixed
+ * `text` rather than something an LLM decided to say, so there's nothing for it to invent or
+ * drift on. Unlike AiNode, this node never resends its own fixed text a second time on the same
+ * visit — once sent, it locks onto its attached Logic node (if any) or silently hands off,
+ * exactly as if maxReplies were fixed at 1 — since repeating identical fixed text adds nothing
+ * an AI node's varying free-form replies would. `randomizeWording` is the only place AI enters
+ * the picture at all: when on, the fixed text gets lightly reworded (same meaning, different
+ * phrasing) before each send, purely so repeated sends don't look like an identical copy-pasted
+ * broadcast — the model is never given license to add, remove, or change what's actually being
+ * said, and a failed rewording call just falls back to the literal text rather than surfacing an
+ * error. `delaySeconds` pauses this node's own send by that many seconds (visitor-message
+ * triggered, not a background scheduler — see runLogicAttachedNode's generateReply callback in
+ * executor.ts), capped at MAX_REPLY_DELAY_SECONDS; it never delays an attached Logic rule's own
+ * reply. model/provider are only consulted when randomizeWording is on, or when a Logic node is
+ * attached (its semantic-match pass needs something to call) — otherwise this node makes zero
+ * LLM calls. */
 export type ReplyNode = {
   id: string;
   type: "reply";
@@ -64,7 +71,7 @@ export type ReplyNode = {
     model?: string;
     temperature?: number;
     provider?: string;
-    maxReplies?: number;
+    delaySeconds?: number;
   };
 };
 
@@ -162,19 +169,19 @@ export type EngineState = {
    * never sets this — its rewording pass (see ReplyNode.data.randomizeWording) fails silently
    * into the fixed text instead, since that fallback is always correct. */
   lastError?: string;
-  /** Consecutive-loop reply counts, keyed by node id, for enforcing maxReplies on any node type
-   * that has one (AiNode, ReplyNode) — see runLogicAttachedNode in executor.ts. Cleared for a
-   * node the moment it's actually left (routed away from), so re-entering it later starts a
-   * fresh count rather than resuming an old one. */
+  /** Consecutive-loop reply counts, keyed by node id, for enforcing AiNode.data.maxReplies — see
+   * runLogicAttachedNode in executor.ts. Cleared for a node the moment it's actually left (routed
+   * away from), so re-entering it later starts a fresh count rather than resuming an old one. */
   aiReplyCounts?: Record<string, number>;
   /** Keyed by node id (AiNode or ReplyNode): set once an attached Logic rule has actually replied
-   * while the conversation stayed on that node (see runLogicAttachedNode in executor.ts) — the
-   * flow author has moved this conversation into a rules-only phase (e.g. "send payment link,
-   * then only listen for a confirmation"), so the node must not jump back in with its own reply
-   * on something a rule already handled. Once set, a visitor message that matches no rule gets no
-   * reply at all rather than falling through to the node's own content. Cleared the moment the
-   * node is actually left (routed away from), same as aiReplyCounts, so returning to it later
-   * starts fresh. */
+   * while the conversation stayed on that node, or (ReplyNode only) once the node's own fixed
+   * text has been sent once (see runLogicAttachedNode in executor.ts) — the flow author has moved
+   * this conversation into a rules-only phase (e.g. "send payment link, then only listen for a
+   * confirmation"), so the node must not jump back in with its own reply on something a rule
+   * already handled, or (ReplyNode) resend its own fixed text a second time. Once set, a visitor
+   * message that matches no rule gets no reply at all rather than falling through to the node's
+   * own content. Cleared the moment the node is actually left (routed away from), same as
+   * aiReplyCounts, so returning to it later starts fresh. */
   logicLocked?: Record<string, boolean>;
 };
 

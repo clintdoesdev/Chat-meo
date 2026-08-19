@@ -674,8 +674,10 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
 
     expect(llmMock).not.toHaveBeenCalled();
     expect(output.replies).toEqual([{ content: "Thanks for reaching out!" }]);
-    expect(output.state.status).toBe("AWAITING_INPUT");
-    expect(output.state.currentNodeId).toBe("reply-1");
+    // Nothing wired after it and no Logic node attached: it's said its one fixed thing, so it
+    // hands off silently rather than waiting around to repeat itself.
+    expect(output.state.status).toBe("HANDOFF");
+    expect(output.state.currentNodeId).toBeNull();
   });
 
   it("interpolates variables into the fixed text", async () => {
@@ -706,24 +708,29 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     expect(output.state.status).toBe("ENDED");
   });
 
-  it("respects maxReplies, silently handing off once the cap is reached with nowhere to go", async () => {
+  it("never resends its fixed text — a follow-up message after handoff gets no reply at all", async () => {
     const graph: FlowGraph = {
-      nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here.", maxReplies: 1 } }],
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here." } }],
       edges: [],
     };
     const deps = createDeps();
     const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
 
-    const output = await step(graph, state, "hi", deps);
-    expect(output.replies).toEqual([{ content: "Still here." }]);
-    expect(output.state.status).toBe("HANDOFF");
-    expect(output.state.aiReplyCounts).toBeUndefined();
+    const turn1 = await step(graph, state, "hi", deps);
+    expect(turn1.replies).toEqual([{ content: "Still here." }]);
+    expect(turn1.state.status).toBe("HANDOFF");
+    expect(turn1.state.aiReplyCounts).toBeUndefined();
+
+    // step() short-circuits once HANDOFF, same as ENDED — nothing more is ever said here.
+    const turn2 = await step(graph, turn1.state, "still there?", deps);
+    expect(turn2.replies).toEqual([]);
+    expect(turn2.state.status).toBe("HANDOFF");
   });
 
-  it("locks onto an attached Logic node instead of handing off once the cap is reached", async () => {
+  it("locks onto an attached Logic node instead of handing off, right after its one send — no cap needed", async () => {
     const graph: FlowGraph = {
       nodes: [
-        { id: "reply-1", type: "reply", data: { text: "Here to help.", maxReplies: 1 } },
+        { id: "reply-1", type: "reply", data: { text: "Here to help." } },
         {
           id: "logic-1",
           type: "logic",
@@ -745,11 +752,17 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     const deps = createDeps({ classify: classifyMock });
 
     const turn1 = await step(graph, { currentNodeId: "reply-1", variables: {}, status: "RUNNING" }, "hi", deps);
+    expect(turn1.replies).toEqual([{ content: "Here to help." }]);
     expect(turn1.state.status).toBe("AWAITING_INPUT");
     expect(turn1.state.logicLocked).toEqual({ "reply-1": true });
 
-    const turn2 = await step(graph, turn1.state, "invoice please", deps);
-    expect(turn2.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
+    // Locked: a non-matching follow-up gets no reply at all — the fixed text never resends.
+    const turn2 = await step(graph, turn1.state, "just checking in", deps);
+    expect(turn2.replies).toEqual([]);
+    expect(turn2.state.status).toBe("AWAITING_INPUT");
+
+    const turn3 = await step(graph, turn2.state, "invoice please", deps);
+    expect(turn3.replies).toEqual([{ content: "Here's your payment link: https://pay.example.com" }]);
   });
 
   it("lets a matched Logic rule pre-empt the fixed reply and route away", async () => {
@@ -830,18 +843,38 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     expect(output.replies).toEqual([{ content: "We'll be with you shortly." }]);
   });
 
-  it("resumes correctly from AWAITING_INPUT on the next turn (same as an ai node)", async () => {
+  it("pauses for delaySeconds before sending, capped at MAX_REPLY_DELAY_SECONDS", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph: FlowGraph = {
+        nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here.", delaySeconds: 5000 } }],
+        edges: [],
+      };
+      const deps = createDeps();
+      const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+      const promise = step(graph, state, "hi", deps);
+      // A huge configured delay is capped at MAX_REPLY_DELAY_SECONDS (120s) rather than honored
+      // verbatim — advancing just past the cap should be enough for the reply to land.
+      await vi.advanceTimersByTimeAsync(120_000);
+      const output = await promise;
+
+      expect(output.replies).toEqual([{ content: "Still here." }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not delay at all when delaySeconds is unset", async () => {
     const graph: FlowGraph = {
       nodes: [{ id: "reply-1", type: "reply", data: { text: "Still here." } }],
       edges: [],
     };
     const deps = createDeps();
-    const turn1 = await step(graph, { currentNodeId: "reply-1", variables: {}, status: "RUNNING" }, "hi", deps);
-    expect(turn1.state.status).toBe("AWAITING_INPUT");
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
 
-    const turn2 = await step(graph, turn1.state, "again", deps);
-    expect(turn2.replies).toEqual([{ content: "Still here." }]);
-    expect(turn2.state.status).toBe("AWAITING_INPUT");
+    const output = await step(graph, state, "hi", deps);
+    expect(output.replies).toEqual([{ content: "Still here." }]);
   });
 });
 
@@ -1072,10 +1105,11 @@ describe("step: logic node (standalone)", () => {
     expect(output.state.status).toBe("ENDED");
   });
 
-  it("still literal-matches a bare generic-word trigger, since this path has no semantic fallback to defer to", async () => {
-    // The excludeGeneric behavior is opt-in and only wired up for the AI-attached path (which has
-    // a classifier to fall back to). A standalone Logic node has no such fallback, so a generic
-    // word remains a valid literal trigger here — excluding it would just make the rule unfireable.
+  it("defers a bare generic-word trigger to the semantic classifier instead of literal-matching it", async () => {
+    // Same excludeGeneric behavior as the AI-attached path: a standalone Logic node now has its
+    // own semantic fallback (see matchLogicRule), so a bare generic word like "done" shouldn't
+    // win the free keyword pass alone — it's handed to the classifier, which can weigh it against
+    // what was actually being discussed instead of matching blindly.
     const genericGraph: FlowGraph = {
       nodes: [
         {
@@ -1090,10 +1124,51 @@ describe("step: logic node (standalone)", () => {
       ],
       edges: [],
     };
+    const classifyMock = vi.fn(async () => ({ content: "rule-confirm" }));
+    const deps = createDeps({ classify: classifyMock });
     const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
-    const output = await step(genericGraph, state, "done", createDeps());
+    const output = await step(genericGraph, state, "done", deps);
 
+    expect(classifyMock).toHaveBeenCalledTimes(1);
     expect(output.replies).toEqual([{ content: "Great, thanks!" }]);
+  });
+
+  it("falls back to the classifier when no keyword literally matches, and fires the rule it names", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "rule-pay" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+
+    // Nothing here literally contains "payment" or "invoice" — only the classifier can catch it.
+    const output = await step(graph, state, "just sent the money over, should be there now", deps);
+
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([
+      { content: "Here's your payment link: https://pay.example.com" },
+      { content: "Anything else?" },
+    ]);
+  });
+
+  it("calls the classifier with the deployment's default model/provider, since a standalone Logic node has none of its own", async () => {
+    const classifyMock = vi.fn<LlmDep>(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+
+    await step(graph, state, "what's the weather like", deps);
+
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    const call = classifyMock.mock.calls[0][0];
+    expect(call.model).toBe("");
+    expect(call.provider).toBeUndefined();
+  });
+
+  it("skips the classifier call entirely when a literal keyword already matched", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+
+    await step(graph, state, "Can I get an invoice?", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
   });
 });
 

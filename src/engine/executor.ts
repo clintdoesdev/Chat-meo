@@ -18,6 +18,15 @@ const MAX_HOPS_PER_STEP = 25;
 const WEBHOOK_TIMEOUT_MS = 5000;
 const HANDOFF_MESSAGE = "Your message is being sent to a live team to assist you.";
 const LOOP_GUARD_MESSAGE = "Something went wrong on our end — let's start over.";
+// Reply node's optional pre-send pause (see ReplyNode.data.delaySeconds) — capped well short of
+// typical serverless function timeouts, since on synchronous channels (the web widget, the
+// Studio Test drawer) this blocks the visitor's own request for the full duration; on WhatsApp
+// it's safely backgrounded, but the cap stays the same everywhere for one predictable ceiling.
+export const MAX_REPLY_DELAY_SECONDS = 120;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** A fresh conversation, positioned at the flow's Start node (or immediately ended if the
  * graph has none — the Studio always seeds one, but we don't want to crash on bad data). */
@@ -124,14 +133,24 @@ function catchAllRule(rules: LogicRule[]): LogicRule | undefined {
   return rules.find((rule) => rule.triggers.trim() === "");
 }
 
-/** Keyword match, falling back to the catch-all rule (same convention as ConditionBranch's
- * empty value) — used by the standalone "logic" case, which (unlike an AI-attached Logic node,
- * see classifySemanticMatch) has no LLM of its own to run a semantic pass with. Unlike
- * matchBranch, a Logic node with nothing that matches and no catch-all rule returns undefined
- * rather than falling back to the first rule — "no rule applies" needs to be distinguishable
- * from "the first rule applies". */
-function matchLogicRule(rules: LogicRule[], rawMessage: string): LogicRule | undefined {
-  return matchLogicKeyword(rules, rawMessage) ?? catchAllRule(rules);
+/** Keyword match, falling back to a semantic classification pass (see classifySemanticMatch) and
+ * then the catch-all rule (same convention as ConditionBranch's empty value) — used by the
+ * standalone "logic" case, same three-pass matching an AI-attached Logic node gets, just with no
+ * model/provider of its own to run the classification call with (defaults to the deployment's
+ * default, same as an unset AiNode.data.model would). Unlike matchBranch, a Logic node with
+ * nothing that matches and no catch-all rule returns undefined rather than falling back to the
+ * first rule — "no rule applies" needs to be distinguishable from "the first rule applies". */
+async function matchLogicRule(
+  rules: LogicRule[],
+  rawMessage: string,
+  history: LlmChatMessage[],
+  deps: EngineDeps,
+): Promise<LogicRule | undefined> {
+  return (
+    matchLogicKeyword(rules, rawMessage, { excludeGeneric: true }) ??
+    (await classifySemanticMatch(rules, history, deps, "", undefined)) ??
+    catchAllRule(rules)
+  );
 }
 
 const NONE_TOKEN = "NONE";
@@ -167,10 +186,11 @@ function buildClassifierPrompt(rules: LogicRule[]): string {
   );
 }
 
-/** Semantic fallback for matchLogicRule's keyword pass, used only when attached to an AI node
- * (see the "ai" case) — only called once the keyword pass finds nothing, and only against rules
- * that actually have triggers text to compare meaning against (an empty-triggers catch-all is
- * unconditional and needs no classifying). Takes the real conversation so far (not just the
+/** Semantic fallback used both by runLogicAttachedNode (an AI/Reply node's attached Logic rules)
+ * and by matchLogicRule (a standalone Logic node wired directly into the flow) — only called once
+ * the keyword pass finds nothing, and only against rules that actually have triggers text to
+ * compare meaning against (an empty-triggers catch-all is unconditional and needs no
+ * classifying). Takes the real conversation so far (not just the
  * latest message in isolation) so a short, context-dependent reply can be resolved against what
  * was actually being discussed — the same priorHistory merging run-turn.ts/run-test-turn.ts
  * already do for the main `llm` dependency applies here too (see EngineDeps.classify). Never
@@ -237,11 +257,12 @@ type LogicAttachedResult = {
  * visitor's message first (a match pre-empts everything else this turn), handles the
  * logicLocked rules-only phase, and otherwise calls `generateReply()` for whatever this node's
  * own kind of content actually is (an LLM call for AiNode, the fixed/reworded text for
- * ReplyNode) — that's the one piece each node type supplies for itself; everything else
- * (maxReplies bookkeeping, the matchedRule/logicLocked branches, looping vs. escalating) is
- * identical between them, which is exactly why this is shared rather than duplicated. Returns
- * the new currentNodeId/status/walking rather than mutating them directly, since this is called
- * from two different `switch` cases in step() that each own those bindings themselves.
+ * ReplyNode) — that's the one piece each node type supplies for itself; everything else (the
+ * matchedRule/logicLocked branches, and — for AiNode — maxReplies looping via `resendAllowed`)
+ * is otherwise identical between them, which is exactly why this is shared rather than
+ * duplicated. Returns the new currentNodeId/status/walking rather than mutating them directly,
+ * since this is called from two different `switch` cases in step() that each own those bindings
+ * themselves.
  */
 async function runLogicAttachedNode(
   node: AiNode | ReplyNode,
@@ -255,6 +276,12 @@ async function runLogicAttachedNode(
   deps: EngineDeps,
   classifierModel: string,
   classifierProvider: string | undefined,
+  // AiNode: true — free-form replies keep looping (subject to data.maxReplies) until something
+  // routes away. ReplyNode: false — the fixed text is only ever worth sending once, so the very
+  // first time generateReply() runs with nowhere to route, this locks onto the attached Logic
+  // node (if any) or hands off silently, bypassing maxReplies/looping entirely — see the "reply"
+  // case in step().
+  resendAllowed: boolean,
   generateReply: () => Promise<{ content: string; usage?: LlmUsage; lastError?: string }>,
 ): Promise<LogicAttachedResult> {
   // A Logic node wired off this node's dedicated "logic" source handle gets first look at the
@@ -271,9 +298,12 @@ async function runLogicAttachedNode(
   // onto that instead of ending (its rules — a payment confirmation, etc. — should still get a
   // chance to fire even though this node's own reply budget is spent); otherwise it hands off to
   // a human, exactly like reaching a Handoff node — a stuck conversation shouldn't be able to
-  // loop indefinitely.
+  // loop indefinitely. Only AiNode has a maxReplies field at all — ReplyNode reaches this only
+  // via the matchedRule branch below (its own content never loops, see resendAllowed), where
+  // "unlimited" (undefined) is exactly the right default: a rule-locked node should keep waiting
+  // for a matching message indefinitely, not get capped by a budget it doesn't have.
   function loopOrEscalate(): LogicAttachedResult {
-    const maxReplies = node.data.maxReplies;
+    const maxReplies = node.type === "ai" ? node.data.maxReplies : undefined;
     const count = (aiReplyCounts[node.id] ?? 0) + 1;
     if (!maxReplies || count < maxReplies) {
       aiReplyCounts[node.id] = count;
@@ -351,6 +381,18 @@ async function runLogicAttachedNode(
   if (edge) {
     delete aiReplyCounts[node.id];
     return { currentNodeId: edge.target, status: "RUNNING", walking: true, lastError: result.lastError };
+  }
+  if (!resendAllowed) {
+    // ReplyNode: it has now said its one fixed thing, so there's nothing left worth waiting
+    // around to repeat — lock onto the attached Logic node's rules (if any) exactly as if a rule
+    // had just replied, or hand off silently if there's nothing attached, same end state
+    // loopOrEscalate reaches once AiNode's maxReplies is spent, just reached immediately instead
+    // of after N turns.
+    if (logicNode) {
+      logicLocked[node.id] = true;
+      return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false, lastError: result.lastError };
+    }
+    return { currentNodeId: null, status: "HANDOFF", walking: false, lastError: result.lastError };
   }
   // Nothing wired after this node: stay here and keep the conversation open rather than ending
   // it — this node replies automatically and keeps chatting by default, only actually ending
@@ -485,6 +527,7 @@ export async function step(
           deps,
           node.data.model,
           node.data.provider,
+          true,
           async () => {
             const systemPrompt = interpolate(node.data.systemPrompt ?? "", variables);
             try {
@@ -525,7 +568,12 @@ export async function step(
           deps,
           node.data.model ?? "",
           node.data.provider,
+          false,
           async () => {
+            const delaySeconds = node.data.delaySeconds;
+            if (delaySeconds && delaySeconds > 0) {
+              await sleep(Math.min(delaySeconds, MAX_REPLY_DELAY_SECONDS) * 1000);
+            }
             const text = interpolate(node.data.text ?? "", variables);
             if (!node.data.randomizeWording) return { content: text };
             try {
@@ -560,7 +608,7 @@ export async function step(
         // Reached directly (rather than as an AI node's attachment, see the "ai" case above) —
         // behaves like a Condition node keyed off the visitor's message instead of a stored
         // variable, with an optional canned reply per matched rule.
-        const matched = input !== undefined ? matchLogicRule(node.data.rules, input) : undefined;
+        const matched = input !== undefined ? await matchLogicRule(node.data.rules, input, history, deps) : undefined;
         if (matched) {
           if (matched.reply.trim()) {
             const text = interpolate(matched.reply, variables);

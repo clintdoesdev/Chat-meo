@@ -351,30 +351,30 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
             )}
 
             <div className="mb-3.5">
-              <label htmlFor="field-reply-max-replies" className={labelClass()}>
-                Max sends before handoff
+              <label htmlFor="field-reply-delay" className={labelClass()}>
+                Delay before sending (seconds)
               </label>
               <input
-                id="field-reply-max-replies"
+                id="field-reply-delay"
                 type="number"
-                min={1}
-                max={50}
-                value={data.maxReplies ?? ""}
+                min={0}
+                max={120}
+                value={data.delaySeconds ?? ""}
                 onChange={(event) => {
                   const raw = event.target.value;
                   onChange(node.id, {
-                    maxReplies: raw === "" ? undefined : Math.max(1, Math.min(50, Number(raw))),
+                    delaySeconds: raw === "" ? undefined : Math.max(0, Math.min(120, Number(raw))),
                   });
                 }}
-                placeholder="Unlimited"
+                placeholder="Instant"
                 className={fieldClass()}
               />
               <p className="mt-1.5 text-[11px] text-muted">
-                After this many turns with nothing resolved, this node stops repeating its
-                message. If a Logic node is attached below, its rules stay active and can still
-                reply or route (e.g. a payment confirmation) — otherwise the conversation quietly
-                hands to a human, no &quot;you&apos;re being transferred&quot; message, it just
-                goes quiet and shows up in your Inbox. Leave blank for unlimited.
+                Pauses this long, like a realistic typing delay, before this node&apos;s message
+                goes out — still triggered by the visitor&apos;s own message, up to 120 seconds.
+                Leave blank to send instantly. This node only ever sends its message once per
+                visit; after that it waits for an attached Logic node&apos;s rules to match, or
+                quietly hands off to a human.
               </p>
             </div>
           </>

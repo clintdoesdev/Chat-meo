@@ -31,11 +31,12 @@ export type LogicRule = {
   id: string;
   label: string;
   // Comma-separated keywords/phrases checked against the visitor's message that triggered this
-  // turn — first literally (case-insensitive, contains-match), then, only when attached to an
-  // AI node and nothing literally matched, by an AI classification pass that checks whether the
-  // message means the same thing (see classifySemanticMatch in engine/executor.ts), so authors
-  // don't have to enumerate every possible phrasing. Empty means "anything else" — a catch-all,
-  // same convention as ConditionBranch's empty value.
+  // turn — first literally (case-insensitive, contains-match), then, if nothing literally
+  // matched, by an AI classification pass that checks whether the message means the same thing
+  // (see classifySemanticMatch in engine/executor.ts), so authors don't have to enumerate every
+  // possible phrasing. Applies whether this Logic node is attached to an AI/Reply node or wired
+  // directly into the flow on its own. Empty means "anything else" — a catch-all, same
+  // convention as ConditionBranch's empty value.
   triggers: string;
   // Sent verbatim (after {{variable}} interpolation) when this rule fires — supports markdown
   // links, e.g. "Here's the link: [Pay now](https://...)". Empty means "route only, no reply".
@@ -55,16 +56,22 @@ export type FlowNodeData = {
   provider?: string;
   model?: AiModel;
   temperature?: number;
-  // Caps how many consecutive back-and-forth replies this AI or Reply node will give before
+  // ai only — caps how many consecutive back-and-forth replies this node will give before
   // silently handing off to a human — no "you're being transferred" message, on any channel —
   // or following its plain outgoing edge, if one's wired. See runLogicAttachedNode in
-  // engine/executor.ts. Unset/0 means unlimited, matching the node's original behavior.
+  // engine/executor.ts. Unset/0 means unlimited, matching the node's original behavior. A Reply
+  // node never resends its fixed text a second time regardless — see ReplyNode.data in
+  // engine/types.ts — so it has no field here.
   maxReplies?: number;
   // reply — when true, the fixed `text` above is lightly reworded by the model (provider/model
   // above) before each send, purely so repeated sends don't look like an identical
   // copy-pasted broadcast; the content itself never changes. Off (undefined) means the reply
   // node makes zero LLM calls of its own — see ReplyNode.data in engine/types.ts.
   randomizeWording?: boolean;
+  // reply — pauses this node's own send by this many seconds (capped at
+  // MAX_REPLY_DELAY_SECONDS in engine/executor.ts), still triggered by the visitor's own
+  // message rather than a background scheduler. Never delays an attached Logic rule's reply.
+  delaySeconds?: number;
   // condition
   variable?: string;
   branches?: ConditionBranch[];
@@ -145,9 +152,11 @@ export const NODE_KINDS: NodeKindMeta[] = [
     description:
       "Sends a fixed reply, word for word — like Send message, but it stays in the conversation " +
       "and can have a Logic node attached to its bottom dot for hard rules to check on later " +
-      "messages, the same way an AI node can. No AI involved unless you turn on \"Vary wording,\" " +
-      "which only lightly rewords the message each time (same content, different phrasing) so " +
-      "repeated sends don't look like an identical copy-pasted broadcast.",
+      "messages, the same way an AI node can. Only ever sends its own message once per visit — " +
+      "after that it just waits for a Logic rule to match, or hands off. No AI involved unless " +
+      "you turn on \"Vary wording,\" which only lightly rewords the message each time (same " +
+      "content, different phrasing) so repeated sends don't look like an identical copy-pasted " +
+      "broadcast. You can also add a short delay before it sends, for a more natural pause.",
   },
   {
     kind: "logic",
