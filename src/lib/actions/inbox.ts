@@ -283,6 +283,23 @@ export async function deleteConversation(conversationId: string): Promise<{ erro
   return { error: null };
 }
 
+/** Permanently deletes every conversation in `conversationIds` (and their transcripts) in one
+ * go — the "Delete all" bulk action for whatever the Inbox's current filter/search/folder has
+ * narrowed the list down to; the caller decides which ids that is, this just enforces ownership.
+ * Scoped to bots the signed-in user owns via the relation filter, so an id for someone else's
+ * conversation is silently skipped rather than deleted — same trust boundary as the single-
+ * conversation delete above, just batched. Unlike archiving, this can't be undone. */
+export async function deleteConversations(conversationIds: string[]): Promise<{ error: string | null; deletedCount: number }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in.", deletedCount: 0 };
+  if (conversationIds.length === 0) return { error: null, deletedCount: 0 };
+
+  const result = await prisma.conversation.deleteMany({
+    where: { id: { in: conversationIds }, bot: { userId: session.user.id } },
+  });
+  return { error: null, deletedCount: result.count };
+}
+
 /** Archiving is purely an Inbox organization concept (see Conversation.archived's schema doc
  * comment) — it hides a conversation from the default view without touching `status`, so it has
  * no effect on whether the bot keeps replying. */

@@ -23,6 +23,7 @@ import {
   assignConversationToFolder,
   createFolder,
   deleteConversation,
+  deleteConversations,
   deleteFolder,
   getConversationMessages,
   listConversations,
@@ -119,6 +120,8 @@ export function InboxView({
   const [archiving, setArchiving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   // Set right before opening the "new folder" modal — null means it was opened from the general
   // folder-management chip row, an id means it was opened from a specific conversation's "Move
   // to folder" menu, so the new folder gets assigned to that conversation immediately on create.
@@ -339,6 +342,28 @@ export function InboxView({
     close();
   }
 
+  // Deletes every conversation matching the current filter/search/folder — same "everything
+  // currently shown" scope as `filtered` below, snapshotted at confirm time so a poll landing
+  // mid-request can't change which ids actually get deleted out from under the user.
+  async function handleDeleteAll() {
+    const idsToDelete = filtered.map((c) => c.id);
+    if (idsToDelete.length === 0) {
+      setShowDeleteAllConfirm(false);
+      return;
+    }
+    setDeletingAll(true);
+    const result = await deleteConversations(idsToDelete);
+    setDeletingAll(false);
+    setShowDeleteAllConfirm(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    const deletedIds = new Set(idsToDelete);
+    setConversations((prev) => prev.filter((c) => !deletedIds.has(c.id)));
+    if (activeId && deletedIds.has(activeId)) close();
+  }
+
   async function handleMoveToFolder(folderId: string | null) {
     if (!activeId) return;
     const result = await assignConversationToFolder(activeId, folderId);
@@ -461,6 +486,23 @@ export function InboxView({
           <ActionsPlusIcon size={10} />
           New folder
         </button>
+      </div>
+
+      <div className="mb-3.5 flex items-center justify-between gap-2">
+        <span className="text-[11.5px] text-muted">
+          {filtered.length} conversation{filtered.length === 1 ? "" : "s"}
+        </span>
+        {filtered.length > 0 && (
+          <button
+            type="button"
+            data-fx-skip
+            onClick={() => setShowDeleteAllConfirm(true)}
+            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-1.5 text-[11.5px] font-semibold text-muted transition hover:border-bad/40 hover:text-bad"
+          >
+            <ActionsTrashIcon size={11} />
+            Delete all shown
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -696,6 +738,20 @@ export function InboxView({
         />
       )}
 
+      {showDeleteAllConfirm && (
+        <DeleteAllConfirmModal
+          count={filtered.length}
+          scopeLabel={
+            filter === "all" && !search.trim()
+              ? "every conversation in your Inbox"
+              : "every conversation currently shown (matching your active filter/search)"
+          }
+          pending={deletingAll}
+          onCancel={() => setShowDeleteAllConfirm(false)}
+          onConfirm={handleDeleteAll}
+        />
+      )}
+
       {newFolderTarget !== "closed" && (
         <NewFolderModal
           pending={creatingFolder}
@@ -903,6 +959,66 @@ function DeleteConversationConfirmModal({
               className="rounded-full bg-bad px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
             >
               {pending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DeleteAllConfirmModal({
+  count,
+  scopeLabel,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  scopeLabel: string;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div onClick={pending ? undefined : onCancel} aria-hidden="true" className="fixed inset-0 z-[105] bg-black/60" />
+      <div className="fixed inset-0 z-[106] flex items-center justify-center p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Delete all conversations"
+          className="w-full max-w-[380px] rounded-2xl border border-line bg-[#111] p-5 shadow-[0_24px_80px_-16px_rgba(0,0,0,.7)]"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-bad/30 bg-bad/10 text-bad">
+              <StatusWarningIcon size={16} />
+            </span>
+            <h3 className="text-[14px] font-semibold">
+              Delete {count} conversation{count === 1 ? "" : "s"}?
+            </h3>
+          </div>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
+            This permanently deletes the full transcripts for {scopeLabel}. Unlike archiving, this
+            can&apos;t be undone — consider narrowing the filter first, or archiving instead if you
+            just want them out of the way.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={pending}
+              className="rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[12.5px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={pending}
+              className="rounded-full bg-bad px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
+            >
+              {pending ? "Deleting…" : `Delete all ${count}`}
             </button>
           </div>
         </div>
