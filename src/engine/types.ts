@@ -14,6 +14,11 @@ export type LogicRule = {
   reply: string;
 };
 
+export type ReplyVariant = {
+  id: string;
+  text: string;
+};
+
 export type StartNode = {
   id: string;
   type: "start";
@@ -59,7 +64,10 @@ export type AiNode = {
  * error. `delaySeconds` pauses this node's own send by that many seconds (visitor-message
  * triggered, not a background scheduler — see runLogicAttachedNode's generateReply callback in
  * executor.ts), capped at MAX_REPLY_DELAY_SECONDS; it never delays an attached Logic rule's own
- * reply. model/provider are only consulted when randomizeWording is on, or when a Logic node is
+ * reply. `variants` are alternate wordings of `text`, author-written rather than AI-generated —
+ * when present, each send randomly picks one of `text` plus these instead of always sending
+ * `text`; composes with randomizeWording (the picked variant still gets reworded on top).
+ * model/provider are only consulted when randomizeWording is on, or when a Logic node is
  * attached (its semantic-match pass needs something to call) — otherwise this node makes zero
  * LLM calls. */
 export type ReplyNode = {
@@ -72,6 +80,7 @@ export type ReplyNode = {
     temperature?: number;
     provider?: string;
     delaySeconds?: number;
+    variants?: ReplyVariant[];
   };
 };
 

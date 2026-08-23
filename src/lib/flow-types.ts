@@ -27,6 +27,11 @@ export type ConditionBranch = {
   value: string;
 };
 
+export type ReplyVariant = {
+  id: string;
+  text: string;
+};
+
 export type LogicRule = {
   id: string;
   label: string;
@@ -72,6 +77,12 @@ export type FlowNodeData = {
   // MAX_REPLY_DELAY_SECONDS in engine/executor.ts), still triggered by the visitor's own
   // message rather than a background scheduler. Never delays an attached Logic rule's reply.
   delaySeconds?: number;
+  // reply — additional message wordings: when present, each send randomly picks ONE of `text`
+  // above plus these instead of always sending `text` verbatim. Author-controlled alternative
+  // (or complement) to `randomizeWording`'s AI paraphrase — no LLM call needed, and the two can
+  // combine (whichever variant gets picked is still optionally reworded). Empty/absent means
+  // "always send `text`", same as before this field existed.
+  variants?: ReplyVariant[];
   // condition
   variable?: string;
   branches?: ConditionBranch[];
@@ -153,10 +164,11 @@ export const NODE_KINDS: NodeKindMeta[] = [
       "Sends a fixed reply, word for word — like Send message, but it stays in the conversation " +
       "and can have a Logic node attached to its bottom dot for hard rules to check on later " +
       "messages, the same way an AI node can. Only ever sends its own message once per visit — " +
-      "after that it just waits for a Logic rule to match, or hands off. No AI involved unless " +
-      "you turn on \"Vary wording,\" which only lightly rewords the message each time (same " +
-      "content, different phrasing) so repeated sends don't look like an identical copy-pasted " +
-      "broadcast. You can also add a short delay before it sends, for a more natural pause.",
+      "after that it just waits for a Logic rule to match, or hands off. Add extra message " +
+      "variants and each send randomly picks one, or turn on \"Vary wording\" to have the AI " +
+      "lightly reword whichever one gets picked (same content, different phrasing) — either way, " +
+      "repeated sends won't look like an identical copy-pasted broadcast. You can also add a " +
+      "short delay before it sends, for a more natural pause.",
   },
   {
     kind: "logic",

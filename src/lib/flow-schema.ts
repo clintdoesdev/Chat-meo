@@ -7,6 +7,11 @@ const ConditionBranchSchema = z.object({
   value: z.string(),
 });
 
+const ReplyVariantSchema = z.object({
+  id: z.string().min(1),
+  text: z.string(),
+});
+
 const LogicRuleSchema = z.object({
   id: z.string().min(1),
   label: z.string(),
@@ -32,6 +37,7 @@ const FlowNodeDataSchema = z.object({
   // Seconds, capped to MAX_REPLY_DELAY_SECONDS in engine/executor.ts (120) — kept slightly
   // looser here since the executor is the source of truth for the actual cap.
   delaySeconds: z.number().min(0).max(120).optional(),
+  variants: z.array(ReplyVariantSchema).max(20).optional(),
   variable: z.string().optional(),
   branches: z.array(ConditionBranchSchema).optional(),
   rules: z.array(LogicRuleSchema).optional(),

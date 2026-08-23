@@ -36,6 +36,7 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           temperature: data.temperature,
           provider: data.provider,
           delaySeconds: data.delaySeconds,
+          variants: (data.variants ?? []).map((variant) => ({ id: variant.id, text: variant.text })),
         },
       };
     case "condition":

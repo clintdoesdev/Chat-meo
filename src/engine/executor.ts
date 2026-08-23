@@ -401,6 +401,19 @@ async function runLogicAttachedNode(
   return { ...loopOrEscalate(), lastError: result.lastError };
 }
 
+// Randomly picks one wording out of ReplyNode.data.text plus its variants — author-controlled
+// alternative (or complement) to randomizeWording's AI paraphrase, so repeated sends of the same
+// node don't read as an identical copy-pasted broadcast even with no LLM call involved. Blank
+// entries (an author mid-edit, or no variants at all) are filtered out; falling back to the bare
+// `text` field (even if blank) keeps this node's existing zero-variants behavior unchanged.
+function pickReplyText(data: ReplyNode["data"]): string {
+  const pool = [data.text, ...(data.variants ?? []).map((variant) => variant.text)].filter(
+    (candidate): candidate is string => Boolean(candidate && candidate.trim()),
+  );
+  if (pool.length === 0) return data.text ?? "";
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 // Deliberately narrow: this only ever reworks wording, never decides content — the actual
 // message text is fixed by the flow author (ReplyNode.data.text) and embedded verbatim into the
 // prompt below, so this is a paraphrase pass, not a conversation. Mainly exists so a Reply node
@@ -574,7 +587,7 @@ export async function step(
             if (delaySeconds && delaySeconds > 0) {
               await sleep(Math.min(delaySeconds, MAX_REPLY_DELAY_SECONDS) * 1000);
             }
-            const text = interpolate(node.data.text ?? "", variables);
+            const text = interpolate(pickReplyText(node.data), variables);
             if (!node.data.randomizeWording) return { content: text };
             try {
               const llmResult = await deps.llm({

@@ -10,6 +10,7 @@ import {
   type FlowNode,
   type FlowNodeData,
   type LogicRule,
+  type ReplyVariant,
   type WebhookMethod,
 } from "@/lib/flow-types";
 
@@ -41,6 +42,12 @@ function newRuleId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function newVariantId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `variant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -285,6 +292,58 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
 
         {node.type === "reply" && (
           <>
+            <div className="mb-3.5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className={labelClass().replace("mb-1.5 ", "")}>Extra message variants</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next: ReplyVariant[] = [...(data.variants ?? []), { id: newVariantId(), text: "" }];
+                    onChange(node.id, { variants: next });
+                  }}
+                  className="flex items-center gap-1 rounded-full border border-line-2 px-2.5 py-1 text-[10.5px] font-semibold text-muted transition hover:border-orange-2/50 hover:text-text"
+                >
+                  <ActionsPlusIcon size={11} />
+                  Add
+                </button>
+              </div>
+              <p className="mb-2 text-[11px] leading-relaxed text-muted">
+                Each send randomly picks one of these, or the Message above, instead of always
+                sending the exact same wording — an author-written alternative to (or combined
+                with) &quot;Vary wording&quot; below for cutting the risk of repeated sends
+                looking like an identical broadcast. Leave empty to always send the Message above.
+              </p>
+              <div className="flex flex-col gap-2.5">
+                {(data.variants ?? []).map((variant, index) => (
+                  <div key={variant.id} className="relative rounded-[12px] border border-line-2 bg-card-2 p-2.5 pr-8">
+                    <textarea
+                      aria-label={`Variant ${index + 1} message`}
+                      value={variant.text}
+                      onChange={(event) => {
+                        const next: ReplyVariant[] = [...(data.variants ?? [])];
+                        next[index] = { ...variant, text: event.target.value };
+                        onChange(node.id, { variants: next });
+                      }}
+                      placeholder="Alternate wording for this message"
+                      rows={2}
+                      className="w-full resize-y bg-transparent text-[12.5px] text-text placeholder:text-[#5C5C5C] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (data.variants ?? []).filter((v) => v.id !== variant.id);
+                        onChange(node.id, { variants: next });
+                      }}
+                      aria-label={`Remove variant ${index + 1}`}
+                      className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-bad"
+                    >
+                      <ActionsCloseIcon size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="mb-3.5 flex items-center justify-between gap-3 rounded-[13px] border border-line-2 bg-card-2 px-3 py-2.5">
               <div className="min-w-0">
                 <p className="text-[12.5px] font-medium text-text">Vary wording with AI</p>

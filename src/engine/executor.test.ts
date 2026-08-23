@@ -692,6 +692,54 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     expect(output.replies).toEqual([{ content: "Thanks, Idris!" }]);
   });
 
+  it("randomly sends one of text or its variants", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        {
+          id: "reply-1",
+          type: "reply",
+          data: {
+            text: "Option A",
+            variants: [
+              { id: "v1", text: "Option B" },
+              { id: "v2", text: "Option C" },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([{ content: "Option C" }]);
+    randomSpy.mockRestore();
+  });
+
+  it("ignores blank variant entries when picking", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        {
+          id: "reply-1",
+          type: "reply",
+          data: { text: "Only real message", variants: [{ id: "v1", text: "   " }] },
+        },
+      ],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([{ content: "Only real message" }]);
+    randomSpy.mockRestore();
+  });
+
   it("follows its plain outgoing edge instead of looping, when one is wired", async () => {
     const graph: FlowGraph = {
       nodes: [
