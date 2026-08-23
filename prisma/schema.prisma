@@ -98,8 +98,27 @@ model User {
   bots                Bot[]
   verificationCodes   VerificationCode[]
   conversationFolders ConversationFolder[]
+  pushSubscriptions   PushSubscription[]
 
   @@map("users")
+}
+
+/// One row per browser/device the user has enabled push notifications on (a user can have
+/// several — desktop, phone, multiple browsers). `endpoint` is the push service's per-device
+/// URL, already unique by construction, so it's also the natural key for re-subscribing (see
+/// subscribeToPush in src/lib/actions/push.ts) and for pruning a device the browser has dropped.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model VerificationCode {

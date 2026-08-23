@@ -19,6 +19,15 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
+        // Browsers already re-check a service worker's byte-for-byte contents on every
+        // navigation regardless of headers, but a stale cached copy served in between (a CDN,
+        // an aggressive browser disk cache) delays that check — no-cache forces the freshness
+        // check itself to always hit the origin, so a new sw.js (see public/sw.js) takes effect
+        // on the very next page load instead of whenever the cached copy happens to expire.
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
+      {
         // The WhatsApp "Connect WhatsApp" button (bot settings → Deploy & channels) opens
         // Meta's Embedded Signup as a popup via the Facebook JS SDK, which needs a live
         // window.opener reference back to this tab to hand over the result — the default

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ActionsCheckIcon, CommsBellIcon, CommsUserIcon } from "@/components/icons";
+import { PushSubscriptionToggle } from "@/components/app/push-subscription";
 import { markNotificationsRead } from "@/lib/actions/notifications";
 import { timeAgo } from "@/lib/time";
 
@@ -114,6 +115,9 @@ export function NotificationsMenu({ notifications }: { notifications: Notificati
               ))}
             </div>
           )}
+          <div className="border-t border-line pt-1">
+            <PushSubscriptionToggle />
+          </div>
           <Link
             href="/app/inbox"
             onClick={() => setOpen(false)}

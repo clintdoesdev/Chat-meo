@@ -4,6 +4,7 @@ import { runWhatsAppTurn } from "@/lib/chat/run-whatsapp-turn";
 import { decrypt } from "@/lib/crypto";
 import { sendSecurityAlertEmail } from "@/lib/email/send";
 import { prisma } from "@/lib/prisma";
+import { sendPushToUser } from "@/lib/push/send";
 import {
   downloadWhatsAppMedia,
   getWhatsAppMediaUrl,
@@ -41,6 +42,30 @@ export async function GET(request: NextRequest) {
  * downloadWhatsAppMedia in meta-graph.ts), for runWhatsAppTurn to persist directly. Best-effort:
  * a failure here (expired media, transient network) shouldn't drop the whole inbound message —
  * runWhatsAppTurn just falls back to storing the "[image]" placeholder text instead. */
+const MESSAGE_PREVIEW_LENGTH = 140;
+
+/** Best-effort "new message" push to the bot's owner — called for every inbound message
+ * regardless of whether the engine ran, same as the Message row itself is always persisted. */
+async function notifyNewInboxMessage(userId: string, botName: string, content: string): Promise<void> {
+  const body = content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
+  await sendPushToUser(userId, { title: `New message · ${botName}`, body, url: "/app/inbox" }).catch((error) => {
+    console.error("[whatsapp webhook] failed to send new-message push", { error });
+  });
+}
+
+/** Best-effort "needs a human" push — only called when runWhatsAppTurn reports a fresh
+ * transition into HANDOFF (see the call sites below; a conversation already in HANDOFF never
+ * reaches the engine again, so this never fires twice for the same handoff). */
+async function notifyHandoff(userId: string, botName: string, visitorId: string): Promise<void> {
+  await sendPushToUser(userId, {
+    title: `${botName} needs a human`,
+    body: `${visitorId} needs your help.`,
+    url: "/app/inbox",
+  }).catch((error) => {
+    console.error("[whatsapp webhook] failed to send handoff push", { error });
+  });
+}
+
 async function downloadInboundImage(
   message: InboundWhatsAppMessage,
   accessToken: string,
@@ -70,7 +95,7 @@ async function downloadInboundImage(
 async function processInboundMessage(message: InboundWhatsAppMessage): Promise<void> {
   const connection = await prisma.whatsAppConnection.findUnique({
     where: { phoneNumberId: message.phoneNumberId },
-    select: { botId: true, isActive: true, accessToken: true },
+    select: { botId: true, isActive: true, accessToken: true, bot: { select: { name: true, userId: true } } },
   });
 
   // No WhatsAppConnection for this phone_number_id means there's no bot to attach the message
@@ -104,6 +129,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
       },
       { llm: providerLlm, classify: classifierLlm },
     );
+    await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
     return;
   }
 
@@ -119,6 +145,10 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     { botId: connection.botId, visitorId: message.from, message: message.content, receivedAt: message.receivedAt },
     { llm: providerLlm, classify: classifierLlm },
   );
+  await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
+  if (result.kind === "success" && result.status === "HANDOFF") {
+    await notifyHandoff(connection.bot.userId, connection.bot.name, message.from);
+  }
   // Outside the 24h window, runWhatsAppTurn already persisted a warning in place of the reply
   // (see OUTSIDE_WINDOW_WARNING there) — Graph API would just reject a normal send anyway, so
   // there's nothing left to do here but leave it unsent. Same for a locked AI node (see

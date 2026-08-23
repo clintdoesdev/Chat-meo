@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState, step } from "@/engine/executor";
 import { parseEngineState } from "@/engine/state-schema";
@@ -6,6 +7,13 @@ import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
+import { sendPushToUser } from "@/lib/push/send";
+
+const MESSAGE_PREVIEW_LENGTH = 140;
+
+function previewOf(content: string): string {
+  return content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
+}
 
 const MAX_HISTORY_MESSAGES = 12;
 
@@ -79,6 +87,8 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
       bot: {
         select: {
           id: true,
+          userId: true,
+          name: true,
           status: true,
           flows: { where: { isActive: true }, take: 1, select: { id: true, graph: true } },
         },
@@ -160,6 +170,30 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
     where: { id: conversation.id },
     data: { engineState: output.state, status: conversationStatusFor(output.state.status) },
   });
+
+  // Deferred via after() so a push service round trip never adds latency to the widget's own
+  // reply — see the same pattern in the WhatsApp webhook (src/app/api/webhooks/whatsapp/route.ts).
+  // findFirst above only ever returns/creates an OPEN conversation, so reaching HANDOFF here is
+  // always a fresh transition, never a repeat notification for one already handed off.
+  if (params.message) {
+    const preview = previewOf(params.message);
+    after(() =>
+      sendPushToUser(apiKey.bot.userId, {
+        title: `New message · ${apiKey.bot.name}`,
+        body: preview,
+        url: "/app/inbox",
+      }).catch((error) => console.error("[chat] failed to send new-message push", { conversationId: conversation.id, error })),
+    );
+  }
+  if (output.state.status === "HANDOFF") {
+    after(() =>
+      sendPushToUser(apiKey.bot.userId, {
+        title: `${apiKey.bot.name} needs a human`,
+        body: `${params.visitorId} needs your help.`,
+        url: "/app/inbox",
+      }).catch((error) => console.error("[chat] failed to send handoff push", { conversationId: conversation.id, error })),
+    );
+  }
 
   console.log("[chat] turn", {
     botId: apiKey.bot.id,
