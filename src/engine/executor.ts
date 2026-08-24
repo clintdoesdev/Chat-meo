@@ -23,6 +23,12 @@ const LOOP_GUARD_MESSAGE = "Something went wrong on our end — let's start over
 // Studio Test drawer) this blocks the visitor's own request for the full duration; on WhatsApp
 // it's safely backgrounded, but the cap stays the same everywhere for one predictable ceiling.
 export const MAX_REPLY_DELAY_SECONDS = 120;
+// WhatsApp's own hard cap on a media message's caption (Meta rejects anything longer) — applied
+// uniformly across channels for consistent behavior rather than only when this happens to be a
+// WhatsApp conversation. A ReplyNode's message longer than this sends as its own separate reply
+// right after the image instead of as the image's caption — see the "reply" case below. Mirrored
+// (as a defensive re-check, not the source of truth) in src/lib/whatsapp/meta-graph.ts.
+export const MAX_IMAGE_CAPTION_LENGTH = 1024;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -282,7 +288,17 @@ async function runLogicAttachedNode(
   // node (if any) or hands off silently, bypassing maxReplies/looping entirely — see the "reply"
   // case in step().
   resendAllowed: boolean,
-  generateReply: () => Promise<{ content: string; usage?: LlmUsage; lastError?: string }>,
+  // A single generateReply() call can produce more than one Reply — a ReplyNode with an attached
+  // image sends the image (optionally captioned) and, when its message is too long to fit as a
+  // caption, a separate follow-up text reply right after it (see MAX_IMAGE_CAPTION_LENGTH below).
+  // `usage`, when present, is attached to the *last* entry in `replies` — the one text-bearing
+  // reply an LLM call (an AiNode's response, or a ReplyNode's reword pass) could have produced;
+  // an image reply itself never carries usage.
+  generateReply: () => Promise<{
+    replies: Array<{ content: string; contentType?: "TEXT" | "IMAGE"; caption?: string }>;
+    usage?: LlmUsage;
+    lastError?: string;
+  }>,
 ): Promise<LogicAttachedResult> {
   // A Logic node wired off this node's dedicated "logic" source handle gets first look at the
   // visitor's message — a matched rule pre-empts this node's own reply entirely for this turn
@@ -372,11 +388,24 @@ async function runLogicAttachedNode(
   }
 
   const result = await generateReply();
-  replies.push({
-    content: result.content,
-    ...(result.usage ? { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } : {}),
+  result.replies.forEach((reply, index) => {
+    const isLast = index === result.replies.length - 1;
+    replies.push({
+      content: reply.content,
+      ...(reply.contentType ? { contentType: reply.contentType } : {}),
+      ...(reply.caption !== undefined ? { caption: reply.caption } : {}),
+      ...(isLast && result.usage
+        ? { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens }
+        : {}),
+    });
   });
-  history.push({ role: "assistant", content: result.content });
+  // A text-safe summary for this step()'s own local history (fed back into any later LLM call
+  // within the same turn) — an image reply's raw `data:` URI has no place in conversation
+  // history, so it's represented by its caption (or a bare placeholder) instead.
+  const historyText = result.replies
+    .map((reply) => (reply.contentType === "IMAGE" ? (reply.caption ?? "[image]") : reply.content))
+    .join("\n");
+  history.push({ role: "assistant", content: historyText });
   const edge = nextEdge(graph, node.id);
   if (edge) {
     delete aiReplyCounts[node.id];
@@ -551,11 +580,11 @@ export async function step(
                 model: node.data.model,
                 provider: node.data.provider,
               });
-              return { content: llmResult.content, usage: llmResult.usage };
+              return { replies: [{ content: llmResult.content }], usage: llmResult.usage };
             } catch (error) {
               deps.logger.error("[engine] LLM call failed", error);
               return {
-                content: "Sorry, I couldn't come up with a reply just now.",
+                replies: [{ content: "Sorry, I couldn't come up with a reply just now." }],
                 lastError: error instanceof Error ? error.message : String(error),
               };
             }
@@ -587,28 +616,47 @@ export async function step(
             if (delaySeconds && delaySeconds > 0) {
               await sleep(Math.min(delaySeconds, MAX_REPLY_DELAY_SECONDS) * 1000);
             }
-            const text = interpolate(pickReplyText(node.data), variables);
-            if (!node.data.randomizeWording) return { content: text };
-            try {
-              const llmResult = await deps.llm({
-                systemPrompt: buildRewordPrompt(text),
-                history: [],
-                temperature: node.data.temperature ?? 0.7,
-                model: node.data.model ?? "",
-                provider: node.data.provider,
-              });
-              // An empty/unparseable reword falls back to the literal text, same as a thrown
-              // error below — this node's whole point is that it never has nothing to say.
-              return { content: llmResult.content || text, usage: llmResult.usage };
-            } catch (error) {
-              // Deliberately silent (no lastError, no apology reply): unlike the AI node, this
-              // node's content was never actually at risk — it always has the exact right thing
-              // to say (node.data.text). A failed rewording pass just means it says that,
-              // unreworded, which is a perfectly good outcome, not a degraded one worth
-              // surfacing to the Studio Test drawer's Debug panel.
-              deps.logger.error("[engine] Reply node rewording failed — using the original text", error);
-              return { content: text };
+            let text = interpolate(pickReplyText(node.data), variables);
+            let usage: LlmUsage | undefined;
+            if (node.data.randomizeWording) {
+              try {
+                const llmResult = await deps.llm({
+                  systemPrompt: buildRewordPrompt(text),
+                  history: [],
+                  temperature: node.data.temperature ?? 0.7,
+                  model: node.data.model ?? "",
+                  provider: node.data.provider,
+                });
+                // An empty/unparseable reword falls back to the literal text, same as a thrown
+                // error below — this node's whole point is that it never has nothing to say.
+                text = llmResult.content || text;
+                usage = llmResult.usage;
+              } catch (error) {
+                // Deliberately silent (no lastError, no apology reply): unlike the AI node, this
+                // node's content was never actually at risk — it always has the exact right thing
+                // to say (node.data.text). A failed rewording pass just means it says that,
+                // unreworded, which is a perfectly good outcome, not a degraded one worth
+                // surfacing to the Studio Test drawer's Debug panel.
+                deps.logger.error("[engine] Reply node rewording failed — using the original text", error);
+              }
             }
+
+            if (!node.data.imageDataUri) {
+              return { replies: [{ content: text }], usage };
+            }
+            // An image with a short enough message goes out as one captioned image; a longer one
+            // can't fit as a caption (see MAX_IMAGE_CAPTION_LENGTH above), so the image goes out
+            // uncaptioned and the full message follows as its own separate reply right after.
+            if (text.length <= MAX_IMAGE_CAPTION_LENGTH) {
+              return {
+                replies: [{ content: node.data.imageDataUri, contentType: "IMAGE", caption: text || undefined }],
+                usage,
+              };
+            }
+            return {
+              replies: [{ content: node.data.imageDataUri, contentType: "IMAGE" }, { content: text }],
+              usage,
+            };
           },
         );
         currentNodeId = result.currentNodeId;

@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { CommsSendIcon } from "@/components/icons";
 import { formatMessage } from "@/components/format-message";
 
-type ChatMessage = { id: string; role: "user" | "bot"; content: string };
+type ChatMessage = {
+  id: string;
+  role: "user" | "bot";
+  content: string;
+  // A Reply node's attached image (see ReplyNode.data.imageDataUri in src/lib/flow-types.ts) —
+  // `content` is then the image's `data:` URI, and `caption` (if any) is shown beneath it.
+  // Undefined/omitted means plain text, same as Message.contentType's default.
+  contentType?: "TEXT" | "IMAGE";
+  caption?: string | null;
+};
 
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -12,16 +21,30 @@ function newId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+type HistoryMessage = {
+  role: "USER" | "BOT" | "AGENT";
+  content: string;
+  contentType?: "TEXT" | "IMAGE";
+  caption?: string | null;
+};
+
 type HistoryResponse = {
   found: boolean;
-  messages: { role: "USER" | "BOT" | "AGENT"; content: string }[];
+  messages: HistoryMessage[];
   ended: boolean;
 };
 
-type ChatResponse = { replies: { content: string }[]; status: string };
+type ChatReply = { content: string; contentType?: "TEXT" | "IMAGE"; caption?: string };
 
-function toChatMessage(role: "USER" | "BOT" | "AGENT", content: string): ChatMessage {
-  return { id: newId(), role: role === "USER" ? "user" : "bot", content };
+type ChatResponse = { replies: ChatReply[]; status: string };
+
+function toChatMessage(
+  role: "USER" | "BOT" | "AGENT",
+  content: string,
+  contentType?: "TEXT" | "IMAGE",
+  caption?: string | null,
+): ChatMessage {
+  return { id: newId(), role: role === "USER" ? "user" : "bot", content, contentType, caption };
 }
 
 /** The browser sets document.referrer to the parent page's URL when we're loaded in an
@@ -104,7 +127,10 @@ export function WidgetChat({
         const data: HistoryResponse = await res.json();
 
         if (res.ok && data.found) {
-          setMessages([...leadIn, ...data.messages.map((m) => toChatMessage(m.role, m.content))]);
+          setMessages([
+            ...leadIn,
+            ...data.messages.map((m) => toChatMessage(m.role, m.content, m.contentType, m.caption)),
+          ]);
           setEnded(data.ended);
           setReady(true);
           return;
@@ -141,7 +167,10 @@ export function WidgetChat({
       if (!isStream || !res.body) {
         const fallback: ChatResponse | null = await res.json().catch(() => null);
         if (fallback?.replies?.length) {
-          setMessages((prev) => [...prev, ...fallback.replies.map((r) => toChatMessage("BOT", r.content))]);
+          setMessages((prev) => [
+            ...prev,
+            ...fallback.replies.map((r) => toChatMessage("BOT", r.content, r.contentType, r.caption)),
+          ]);
           setEnded(fallback.status === "ENDED" || fallback.status === "HANDOFF");
         } else {
           setMessages((prev) => [
@@ -171,8 +200,11 @@ export function WidgetChat({
           const payload = JSON.parse(line.slice(5).trim());
 
           if (payload.type === "done") {
-            const replies: { content: string }[] = payload.replies ?? [];
-            setMessages((prev) => [...prev, ...replies.map((r) => toChatMessage("BOT", r.content))]);
+            const replies: ChatReply[] = payload.replies ?? [];
+            setMessages((prev) => [
+              ...prev,
+              ...replies.map((r) => toChatMessage("BOT", r.content, r.contentType, r.caption)),
+            ]);
             setEnded(payload.status === "ENDED" || payload.status === "HANDOFF");
             finished = true;
           } else if (payload.type === "error") {
@@ -208,7 +240,19 @@ export function WidgetChat({
                 <MeoDot />
               </span>
             )}
-            <div className={`cm-bubble cm-${message.role}`}>{formatMessage(message.content, "cm-link")}</div>
+            <div
+              className={`cm-bubble cm-${message.role}${message.contentType === "IMAGE" ? " cm-bubble-image" : ""}`}
+            >
+              {message.contentType === "IMAGE" ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it */}
+                  <img src={message.content} alt={message.caption ?? "Photo"} className="cm-image" />
+                  {message.caption && <div className="cm-caption">{formatMessage(message.caption, "cm-link")}</div>}
+                </>
+              ) : (
+                formatMessage(message.content, "cm-link")
+              )}
+            </div>
           </div>
         ))}
         {sending && (

@@ -9,6 +9,7 @@ import {
   downloadWhatsAppMedia,
   getWhatsAppMediaUrl,
   markWhatsAppMessageReadWithTyping,
+  sendWhatsAppImageMessage,
   sendWhatsAppTextMessage,
   toWhatsAppText,
   verifyWebhookSignature,
@@ -172,7 +173,19 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     // itself gets the plain-text conversion (see toWhatsAppText) so a link or **bold** doesn't show
     // up as literal brackets/asterisks on the customer's phone; the stored Message keeps the
     // original Markdown, same as every other channel, so the Inbox still renders it properly.
-    await sendWhatsAppTextMessage(message.phoneNumberId, message.from, toWhatsAppText(reply.content), accessToken).catch((error) => {
+    // Sequential (awaited in-loop) rather than parallel so a Reply node's image-then-text pair
+    // (see MAX_IMAGE_CAPTION_LENGTH in engine/executor.ts) arrives in that same order.
+    const send =
+      reply.contentType === "IMAGE"
+        ? sendWhatsAppImageMessage(
+            message.phoneNumberId,
+            message.from,
+            reply.content,
+            reply.caption ? toWhatsAppText(reply.caption) : undefined,
+            accessToken,
+          )
+        : sendWhatsAppTextMessage(message.phoneNumberId, message.from, toWhatsAppText(reply.content), accessToken);
+    await send.catch((error) => {
       // Reply is already persisted to Message by runWhatsAppTurn regardless of delivery — a
       // failed send shows up in the seller's inbox either way, just not on the customer's phone.
       console.error("[whatsapp webhook] failed to send reply", {

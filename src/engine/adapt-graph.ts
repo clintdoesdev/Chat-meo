@@ -37,6 +37,7 @@ function adaptNode(node: PersistedNode): FlowNode | null {
           provider: data.provider,
           delaySeconds: data.delaySeconds,
           variants: (data.variants ?? []).map((variant) => ({ id: variant.id, text: variant.text })),
+          imageDataUri: data.imageDataUri,
         },
       };
     case "condition":

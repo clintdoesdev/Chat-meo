@@ -1,4 +1,5 @@
-import { ActionsCloseIcon, ActionsPlusIcon, ActionsTrashIcon } from "@/components/icons";
+import { useRef, useState } from "react";
+import { ActionsCloseIcon, ActionsPlusIcon, ActionsTrashIcon, ActionsUploadIcon } from "@/components/icons";
 import { MeoMark } from "@/components/meo-mark";
 import { KnowledgeUpload } from "@/components/studio/knowledge-upload";
 import { ModelPicker } from "@/components/studio/model-picker";
@@ -52,6 +53,11 @@ function newVariantId(): string {
 
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
+// Same cap as the Bot avatar upload (src/components/app/bot-settings-modal.tsx) — no blob
+// storage in this app, so this becomes a `data:` URI embedded straight into the flow graph's
+// JSON (see FlowGraphSchema's imageDataUri cap in src/lib/flow-schema.ts).
+const MAX_REPLY_IMAGE_BYTES = 200_000;
+
 type NodeInspectorProps = {
   node: FlowNode | null;
   flowId: string;
@@ -75,6 +81,26 @@ const sheetPositionClass =
   "min-[1020px]:border-t-0 min-[1020px]:border-l min-[1020px]:pb-0";
 
 export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete }: NodeInspectorProps) {
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imageFileRef = useRef<HTMLInputElement>(null);
+
+  function handleReplyImageFile(nodeId: string, file: File | undefined) {
+    if (!file) return;
+    setImageError(null);
+    if (!file.type.startsWith("image/")) {
+      setImageError("Please choose an image file.");
+      return;
+    }
+    if (file.size > MAX_REPLY_IMAGE_BYTES) {
+      setImageError("That image is too large — try one under 200KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => onChange(nodeId, { imageDataUri: reader.result as string });
+    reader.onerror = () => setImageError("Couldn't read that file — try another image.");
+    reader.readAsDataURL(file);
+  }
+
   if (!node || !node.type) {
     return (
       <aside
@@ -292,6 +318,50 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
 
         {node.type === "reply" && (
           <>
+            <div className="mb-3.5">
+              <label className={labelClass()}>Image</label>
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-line-2 bg-card-2">
+                  {data.imageDataUri ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it
+                    <img src={data.imageDataUri} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <ActionsUploadIcon size={14} className="text-muted" />
+                  )}
+                </span>
+                <input
+                  ref={imageFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => handleReplyImageFile(node.id, event.target.files?.[0])}
+                />
+                <button
+                  type="button"
+                  onClick={() => imageFileRef.current?.click()}
+                  className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-2 text-[12px] font-semibold text-text transition hover:border-orange-2/50"
+                >
+                  <ActionsUploadIcon size={13} />
+                  {data.imageDataUri ? "Replace" : "Upload"}
+                </button>
+                {data.imageDataUri && (
+                  <button
+                    type="button"
+                    onClick={() => onChange(node.id, { imageDataUri: undefined })}
+                    className="rounded-full border border-line-2 px-3 py-2 text-[12px] font-semibold text-muted transition hover:border-bad/50 hover:text-bad"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {imageError && <p className="mt-1.5 text-[11px] text-bad">{imageError}</p>}
+              <p className="mt-1.5 text-[11px] text-muted">
+                Sends with the Message below as its caption — or, if the message is too long to
+                fit as a caption, the image goes out first and the full message follows as its
+                own message right after. Leave unset to send text only.
+              </p>
+            </div>
+
             <div className="mb-3.5">
               <div className="mb-1.5 flex items-center justify-between">
                 <span className={labelClass().replace("mb-1.5 ", "")}>Extra message variants</span>

@@ -135,6 +135,22 @@ body {
   border-bottom-right-radius: 6px;
 }
 
+.cm-bubble-image {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cm-image {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+}
+
+.cm-caption {
+  padding: 8px 14px 10px;
+}
+
 .cm-link {
   color: inherit;
   text-decoration: underline;

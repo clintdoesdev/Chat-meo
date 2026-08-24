@@ -175,6 +175,8 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
           conversationId: conversation.id,
           role: "BOT" as const,
           content: reply.content,
+          contentType: reply.contentType ?? "TEXT",
+          caption: reply.caption ?? null,
           promptTokens: reply.promptTokens ?? null,
           completionTokens: reply.completionTokens ?? null,
           channel: "WHATSAPP" as const,
@@ -190,7 +192,12 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
         data: output.replies.map((reply) => ({
           conversationId: conversation.id,
           role: "BOT" as const,
-          content: `${OUTSIDE_WINDOW_WARNING} (Intended reply: "${reply.content}")`,
+          // An image reply's raw `data:` URI has no place embedded in this warning's text — its
+          // caption (or a bare placeholder) stands in for it instead, same as engine/executor.ts's
+          // own local history summary does for the same reason.
+          content: `${OUTSIDE_WINDOW_WARNING} (Intended reply: "${
+            reply.contentType === "IMAGE" ? (reply.caption ?? "[image]") : reply.content
+          }")`,
           channel: "WHATSAPP" as const,
         })),
       });

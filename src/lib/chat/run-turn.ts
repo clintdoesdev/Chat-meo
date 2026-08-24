@@ -160,6 +160,8 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
         conversationId: conversation.id,
         role: "BOT" as const,
         content: reply.content,
+        contentType: reply.contentType ?? "TEXT",
+        caption: reply.caption ?? null,
         promptTokens: reply.promptTokens ?? null,
         completionTokens: reply.completionTokens ?? null,
       })),

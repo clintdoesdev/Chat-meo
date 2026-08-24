@@ -740,6 +740,67 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     randomSpy.mockRestore();
   });
 
+  it("sends a short message as the image's caption in one reply, when an image is attached", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "Here you go!", imageDataUri: "data:image/png;base64,AAA" } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([
+      { content: "data:image/png;base64,AAA", contentType: "IMAGE", caption: "Here you go!" },
+    ]);
+  });
+
+  it("sends the image with no caption when there's no message text", async () => {
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: "", imageDataUri: "data:image/png;base64,AAA" } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([{ content: "data:image/png;base64,AAA", contentType: "IMAGE", caption: undefined }]);
+  });
+
+  it("sends the image uncaptioned plus a separate text reply when the message is too long for a caption", async () => {
+    const longText = "a".repeat(1025);
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: longText, imageDataUri: "data:image/png;base64,AAA" } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([
+      { content: "data:image/png;base64,AAA", contentType: "IMAGE" },
+      { content: longText },
+    ]);
+  });
+
+  it("sends exactly 1024 characters as a caption (boundary), not split", async () => {
+    const boundaryText = "a".repeat(1024);
+    const graph: FlowGraph = {
+      nodes: [{ id: "reply-1", type: "reply", data: { text: boundaryText, imageDataUri: "data:image/png;base64,AAA" } }],
+      edges: [],
+    };
+    const deps = createDeps();
+    const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "hi", deps);
+
+    expect(output.replies).toEqual([
+      { content: "data:image/png;base64,AAA", contentType: "IMAGE", caption: boundaryText },
+    ]);
+  });
+
   it("follows its plain outgoing edge instead of looping, when one is wired", async () => {
     const graph: FlowGraph = {
       nodes: [

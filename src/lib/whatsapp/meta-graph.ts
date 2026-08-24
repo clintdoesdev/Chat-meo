@@ -295,6 +295,85 @@ export async function sendWhatsAppTextMessage(
   }
 }
 
+// Mirrors MAX_IMAGE_CAPTION_LENGTH in src/engine/executor.ts, which is the actual source of
+// truth for keeping a ReplyNode's message under this — this is only a defensive re-check so a
+// caller can never accidentally send a caption the Graph API would reject outright.
+const WHATSAPP_IMAGE_CAPTION_LIMIT = 1024;
+
+function dataUriToBuffer(dataUri: string): { bytes: Buffer; mimeType: string } {
+  const match = /^data:([^;]+);base64,(.*)$/.exec(dataUri);
+  if (!match) {
+    throw new MetaGraphError("Expected a base64 data: URI for the image.", "media upload");
+  }
+  return { mimeType: match[1], bytes: Buffer.from(match[2], "base64") };
+}
+
+/** Uploads image bytes as WhatsApp media via the Cloud API's regular (non-resumable) upload
+ * endpoint — separate from uploadMediaForHandle below, which only serves the Resumable Upload
+ * API's profile-picture flow. Returns a media id, good for exactly one outbound message. Can't
+ * go through graphFetch: this endpoint wants multipart/form-data, not a JSON body. */
+async function uploadWhatsAppMedia(
+  phoneNumberId: string,
+  bytes: Buffer,
+  mimeType: string,
+  accessToken: string,
+): Promise<string> {
+  const form = new FormData();
+  form.set("messaging_product", "whatsapp");
+  form.set("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), "image");
+
+  const response = await fetch(new URL(`${GRAPH_BASE}/${phoneNumberId}/media`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const errorObj =
+      json && typeof json === "object" && "error" in json && json.error && typeof json.error === "object"
+        ? (json.error as { message?: unknown })
+        : undefined;
+    throw new MetaGraphError(
+      `Meta API error during media upload: ${String(errorObj?.message ?? response.statusText)}`,
+      "media upload",
+    );
+  }
+  const mediaId = (json as { id?: string } | null)?.id;
+  if (!mediaId) {
+    throw new MetaGraphError("Meta did not return a media id for the uploaded image.", "media upload");
+  }
+  return mediaId;
+}
+
+/** Sends a ReplyNode's attached image (see ReplyNode.data.imageDataUri) as a WhatsApp image
+ * message, with `caption` shown beneath it when provided — two Graph API calls under the hood
+ * (upload the bytes for a media id, then send referencing that id), same shape as
+ * updateWhatsAppProfilePicture's two-step pattern below, just via the regular media endpoint
+ * instead of the Resumable Upload API. */
+export async function sendWhatsAppImageMessage(
+  phoneNumberId: string,
+  to: string,
+  imageDataUri: string,
+  caption: string | undefined,
+  accessToken: string,
+): Promise<void> {
+  const { bytes, mimeType } = dataUriToBuffer(imageDataUri);
+  const mediaId = await uploadWhatsAppMedia(phoneNumberId, bytes, mimeType, accessToken);
+  const trimmedCaption = caption?.slice(0, WHATSAPP_IMAGE_CAPTION_LIMIT);
+  await graphFetch(
+    `/${phoneNumberId}/messages`,
+    "send image message",
+    { access_token: accessToken },
+    "POST",
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "image",
+      image: trimmedCaption ? { id: mediaId, caption: trimmedCaption } : { id: mediaId },
+    },
+  );
+}
+
 /** Marks the customer's inbound message as read and shows the "typing…" indicator on their side
  * for up to 25 seconds (or until we actually send a reply, whichever comes first) — Meta's
  * combined read-receipt-plus-typing-indicator call. Best-effort by design: called right before

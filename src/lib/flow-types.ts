@@ -83,6 +83,12 @@ export type FlowNodeData = {
   // combine (whichever variant gets picked is still optionally reworded). Empty/absent means
   // "always send `text`", same as before this field existed.
   variants?: ReplyVariant[];
+  // reply — an optional attached image, as a `data:` URI (no blob storage in this app — same
+  // convention as Bot.avatarUrl and an inbound WhatsApp image's Message.content). When set, the
+  // node's message (after variant-pick/interpolation/rewording) is sent as this image's caption
+  // if short enough to fit one (see MAX_IMAGE_CAPTION_LENGTH in engine/executor.ts); otherwise
+  // the image goes out with no caption, followed by the full message as its own reply.
+  imageDataUri?: string;
   // condition
   variable?: string;
   branches?: ConditionBranch[];
@@ -167,8 +173,10 @@ export const NODE_KINDS: NodeKindMeta[] = [
       "after that it just waits for a Logic rule to match, or hands off. Add extra message " +
       "variants and each send randomly picks one, or turn on \"Vary wording\" to have the AI " +
       "lightly reword whichever one gets picked (same content, different phrasing) — either way, " +
-      "repeated sends won't look like an identical copy-pasted broadcast. You can also add a " +
-      "short delay before it sends, for a more natural pause.",
+      "repeated sends won't look like an identical copy-pasted broadcast. You can also attach an " +
+      "image, which sends with the message as its caption (or, if the message is too long to be " +
+      "a caption, as its own separate message right after), and add a short delay before it " +
+      "sends, for a more natural pause.",
   },
   {
     kind: "logic",

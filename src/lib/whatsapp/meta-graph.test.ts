@@ -1,6 +1,13 @@
 import { createHmac } from "crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildEmbeddedSignupUrl, chunkWhatsAppText, toWhatsAppText, verifyWebhookSignature } from "./meta-graph";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildEmbeddedSignupUrl,
+  chunkWhatsAppText,
+  MetaGraphError,
+  sendWhatsAppImageMessage,
+  toWhatsAppText,
+  verifyWebhookSignature,
+} from "./meta-graph";
 
 const APP_SECRET = "test-app-secret-do-not-use-in-production";
 
@@ -101,6 +108,77 @@ describe("toWhatsAppText", () => {
 
   it("leaves a lone, unpaired asterisk alone rather than eating the rest of the message", () => {
     expect(toWhatsAppText("5*3=15, easy math.")).toBe("5*3=15, easy math.");
+  });
+});
+
+describe("sendWhatsAppImageMessage", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("uploads the image bytes then sends an image message referencing the returned media id", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: input.toString(), init: init ?? {} });
+      if (calls.length === 1) {
+        return new Response(JSON.stringify({ id: "media-123" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ messages: [{ id: "wamid.abc" }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppImageMessage(
+      "PHONE_ID",
+      "15551234567",
+      "data:image/png;base64,AAAA",
+      "A caption",
+      "token-123",
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toContain("/PHONE_ID/media");
+    expect(calls[1].url).toContain("/PHONE_ID/messages");
+    expect(JSON.parse(calls[1].init.body as string)).toMatchObject({
+      messaging_product: "whatsapp",
+      to: "15551234567",
+      type: "image",
+      image: { id: "media-123", caption: "A caption" },
+    });
+  });
+
+  it("omits the caption field entirely when none is given", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: input.toString(), init: init ?? {} });
+      if (calls.length === 1) return new Response(JSON.stringify({ id: "media-123" }), { status: 200 });
+      return new Response(JSON.stringify({ messages: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppImageMessage("PHONE_ID", "15551234567", "data:image/png;base64,AAAA", undefined, "token-123");
+
+    const sentBody = JSON.parse(calls[1].init.body as string);
+    expect(sentBody.image).toEqual({ id: "media-123" });
+  });
+
+  it("throws without attempting a network call when given a malformed data URI", async () => {
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await expect(
+      sendWhatsAppImageMessage("PHONE_ID", "15551234567", "not-a-data-uri", undefined, "token-123"),
+    ).rejects.toThrow(MetaGraphError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a MetaGraphError when the media upload itself fails", async () => {
+    global.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ error: { message: "Invalid file" } }), { status: 400 }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      sendWhatsAppImageMessage("PHONE_ID", "15551234567", "data:image/png;base64,AAAA", undefined, "token-123"),
+    ).rejects.toThrow(/Invalid file/);
   });
 });
 

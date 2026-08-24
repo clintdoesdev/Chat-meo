@@ -52,7 +52,10 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" },
     select: {
       status: true,
-      messages: { orderBy: { createdAt: "asc" }, select: { role: true, content: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: { role: true, content: true, contentType: true, caption: true },
+      },
     },
   });
 

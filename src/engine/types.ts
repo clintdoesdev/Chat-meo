@@ -69,7 +69,8 @@ export type AiNode = {
  * `text`; composes with randomizeWording (the picked variant still gets reworded on top).
  * model/provider are only consulted when randomizeWording is on, or when a Logic node is
  * attached (its semantic-match pass needs something to call) — otherwise this node makes zero
- * LLM calls. */
+ * LLM calls. `imageDataUri` is an optional attached image (see MAX_IMAGE_CAPTION_LENGTH in
+ * executor.ts for how it combines with the message text). */
 export type ReplyNode = {
   id: string;
   type: "reply";
@@ -81,6 +82,7 @@ export type ReplyNode = {
     provider?: string;
     delaySeconds?: number;
     variants?: ReplyVariant[];
+    imageDataUri?: string;
   };
 };
 
@@ -196,6 +198,15 @@ export type EngineState = {
 
 export type Reply = {
   content: string;
+  /** "IMAGE" only ever comes from a ReplyNode with an attached image (see
+   * ReplyNode.data.imageDataUri) — `content` is then the image's `data:` URI itself, not text.
+   * Omitted (the default, same as Message.contentType's) means plain text. */
+  contentType?: "TEXT" | "IMAGE";
+  /** Only meaningful alongside contentType: "IMAGE" — the caption to show under the image, when
+   * the node's message was short enough to fit as one; see MAX_IMAGE_CAPTION_LENGTH in
+   * executor.ts. A message too long for a caption is sent as its own separate (TEXT) Reply
+   * instead, so this is never a truncated version of that overflow case. */
+  caption?: string;
   /** Only set for replies produced by an LLM call that reported usage — an "ai" node always,
    * a "reply" node only when its rewording pass actually ran (see ReplyNode.data.randomizeWording).
    * Message nodes, condition nodes, etc. never have these. */
