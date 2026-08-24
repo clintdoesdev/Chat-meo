@@ -1214,11 +1214,11 @@ describe("step: logic node (standalone)", () => {
     expect(output.state.status).toBe("ENDED");
   });
 
-  it("defers a bare generic-word trigger to the semantic classifier instead of literal-matching it", async () => {
+  it("literal-matches a bare generic word ('done') that IS the customer's whole message, skipping the classifier", async () => {
     // Same excludeGeneric behavior as the AI-attached path: a standalone Logic node now has its
-    // own semantic fallback (see matchLogicRule), so a bare generic word like "done" shouldn't
-    // win the free keyword pass alone — it's handed to the classifier, which can weigh it against
-    // what was actually being discussed instead of matching blindly.
+    // own semantic fallback (see matchLogicRule) — but a message that's ONLY a generic word is an
+    // unambiguous, direct reply to whatever the bot just asked (e.g. a "Done" quick-reply button),
+    // so it wins the free keyword pass without waiting on a classifier round-trip.
     const genericGraph: FlowGraph = {
       nodes: [
         {
@@ -1237,6 +1237,32 @@ describe("step: logic node (standalone)", () => {
     const deps = createDeps({ classify: classifyMock });
     const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
     const output = await step(genericGraph, state, "done", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Great, thanks!" }]);
+  });
+
+  it("still defers to the classifier when a generic word is only part of a longer message", async () => {
+    // "done" embedded in more text says nothing about intent on its own — unlike the bare-message
+    // case above, this still needs the semantic pass to work out what it's actually confirming.
+    const genericGraph: FlowGraph = {
+      nodes: [
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              { id: "rule-confirm", label: "Confirmation", triggers: "done, yes", reply: "Great, thanks!" },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const classifyMock = vi.fn(async () => ({ content: "rule-confirm" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+    const output = await step(genericGraph, state, "done with the paperwork now", deps);
 
     expect(classifyMock).toHaveBeenCalledTimes(1);
     expect(output.replies).toEqual([{ content: "Great, thanks!" }]);
@@ -1453,10 +1479,47 @@ describe("step: logic node attached to an AI node", () => {
     expect(output.replies[0]).toEqual({ content: "Here's your payment link: https://pay.example.com" });
   });
 
-  it("does not let a bare generic word win the literal pass, so the classifier gets to weigh in", async () => {
-    // Regression for the "yes"/"done" problem: a rule whose triggers are ONLY generic, ambiguous
-    // words (words that mean nothing on their own — "yes" could agree to anything) must not
-    // short-circuit the LLM/classifier just because the visitor happened to say one of them.
+  it("fires a rule on a bare 'yes' reply — the entire message, not embedded in more text — without touching the classifier", async () => {
+    // Regression for the real-world "customer taps Yes and nothing happens" bug: a rule
+    // configured with "yes" as one of its triggers must actually fire when the visitor's whole
+    // reply is "yes" (a tapped quick-reply button, or someone just typing "Yes") — that's an
+    // unambiguous direct answer to whatever the bot just asked, not something that needs an LLM
+    // round-trip (and an extra one that can itself fail/time out) to confirm.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-pay",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout, I'm ready, yes",
+                reply: "Perfect! You're just one step away from getting started.",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "Yes", deps);
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Perfect! You're just one step away from getting started." }]);
+  });
+
+  it("still defers a generic word to the classifier when it's only part of a longer message", async () => {
+    // "yes" embedded in more text ("yes I already paid") is a different, ambiguous case from a
+    // bare "yes" — it still needs the semantic pass rather than a blind literal win.
     const graph: FlowGraph = {
       nodes: [
         { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
@@ -1482,9 +1545,7 @@ describe("step: logic node attached to an AI node", () => {
     const deps = createDeps({ llm: llmMock, classify: classifyMock });
     const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
 
-    // "yes" alone here means "yes I already paid", not "yes send me the link" — a bare literal
-    // match on "yes" would wrongly fire the payment-link rule.
-    const output = await step(graph, state, "yes", deps);
+    const output = await step(graph, state, "yes I already paid for this", deps);
 
     expect(classifyMock).toHaveBeenCalledTimes(1);
     expect(llmMock).toHaveBeenCalledTimes(1);

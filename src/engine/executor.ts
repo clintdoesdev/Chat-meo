@@ -88,14 +88,16 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Bare words too common and ambiguous to trust as a *literal* match on their own — "yes" alone
-// could mean "yes, send the payment link", "yes, I already paid", or a dozen other things
-// depending on what was just asked. Letting one of these win the free keyword pass outright is
-// exactly how a rule ends up firing on the wrong intent before the smarter semantic pass (which
-// actually reads the message in context) ever gets a chance to weigh in. Excluding them here
-// only takes away their ability to win *alone*; the rule's full trigger text (including these
-// words) is still handed to the classifier as-is. Only applied where a semantic fallback
-// actually exists to catch what this excludes — see excludeGeneric below.
+// Bare words too common and ambiguous to trust as a literal match *when they're only part of a
+// longer message* — "yes" buried inside "yes, I already paid" could mean agreement with almost
+// anything depending on what was just asked, so a longer message carrying one of these needs the
+// smarter semantic pass (which actually reads the message in context) to decide what it's really
+// agreeing to. A message that is ONLY one of these words, though, is exactly what these are —
+// "Yes" (the whole reply, e.g. a tapped quick-reply button) is a direct, unambiguous answer to
+// whatever the bot just asked, and is handled by matchLogicKeyword's own whole-message check
+// below rather than deferred to a classifier call that has no better signal to work with than the
+// same bare word. Only applied where a semantic fallback actually exists to catch what a
+// mid-message occurrence of these still needs — see excludeGeneric below.
 const GENERIC_KEYWORDS = new Set([
   "yes",
   "yeah",
@@ -121,12 +123,19 @@ function matchLogicKeyword(
   options?: { excludeGeneric?: boolean },
 ): LogicRule | undefined {
   const message = rawMessage.toLowerCase();
+  // Whether the customer's message, once trimmed and stripped of trailing punctuation ("Yes!",
+  // "ok.", "sure?"), IS one of these words and nothing else — the one case a generic word is
+  // unambiguous enough to trust literally (see GENERIC_KEYWORDS above).
+  const bareWord = message.trim().replace(/[!.?,;:]+$/, "");
+  const isBareGenericMessage = bareWord.length > 0 && GENERIC_KEYWORDS.has(bareWord);
   return rules.find((rule) => {
     const keywords = rule.triggers
       .split(",")
       .map((keyword) => keyword.trim().toLowerCase())
       .filter(Boolean)
-      .filter((keyword) => !(options?.excludeGeneric && GENERIC_KEYWORDS.has(keyword)));
+      .filter(
+        (keyword) => !(options?.excludeGeneric && GENERIC_KEYWORDS.has(keyword) && !isBareGenericMessage),
+      );
     // Word-boundary, not raw substring — a plain .includes() would let trigger "payment" match
     // inside "payments", "repayment", "prepayment", etc., firing the rule for messages that
     // aren't actually asking for what the trigger describes (e.g. "I've made payments" —
