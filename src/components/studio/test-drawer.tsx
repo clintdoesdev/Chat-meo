@@ -9,7 +9,16 @@ import { LazyGlassIcon } from "@/components/three/lazy-glass-icon";
 import type { EngineState } from "@/engine/types";
 import type { FlowGraph } from "@/lib/flow-types";
 
-type ChatMessage = { id: string; role: "user" | "bot"; content: string };
+type ChatMessage = {
+  id: string;
+  role: "user" | "bot";
+  content: string;
+  // A Reply node's attached image (see ReplyNode.data.imageDataUri in src/lib/flow-types.ts) —
+  // `content` is then the image's `data:` URI, and `caption` (if any) shows beneath it. Omitted
+  // means plain text, same as Message.contentType's default and widget-chat.tsx's own handling.
+  contentType?: "TEXT" | "IMAGE";
+  caption?: string;
+};
 
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -24,7 +33,10 @@ async function postTestTurn(body: {
   sessionId: string;
   flowId?: string;
   priorHistory?: { role: "user" | "assistant"; content: string }[];
-}): Promise<{ replies: { content: string }[]; state: EngineState } | null> {
+}): Promise<{
+  replies: { content: string; contentType?: "TEXT" | "IMAGE"; caption?: string }[];
+  state: EngineState;
+} | null> {
   const res = await fetch("/api/chat/test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,7 +116,13 @@ export function TestDrawer({
     if (result.replies.length > 0) {
       setMessages((prev) => [
         ...prev,
-        ...result.replies.map((reply) => ({ id: newId(), role: "bot" as const, content: reply.content })),
+        ...result.replies.map((reply) => ({
+          id: newId(),
+          role: "bot" as const,
+          content: reply.content,
+          contentType: reply.contentType,
+          caption: reply.caption,
+        })),
       ]);
     } else if (result.state.status === "ENDED" && messages.length === 0 && !userMessage) {
       setMessages([
@@ -193,13 +211,23 @@ export function TestDrawer({
                   </span>
                 )}
                 <div
-                  className={`max-w-[76%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                  className={`max-w-[76%] overflow-hidden rounded-2xl text-[13px] leading-relaxed ${
                     message.role === "user"
                       ? "rounded-br-md bg-grad-orange text-white"
                       : "rounded-bl-md bg-card-2 text-text"
-                  }`}
+                  } ${message.contentType === "IMAGE" ? "" : "whitespace-pre-wrap break-words px-3.5 py-2.5"}`}
                 >
-                  {formatMessage(message.content, "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100")}
+                  {message.contentType === "IMAGE" ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it */}
+                      <img src={message.content} alt={message.caption ?? "Photo"} className="block max-h-72 w-full object-cover" />
+                      {message.caption && (
+                        <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
+                      )}
+                    </>
+                  ) : (
+                    formatMessage(message.content, "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100")
+                  )}
                 </div>
               </div>
             ))}
