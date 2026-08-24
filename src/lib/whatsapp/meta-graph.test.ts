@@ -5,6 +5,7 @@ import {
   chunkWhatsAppText,
   MetaGraphError,
   sendWhatsAppImageMessage,
+  sendWhatsAppReaction,
   sendWhatsAppTextMessage,
   toWhatsAppText,
   verifyWebhookSignature,
@@ -158,6 +159,43 @@ describe("sendWhatsAppTextMessage", () => {
     await sendWhatsAppTextMessage("PHONE_ID", "15551234567", "Hello there.", "token-123");
 
     expect((bodies[0] as { context?: unknown }).context).toBeUndefined();
+  });
+});
+
+describe("sendWhatsAppReaction", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("sends a reaction message referencing the target message id", async () => {
+    let body: unknown;
+    global.fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({ messages: [{ id: "wamid.new" }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppReaction("PHONE_ID", "15551234567", "wamid.target", "👍", "token-123");
+
+    expect(body).toMatchObject({
+      messaging_product: "whatsapp",
+      to: "15551234567",
+      type: "reaction",
+      reaction: { message_id: "wamid.target", emoji: "👍" },
+    });
+  });
+
+  it("clears a reaction with an empty emoji string", async () => {
+    let body: unknown;
+    global.fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(init?.body as string);
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppReaction("PHONE_ID", "15551234567", "wamid.target", "", "token-123");
+
+    expect((body as { reaction: { emoji: string } }).reaction.emoji).toBe("");
   });
 });
 

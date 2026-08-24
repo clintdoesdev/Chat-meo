@@ -8,7 +8,7 @@ import { decrypt } from "@/lib/crypto";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
-import { sendWhatsAppTextMessage } from "@/lib/whatsapp/meta-graph";
+import { sendWhatsAppImageMessage, sendWhatsAppReaction, sendWhatsAppTextMessage } from "@/lib/whatsapp/meta-graph";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
 export type ConversationSummary = {
@@ -22,6 +22,7 @@ export type ConversationSummary = {
   lastMessagePreview: string;
   lastMessageRole: "BOT" | "USER" | "AGENT" | null;
   archived: boolean;
+  blocked: boolean;
   folderId: string | null;
   // Same signal sendAgentReply already uses to route the reply — a widget conversation never gets
   // a WhatsApp webhook hit, so lastInboundAt stays null for it forever.
@@ -55,6 +56,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
       visitorId: true,
       createdAt: true,
       archived: true,
+      blocked: true,
       folderId: true,
       lastInboundAt: true,
       _count: { select: { messages: true } },
@@ -85,6 +87,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
             : lastMessage.content,
         lastMessageRole: lastMessage?.role ?? null,
         archived: conversation.archived,
+        blocked: conversation.blocked,
         folderId: conversation.folderId,
         channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
       };
@@ -98,6 +101,7 @@ export type ConversationDetail = {
   visitorId: string;
   createdAt: string;
   archived: boolean;
+  blocked: boolean;
   folderId: string | null;
   channel: "WHATSAPP" | "WEB";
   botName: string;
@@ -122,6 +126,15 @@ export type ConversationDetail = {
       contentType: "TEXT" | "IMAGE";
       caption: string | null;
     } | null;
+    // Emoji each side reacted with — either can be null/absent. See Message.customerReaction and
+    // .agentReaction's schema doc comments.
+    customerReaction: string | null;
+    agentReaction: string | null;
+    // Outbound-only (BOT/AGENT + WhatsApp) delivery lifecycle — null for a WEB message or before
+    // Meta's first status callback. See Message.deliveryStatus's schema doc comment.
+    deliveryStatus: "SENT" | "DELIVERED" | "READ" | "FAILED" | null;
+    // True for a message created by the Inbox's "forward" action — see forwardMessage below.
+    forwarded: boolean;
   }[];
 };
 
@@ -138,6 +151,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
       visitorId: true,
       createdAt: true,
       archived: true,
+      blocked: true,
       folderId: true,
       lastInboundAt: true,
       bot: { select: { name: true, slug: true, userId: true } },
@@ -153,6 +167,10 @@ export async function getConversationMessages(conversationId: string): Promise<C
           starred: true,
           replyToId: true,
           replyTo: { select: { id: true, role: true, content: true, contentType: true, caption: true } },
+          customerReaction: true,
+          agentReaction: true,
+          deliveryStatus: true,
+          forwarded: true,
         },
       },
     },
@@ -166,6 +184,7 @@ export async function getConversationMessages(conversationId: string): Promise<C
     visitorId: conversation.visitorId,
     createdAt: conversation.createdAt.toISOString(),
     archived: conversation.archived,
+    blocked: conversation.blocked,
     folderId: conversation.folderId,
     channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
     botName: conversation.bot.name,
@@ -180,6 +199,10 @@ export async function getConversationMessages(conversationId: string): Promise<C
       starred: m.starred,
       replyToId: m.replyToId,
       replyTo: m.replyTo,
+      customerReaction: m.customerReaction,
+      agentReaction: m.agentReaction,
+      deliveryStatus: m.deliveryStatus,
+      forwarded: m.forwarded,
     })),
   };
 }
@@ -243,8 +266,9 @@ export async function sendAgentReply(
       return { error: "This bot's WhatsApp connection isn't active." };
     }
 
+    let sentWaMessageId: string | undefined;
     try {
-      await sendWhatsAppTextMessage(
+      sentWaMessageId = await sendWhatsAppTextMessage(
         connection.phoneNumberId,
         conversation.visitorId,
         trimmed,
@@ -255,17 +279,27 @@ export async function sendAgentReply(
       console.error("[inbox] failed to send agent reply via WhatsApp", { conversationId, error });
       return { error: "Couldn't send — try again." };
     }
+
+    await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          conversationId,
+          role: "AGENT",
+          content: trimmed,
+          channel: "WHATSAPP",
+          replyToId: resolvedReplyToId,
+          waMessageId: sentWaMessageId,
+          deliveryStatus: sentWaMessageId ? "SENT" : undefined,
+        },
+      }),
+      prisma.conversation.update({ where: { id: conversationId }, data: { status: "HANDOFF" } }),
+    ]);
+    return { error: null };
   }
 
   await prisma.$transaction([
     prisma.message.create({
-      data: {
-        conversationId,
-        role: "AGENT",
-        content: trimmed,
-        channel: isWhatsApp ? "WHATSAPP" : "WEB",
-        replyToId: resolvedReplyToId,
-      },
+      data: { conversationId, role: "AGENT", content: trimmed, channel: "WEB", replyToId: resolvedReplyToId },
     }),
     prisma.conversation.update({ where: { id: conversationId }, data: { status: "HANDOFF" } }),
   ]);
@@ -305,6 +339,149 @@ export async function deleteMessage(messageId: string): Promise<{ error: string 
   if (!message || message.conversation.bot.userId !== session.user.id) return { error: "Message not found." };
 
   await prisma.message.delete({ where: { id: messageId } });
+  return { error: null };
+}
+
+/** Sets (or clears, with `emoji: null`) the seller's own reaction to a message — the Inbox's
+ * counterpart to a customer's own native WhatsApp reaction (see Message.agentReaction and
+ * .customerReaction's schema doc comments). Sent to WhatsApp via sendWhatsAppReaction when the
+ * message has a stored waMessageId to react to; a WEB-channel message (no such concept) or one
+ * without a waMessageId yet just updates locally. */
+export async function setMessageReaction(messageId: string, emoji: string | null): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: {
+      waMessageId: true,
+      conversation: {
+        select: { botId: true, visitorId: true, lastInboundAt: true, bot: { select: { userId: true } } },
+      },
+    },
+  });
+  if (!message || message.conversation.bot.userId !== session.user.id) return { error: "Message not found." };
+
+  const isWhatsApp = message.conversation.lastInboundAt !== null;
+  if (isWhatsApp && message.waMessageId) {
+    const connection = await prisma.whatsAppConnection.findUnique({
+      where: { botId: message.conversation.botId },
+      select: { phoneNumberId: true, accessToken: true },
+    });
+    if (connection?.accessToken) {
+      try {
+        await sendWhatsAppReaction(
+          connection.phoneNumberId,
+          message.conversation.visitorId,
+          message.waMessageId,
+          emoji ?? "",
+          decrypt(connection.accessToken),
+        );
+      } catch (error) {
+        console.error("[inbox] failed to send reaction via WhatsApp", { messageId, error });
+        return { error: "Couldn't send the reaction — try again." };
+      }
+    }
+  }
+
+  await prisma.message.update({ where: { id: messageId }, data: { agentReaction: emoji } });
+  return { error: null };
+}
+
+/** Forwards one message's content to a different conversation — possibly a different bot,
+ * anything the signed-in seller owns. Actually delivers it (same send path as sendAgentReply) on
+ * a WhatsApp target, and always persists a copy in the target conversation tagged `forwarded`
+ * (see Message.forwarded's schema doc comment) so it reads distinctly from a typed reply. */
+export async function forwardMessage(messageId: string, targetConversationId: string): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const [source, target] = await Promise.all([
+    prisma.message.findUnique({
+      where: { id: messageId },
+      select: {
+        content: true,
+        contentType: true,
+        caption: true,
+        conversation: { select: { bot: { select: { userId: true } } } },
+      },
+    }),
+    prisma.conversation.findUnique({
+      where: { id: targetConversationId },
+      select: { id: true, botId: true, visitorId: true, lastInboundAt: true, bot: { select: { userId: true } } },
+    }),
+  ]);
+
+  if (!source || source.conversation.bot.userId !== session.user.id) return { error: "Message not found." };
+  if (!target || target.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  const isWhatsApp = target.lastInboundAt !== null;
+  let sentWaMessageId: string | undefined;
+
+  if (isWhatsApp) {
+    if (!isWithinServiceWindow(target.lastInboundAt)) {
+      return { error: "Can't forward — outside WhatsApp's 24h reply window for that conversation." };
+    }
+    const connection = await prisma.whatsAppConnection.findUnique({
+      where: { botId: target.botId },
+      select: { phoneNumberId: true, accessToken: true },
+    });
+    if (!connection?.accessToken) {
+      return { error: "That bot's WhatsApp connection isn't active." };
+    }
+    const accessToken = decrypt(connection.accessToken);
+    try {
+      sentWaMessageId =
+        source.contentType === "IMAGE"
+          ? await sendWhatsAppImageMessage(
+              connection.phoneNumberId,
+              target.visitorId,
+              source.content,
+              source.caption ?? undefined,
+              accessToken,
+            )
+          : await sendWhatsAppTextMessage(connection.phoneNumberId, target.visitorId, source.content, accessToken);
+    } catch (error) {
+      console.error("[inbox] failed to forward message via WhatsApp", { messageId, targetConversationId, error });
+      return { error: "Couldn't forward — try again." };
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        conversationId: target.id,
+        role: "AGENT",
+        content: source.content,
+        contentType: source.contentType,
+        caption: source.caption,
+        channel: isWhatsApp ? "WHATSAPP" : "WEB",
+        forwarded: true,
+        waMessageId: sentWaMessageId,
+        deliveryStatus: sentWaMessageId ? "SENT" : undefined,
+      },
+    }),
+    prisma.conversation.update({ where: { id: target.id }, data: { status: "HANDOFF" } }),
+  ]);
+
+  return { error: null };
+}
+
+/** Blocks or unblocks a visitor — the engine permanently skips a blocked conversation (see
+ * runWhatsAppTurn) and it's excluded from "new message" push notifications, but inbound messages
+ * still get stored so the seller keeps a record. See Conversation.blocked's schema doc comment
+ * for why this is enforced entirely on our side. */
+export async function setConversationBlocked(conversationId: string, blocked: boolean): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
+
+  await prisma.conversation.update({ where: { id: conversationId }, data: { blocked } });
   return { error: null };
 }
 

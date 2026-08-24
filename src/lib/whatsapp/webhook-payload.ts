@@ -14,14 +14,26 @@ const WebhookMessageSchema = z.object({
   /// downloadWhatsAppMedia in meta-graph.ts), not a fetchable URL by itself. `caption` is the
   /// optional text WhatsApp lets a customer attach alongside a photo.
   image: z.object({ id: z.string().min(1), caption: z.string().optional() }).optional(),
+  /// Present on a `type: "reaction"` message — the customer tapping an emoji onto an earlier
+  /// message (which can be one of ours or one of theirs). `emoji` is omitted/empty when the
+  /// customer removed their reaction rather than set one.
+  reaction: z.object({ message_id: z.string().min(1), emoji: z.string().optional() }).optional(),
   /// Unix epoch seconds, as a string, per Meta's own convention — when the customer actually
   /// sent this message, not when we received/parsed it. See InboundWhatsAppMessage.receivedAt.
   timestamp: z.string().optional(),
 });
 
+const WebhookStatusSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["sent", "delivered", "read", "failed"]),
+});
+
 const WebhookChangeValueSchema = z.object({
   metadata: z.object({ phone_number_id: z.string().min(1) }).optional(),
   messages: z.array(WebhookMessageSchema).optional(),
+  /// Delivery/read receipts for messages *we* sent — a separate array from `messages` above
+  /// (which is only ever inbound). See extractStatusUpdates.
+  statuses: z.array(WebhookStatusSchema).optional(),
 });
 
 const WebhookPayloadSchema = z.object({
@@ -74,6 +86,11 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
       if (!phoneNumberId) continue;
 
       for (const message of change.value.messages ?? []) {
+        // Reactions and any other non-content message types (reaction, button-reply metadata
+        // etc.) aren't messages of their own in our Inbox — reactions specifically are pulled out
+        // separately by extractInboundReactions, applied to the message they target rather than
+        // stored as a new row.
+        if (message.type === "reaction") continue;
         const isText = message.type === "text" && Boolean(message.text?.body);
         const imageMediaId = message.type === "image" ? (message.image?.id ?? null) : null;
         const timestampMs = message.timestamp && /^\d+$/.test(message.timestamp) ? Number(message.timestamp) * 1000 : NaN;
@@ -91,6 +108,74 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
           caption: imageMediaId ? (message.image?.caption ?? null) : null,
           receivedAt: Number.isFinite(timestampMs) ? new Date(timestampMs) : new Date(),
         });
+      }
+    }
+  }
+  return out;
+}
+
+export type InboundWhatsAppReaction = {
+  phoneNumberId: string;
+  /** The customer's wa_id — same use as InboundWhatsAppMessage.from. */
+  from: string;
+  /** The waMessageId of the message being reacted to — may be one of ours or one of theirs. */
+  targetWaMessageId: string;
+  /** Empty/omitted means the customer removed their reaction rather than set one — see
+   * Message.customerReaction's doc comment. */
+  emoji: string;
+};
+
+/** Pulls WhatsApp reaction events (a customer tapping/removing an emoji on a message) out of one
+ * webhook delivery — a `type: "reaction"` entry in the same `messages` array extractInboundMessages
+ * reads, but never emitted by that function (see its own skip for this type) since a reaction
+ * updates an existing Message row rather than creating a new one. */
+export function extractInboundReactions(payload: unknown): InboundWhatsAppReaction[] {
+  const parsed = WebhookPayloadSchema.safeParse(payload);
+  if (!parsed.success) return [];
+
+  const out: InboundWhatsAppReaction[] = [];
+  for (const entry of parsed.data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const phoneNumberId = change.value.metadata?.phone_number_id;
+      if (!phoneNumberId) continue;
+
+      for (const message of change.value.messages ?? []) {
+        if (message.type !== "reaction" || !message.reaction) continue;
+        out.push({
+          phoneNumberId,
+          from: message.from,
+          targetWaMessageId: message.reaction.message_id,
+          emoji: message.reaction.emoji ?? "",
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export type WhatsAppStatusUpdate = {
+  phoneNumberId: string;
+  /** The waMessageId of the message this status is about — always one *we* sent (Meta only
+   * reports delivery/read status for outbound messages). */
+  waMessageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+};
+
+/** Pulls delivery/read-receipt status updates for our own sent messages out of one webhook
+ * delivery — a separate `statuses` array from `messages`, so this never overlaps with
+ * extractInboundMessages/extractInboundReactions's output. */
+export function extractStatusUpdates(payload: unknown): WhatsAppStatusUpdate[] {
+  const parsed = WebhookPayloadSchema.safeParse(payload);
+  if (!parsed.success) return [];
+
+  const out: WhatsAppStatusUpdate[] = [];
+  for (const entry of parsed.data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const phoneNumberId = change.value.metadata?.phone_number_id;
+      if (!phoneNumberId) continue;
+
+      for (const status of change.value.statuses ?? []) {
+        out.push({ phoneNumberId, waMessageId: status.id, status: status.status });
       }
     }
   }

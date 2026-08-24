@@ -281,17 +281,21 @@ export function chunkWhatsAppText(text: string, limit = WHATSAPP_TEXT_MESSAGE_LI
  * (Message.waMessageId — see the Inbox's swipe/reply-to action in src/lib/actions/inbox.ts) —
  * attached only to the *first* chunk (as `context.message_id`) so a long, multi-message reply
  * doesn't show up as several separate quoted replies to the same original message on the
- * customer's phone. */
+ * customer's phone. Returns the *first* chunk's own Meta message id (undefined if Meta's
+ * response didn't include one) — the caller can persist it as that reply's Message.waMessageId
+ * so later status webhooks (delivery/read ticks) and the Inbox's reaction picker have something
+ * to reference; a multi-chunk reply's later chunks aren't individually tracked. */
 export async function sendWhatsAppTextMessage(
   phoneNumberId: string,
   to: string,
   text: string,
   accessToken: string,
   replyToMessageId?: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const chunks = chunkWhatsAppText(text);
+  let firstWaMessageId: string | undefined;
   for (const [index, chunk] of chunks.entries()) {
-    await graphFetch(
+    const result = await graphFetch<{ messages?: { id: string }[] }>(
       `/${phoneNumberId}/messages`,
       "send message",
       { access_token: accessToken },
@@ -304,7 +308,9 @@ export async function sendWhatsAppTextMessage(
         ...(index === 0 && replyToMessageId ? { context: { message_id: replyToMessageId } } : {}),
       },
     );
+    if (index === 0) firstWaMessageId = result.messages?.[0]?.id;
   }
+  return firstWaMessageId;
 }
 
 // Mirrors MAX_IMAGE_CAPTION_LENGTH in src/engine/executor.ts, which is the actual source of
@@ -361,18 +367,19 @@ async function uploadWhatsAppMedia(
  * message, with `caption` shown beneath it when provided — two Graph API calls under the hood
  * (upload the bytes for a media id, then send referencing that id), same shape as
  * updateWhatsAppProfilePicture's two-step pattern below, just via the regular media endpoint
- * instead of the Resumable Upload API. */
+ * instead of the Resumable Upload API. Returns Meta's own message id for the sent image, same
+ * reasoning as sendWhatsAppTextMessage's return value above. */
 export async function sendWhatsAppImageMessage(
   phoneNumberId: string,
   to: string,
   imageDataUri: string,
   caption: string | undefined,
   accessToken: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const { bytes, mimeType } = dataUriToBuffer(imageDataUri);
   const mediaId = await uploadWhatsAppMedia(phoneNumberId, bytes, mimeType, accessToken);
   const trimmedCaption = caption?.slice(0, WHATSAPP_IMAGE_CAPTION_LIMIT);
-  await graphFetch(
+  const result = await graphFetch<{ messages?: { id: string }[] }>(
     `/${phoneNumberId}/messages`,
     "send image message",
     { access_token: accessToken },
@@ -383,6 +390,28 @@ export async function sendWhatsAppImageMessage(
       type: "image",
       image: trimmedCaption ? { id: mediaId, caption: trimmedCaption } : { id: mediaId },
     },
+  );
+  return result.messages?.[0]?.id;
+}
+
+/** Sends (or clears, with `emoji: ""`) the seller's own reaction to a specific WhatsApp message —
+ * the Inbox's reaction picker's counterpart to a customer's own native reaction (see
+ * extractInboundReactions in webhook-payload.ts). `targetWaMessageId` must be a message id this
+ * WhatsApp number has actually seen (one it sent or received), same requirement Meta enforces on
+ * `context.message_id` for a reply. */
+export async function sendWhatsAppReaction(
+  phoneNumberId: string,
+  to: string,
+  targetWaMessageId: string,
+  emoji: string,
+  accessToken: string,
+): Promise<void> {
+  await graphFetch(
+    `/${phoneNumberId}/messages`,
+    "send reaction",
+    { access_token: accessToken },
+    "POST",
+    { messaging_product: "whatsapp", to, type: "reaction", reaction: { message_id: targetWaMessageId, emoji } },
   );
 }
 

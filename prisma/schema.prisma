@@ -51,6 +51,16 @@ enum MessageChannel {
   WHATSAPP
 }
 
+// Meta's outbound delivery lifecycle for one specific WhatsApp message — see
+// Message.deliveryStatus's doc comment. Ordered so a later, out-of-order status webhook can never
+// regress an already-more-advanced state (see processStatusUpdate in the webhook route).
+enum MessageDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 enum VerificationPurpose {
   EMAIL_VERIFY
   PASSWORD_RESET
@@ -208,6 +218,13 @@ model Conversation {
   /// touching `status`, which the engine (runWhatsAppTurn/run-turn) reads to decide whether to
   /// keep replying. Archiving a HANDOFF or OPEN conversation doesn't change bot behavior at all.
   archived      Boolean            @default(false)
+  /// The seller has blocked this visitor — the engine never runs and never replies for a blocked
+  /// conversation (same skip as HANDOFF — see runWhatsAppTurn), and it's excluded from "new
+  /// message" push notifications, but an inbound message still gets stored so the seller keeps a
+  /// record of what was sent. Purely our own concept: WhatsApp's Business Platform has no
+  /// business-blocks-customer API of its own (only the reverse), so this is enforced entirely on
+  /// our side by ignoring the customer rather than by anything Meta does differently.
+  blocked       Boolean            @default(false)
   folderId      String?
   createdAt     DateTime           @default(now())
 
@@ -254,10 +271,11 @@ model Message {
   completionTokens Int?
   channel          MessageChannel     @default(WEB)
   createdAt        DateTime           @default(now())
-  /// Meta's own message id (`wamid...`) for an inbound WhatsApp message — captured so a seller's
-  /// "reply to this message" (see replyToId below) can pass WhatsApp's own `context.message_id`,
-  /// making the Inbox's reply show as a real quoted reply on the customer's phone too, not just
-  /// here. Never set for a WEB-channel message or an outbound one.
+  /// Meta's own message id (`wamid...`) — for an inbound message, captured off the webhook
+  /// payload so a seller's "reply to this message" (see replyToId below) can pass it back as
+  /// WhatsApp's own `context.message_id`; for an outbound one (BOT/AGENT), captured off Meta's
+  /// send response so later status webhooks (see deliveryStatus) and the Inbox's own reactions
+  /// can reference *this* message. Never set for a WEB-channel message.
   waMessageId      String?
   /// Set when this message was sent as an explicit reply to an earlier one in the same
   /// conversation — the Inbox's swipe/reply-to-message action (src/lib/actions/inbox.ts). SetNull
@@ -267,12 +285,30 @@ model Message {
   /// Starred for later — purely an Inbox organization concept, like Conversation.archived; has no
   /// effect on engine/bot behavior.
   starred          Boolean            @default(false)
+  /// Emoji the customer reacted with on WhatsApp (a native WhatsApp reaction, delivered as its own
+  /// inbound webhook event) — null means no reaction, or one since removed (Meta reports removal
+  /// as a reaction event with an empty emoji). Keyed by the *target* message's waMessageId, so
+  /// this can land on a message of any role, not just ones from the customer.
+  customerReaction String?
+  /// Emoji the seller picked from the Inbox's own reaction picker — mirrors customerReaction but
+  /// from our side; sent to WhatsApp via sendWhatsAppReaction (meta-graph.ts) when this message
+  /// has a waMessageId to react to.
+  agentReaction    String?
+  /// Outbound-only (BOT/AGENT role on a WHATSAPP-channel message): Meta's delivery lifecycle for
+  /// this specific message, from its own status webhooks (sent → delivered → read, or failed).
+  /// Null for a WEB-channel message (no such concept) or before Meta's first status callback
+  /// arrives — see processStatusUpdate in the webhook route.
+  deliveryStatus   MessageDeliveryStatus?
+  /// True when this message was created by the Inbox's "forward" action rather than typed or
+  /// replied directly — purely a "Forwarded" display label, no effect on delivery.
+  forwarded        Boolean            @default(false)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      Message[]    @relation("MessageReplies")
 
   @@index([conversationId])
+  @@index([waMessageId])
   @@map("messages")
 }
 

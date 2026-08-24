@@ -17,9 +17,19 @@ import {
 import {
   extractAccountEvents,
   extractInboundMessages,
+  extractInboundReactions,
+  extractStatusUpdates,
   type InboundWhatsAppMessage,
+  type InboundWhatsAppReaction,
   type WhatsAppAccountEvent,
+  type WhatsAppStatusUpdate,
 } from "@/lib/whatsapp/webhook-payload";
+
+// Ordering for MessageDeliveryStatus's forward-progress-only updates (see processStatusUpdate) —
+// FAILED is deliberately excluded here and handled as its own special case: a later FAILED
+// webhook should never override an already-confirmed DELIVERED/READ, but SENT/DELIVERED/READ
+// should always be free to advance past an earlier FAILED (rare, but Meta can revise a status).
+const DELIVERY_STATUS_RANK: Record<"SENT" | "DELIVERED" | "READ", number> = { SENT: 1, DELIVERED: 2, READ: 3 };
 
 /**
  * Meta's verification handshake, run once when this URL is registered (or re-verified) as the
@@ -119,7 +129,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // knows how to consume plain text input, so there's nothing sensible to feed it for the latter.
   if (!connection.isActive || !message.isText) {
     const image = message.imageMediaId && accessToken ? await downloadInboundImage(message, accessToken) : undefined;
-    await runWhatsAppTurn(
+    const stored = await runWhatsAppTurn(
       {
         botId: connection.botId,
         visitorId: message.from,
@@ -131,7 +141,9 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
       },
       { llm: providerLlm, classify: classifierLlm },
     );
-    await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
+    if (!(stored.kind === "stored_only" && stored.blocked)) {
+      await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
+    }
     return;
   }
 
@@ -153,7 +165,9 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     },
     { llm: providerLlm, classify: classifierLlm },
   );
-  await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
+  if (!(result.kind === "stored_only" && result.blocked)) {
+    await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
+  }
   if (result.kind === "success" && result.status === "HANDOFF") {
     await notifyHandoff(connection.bot.userId, connection.bot.name, message.from);
   }
@@ -175,7 +189,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     });
   });
 
-  for (const reply of result.replies) {
+  for (const [index, reply] of result.replies.entries()) {
     // Markdown is what the engine/Studio speak natively (Logic rule replies, LLM output) — WhatsApp
     // itself gets the plain-text conversion (see toWhatsAppText) so a link or **bold** doesn't show
     // up as literal brackets/asterisks on the customer's phone; the stored Message keeps the
@@ -192,7 +206,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
             accessToken,
           )
         : sendWhatsAppTextMessage(message.phoneNumberId, message.from, toWhatsAppText(reply.content), accessToken);
-    await send.catch((error) => {
+    const waMessageId = await send.catch((error) => {
       // Reply is already persisted to Message by runWhatsAppTurn regardless of delivery — a
       // failed send shows up in the seller's inbox either way, just not on the customer's phone.
       console.error("[whatsapp webhook] failed to send reply", {
@@ -200,8 +214,60 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
         phoneNumberId: message.phoneNumberId,
         error,
       });
+      return undefined;
     });
+
+    // Back-fills this reply's own Message row with the id Meta actually assigned it, so later
+    // status webhooks (delivery/read ticks — see processStatusUpdate) and the Inbox's reaction
+    // picker (sendWhatsAppReaction) have something to reference. "SENT" here reflects that our
+    // own send call succeeded, ahead of Meta's own "sent" status webhook confirming the same
+    // thing — processStatusUpdate's forward-progress-only rule means that webhook, once it
+    // arrives, just no-ops rather than re-setting the same status.
+    const replyMessageId = result.replyMessageIds[index];
+    if (waMessageId && replyMessageId) {
+      await prisma.message
+        .update({ where: { id: replyMessageId }, data: { waMessageId, deliveryStatus: "SENT" } })
+        .catch((error) => {
+          console.error("[whatsapp webhook] failed to record sent message id", { replyMessageId, error });
+        });
+    }
   }
+}
+
+/** Applies a customer's WhatsApp reaction (or its removal — see InboundWhatsAppReaction.emoji's
+ * doc comment) to whichever message it targets — that message can be one of ours or one of
+ * theirs, so this isn't scoped through the inbound message's own conversation lookup. */
+async function processInboundReaction(reaction: InboundWhatsAppReaction): Promise<void> {
+  const target = await prisma.message.findFirst({
+    where: { waMessageId: reaction.targetWaMessageId },
+    select: { id: true },
+  });
+  if (!target) return;
+  await prisma.message.update({ where: { id: target.id }, data: { customerReaction: reaction.emoji || null } });
+}
+
+/** Applies a delivery/read-receipt status update for a message *we* sent — forward-progress-only
+ * (see DELIVERY_STATUS_RANK) so an out-of-order or replayed webhook delivery can't rewind an
+ * already-more-advanced status back to an earlier one. A FAILED update is its own special case:
+ * only applied if nothing has confirmed delivery yet, since a stray/delayed FAILED shouldn't be
+ * able to override a message the customer has already received or read. */
+async function processStatusUpdate(update: WhatsAppStatusUpdate): Promise<void> {
+  const message = await prisma.message.findFirst({
+    where: { waMessageId: update.waMessageId },
+    select: { id: true, deliveryStatus: true },
+  });
+  if (!message) return;
+
+  if (update.status === "failed") {
+    if (message.deliveryStatus === "DELIVERED" || message.deliveryStatus === "READ") return;
+    await prisma.message.update({ where: { id: message.id }, data: { deliveryStatus: "FAILED" } });
+    return;
+  }
+
+  const nextStatus = update.status.toUpperCase() as "SENT" | "DELIVERED" | "READ";
+  const currentRank = message.deliveryStatus ? (DELIVERY_STATUS_RANK[message.deliveryStatus as "SENT" | "DELIVERED" | "READ"] ?? 0) : 0;
+  if (DELIVERY_STATUS_RANK[nextStatus] <= currentRank) return;
+  await prisma.message.update({ where: { id: message.id }, data: { deliveryStatus: nextStatus } });
 }
 
 /**
@@ -270,6 +336,8 @@ export async function POST(request: NextRequest) {
 
   const payload = JSON.parse(rawBody) as unknown;
   const messages = extractInboundMessages(payload);
+  const reactions = extractInboundReactions(payload);
+  const statusUpdates = extractStatusUpdates(payload);
   const accountEvents = extractAccountEvents(payload);
 
   after(async () => {
@@ -280,6 +348,19 @@ export async function POST(request: NextRequest) {
           waMessageId: message.waMessageId,
           error,
         });
+      });
+    }
+    for (const reaction of reactions) {
+      await processInboundReaction(reaction).catch((error) => {
+        console.error("[whatsapp webhook] failed to process reaction", {
+          targetWaMessageId: reaction.targetWaMessageId,
+          error,
+        });
+      });
+    }
+    for (const update of statusUpdates) {
+      await processStatusUpdate(update).catch((error) => {
+        console.error("[whatsapp webhook] failed to process status update", { waMessageId: update.waMessageId, error });
       });
     }
     for (const event of accountEvents) {

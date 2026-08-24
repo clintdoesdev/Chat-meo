@@ -378,6 +378,28 @@ export function ActionsStarIcon({ size = 16, className, filled = false }: IconPr
   );
 }
 
+export function ActionsBlockIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="7" />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="7"
+        d="M17.4 17.4l29.2 29.2"
+      />
+    </svg>
+  );
+}
+
 export function ActionsUndoIcon({ size = 16, className }: IconProps) {
   return (
     <svg

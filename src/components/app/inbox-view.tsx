@@ -2,6 +2,7 @@
 
 import {
   ActionsArchiveIcon,
+  ActionsBlockIcon,
   ActionsCheckIcon,
   ActionsCloseIcon,
   ActionsDuplicateIcon,
@@ -30,18 +31,37 @@ import {
   deleteConversations,
   deleteFolder,
   deleteMessage,
+  forwardMessage,
   getConversationMessages,
   listConversations,
   resolveConversation,
   restartBotForConversation,
   sendAgentReply,
   setConversationArchived,
+  setConversationBlocked,
+  setMessageReaction,
   toggleMessageStar,
   type ConversationDetail,
   type ConversationSummary,
   type FolderSummary,
 } from "@/lib/actions/inbox";
+import { getLinkPreview, type LinkPreviewData } from "@/lib/actions/link-preview";
 import { timeAgo } from "@/lib/time";
+
+// WhatsApp's own quick-reaction set — matches what its picker offers, so the seller's reaction
+// options look native rather than invented.
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+const FIRST_URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
+const TRAILING_URL_PUNCTUATION = /[.,!?;:'")\]]+$/;
+
+/** The first http(s) URL in a plain-text message, if any — trimmed of trailing punctuation a
+ * sentence would naturally end the URL with (a period, a closing paren, ...) so that doesn't get
+ * fetched as part of the address. Used to decide whether to show a link preview card. */
+function extractFirstUrl(text: string): string | null {
+  const match = FIRST_URL_PATTERN.exec(text);
+  return match ? match[0].replace(TRAILING_URL_PUNCTUATION, "") : null;
+}
 
 type DetailMessage = ConversationDetail["messages"][number];
 
@@ -207,6 +227,11 @@ export function InboxView({
   const [matchIndex, setMatchIndex] = useState(0);
   // In-progress touch swipe on one message row — dx is the live horizontal drag offset in px.
   const [swipe, setSwipe] = useState<{ id: string; dx: number } | null>(null);
+  const [blocking, setBlocking] = useState(false);
+  const [reactingId, setReactingId] = useState<string | null>(null);
+  const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null);
+  const [forwardPending, setForwardPending] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
 
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -458,6 +483,10 @@ export function InboxView({
                 replyTo: quoting
                   ? { id: quoting.id, role: quoting.role, content: quoting.content, contentType: quoting.contentType, caption: quoting.caption }
                   : null,
+                customerReaction: null,
+                agentReaction: null,
+                deliveryStatus: null,
+                forwarded: false,
               },
             ],
           }
@@ -520,6 +549,53 @@ export function InboxView({
     }
     setDetail((prev) => (prev ? { ...prev, archived: next } : prev));
     patchConversation(activeId, { archived: next });
+  }
+
+  async function handleBlockToggle() {
+    if (!activeId || !detail) return;
+    const next = !detail.blocked;
+    setBlocking(true);
+    const result = await setConversationBlocked(activeId, next);
+    setBlocking(false);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) => (prev ? { ...prev, blocked: next } : prev));
+    patchConversation(activeId, { blocked: next });
+  }
+
+  async function handleSetReaction(message: DetailMessage, emoji: string) {
+    const next = message.agentReaction === emoji ? null : emoji;
+    setReactingId(message.id);
+    setDetail((prev) =>
+      prev ? { ...prev, messages: prev.messages.map((m) => (m.id === message.id ? { ...m, agentReaction: next } : m)) } : prev,
+    );
+    const result = await setMessageReaction(message.id, next);
+    setReactingId(null);
+    if (result.error) {
+      setDetail((prev) =>
+        prev
+          ? { ...prev, messages: prev.messages.map((m) => (m.id === message.id ? { ...m, agentReaction: message.agentReaction } : m)) }
+          : prev,
+      );
+      setReplyError(result.error);
+    }
+  }
+
+  async function handleForward(targetConversationId: string) {
+    if (!forwardingMessageId) return;
+    setForwardPending(true);
+    setForwardError(null);
+    const result = await forwardMessage(forwardingMessageId, targetConversationId);
+    setForwardPending(false);
+    if (result.error) {
+      setForwardError(result.error);
+      return;
+    }
+    setForwardingMessageId(null);
+    if (activeId === targetConversationId) setDetail(await getConversationMessages(targetConversationId));
+    patchConversation(targetConversationId, { status: "HANDOFF" });
   }
 
   async function handleDelete() {
@@ -802,6 +878,11 @@ export function InboxView({
             <div className="flex items-center gap-2">
               <ChannelBadge channel={detail.channel} />
               <StatusBadge status={detail.status} />
+              {detail.blocked && (
+                <span className="flex-shrink-0 rounded-full border border-bad/30 bg-bad/10 px-[11px] py-1 text-[11px] font-semibold text-bad">
+                  Blocked
+                </span>
+              )}
               <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -848,10 +929,13 @@ export function InboxView({
                 folders={folders}
                 currentFolderId={detail.folderId}
                 archived={detail.archived}
+                blocked={detail.blocked}
                 restarting={restarting}
                 archiving={archiving}
+                blocking={blocking}
                 onRestart={handleRestart}
                 onArchiveToggle={handleArchiveToggle}
+                onBlockToggle={handleBlockToggle}
                 onDelete={() => setShowDeleteConfirm(true)}
                 onMoveToFolder={handleMoveToFolder}
                 onNewFolder={() => setNewFolderTarget(activeId)}
@@ -930,8 +1014,10 @@ export function InboxView({
                     message={item.message}
                     isMine={item.message.role !== "USER"}
                     visitorId={detail.visitorId}
+                    channel={detail.channel}
                     starring={starringId === item.message.id}
                     deleting={deletingMessageId === item.message.id}
+                    reacting={reactingId === item.message.id}
                     highlighted={highlightedMessageId === item.message.id}
                     swipeDx={swipe?.id === item.message.id ? swipe.dx : 0}
                     registerRef={(el) => {
@@ -941,6 +1027,8 @@ export function InboxView({
                     onReply={() => setReplyingTo(item.message)}
                     onStar={() => handleToggleStar(item.message)}
                     onCopy={() => handleCopyMessage(item.message)}
+                    onReact={(emoji) => handleSetReaction(item.message, emoji)}
+                    onForward={() => setForwardingMessageId(item.message.id)}
                     onDeleteRequest={() => setMessagePendingDeleteId(item.message.id)}
                     onJumpToQuote={item.message.replyTo ? () => jumpToMessage(item.message.replyTo!.id) : undefined}
                     onSwipeStart={(x) => {
@@ -1026,6 +1114,19 @@ export function InboxView({
         />
       )}
 
+      {forwardingMessageId && (
+        <ForwardMessageModal
+          conversations={conversations.filter((c) => c.id !== activeId)}
+          pending={forwardPending}
+          error={forwardError}
+          onCancel={() => {
+            setForwardingMessageId(null);
+            setForwardError(null);
+          }}
+          onForward={handleForward}
+        />
+      )}
+
       {showDeleteAllConfirm && (
         <DeleteAllConfirmModal
           count={filtered.length}
@@ -1051,23 +1152,44 @@ export function InboxView({
   );
 }
 
-// One message bubble, plus its swipe-to-reply gesture (touch) and hover action row (Reply, Star,
-// Copy, Delete — desktop's equivalent of a right-click/long-press context menu). `isMine` covers
-// both AGENT and BOT — from the seller's point of view in their own Inbox, the bot speaks for the
-// business the same way a typed agent reply does, so both sit on "our" side, opposite the
-// customer (USER).
+// Tick glyphs for MessageTicks below — a plain check for sent/delivered, a slightly bolder pair
+// for delivered, and the same pair in blue for read, matching WhatsApp Web's own convention
+// closely enough to read instantly to anyone who's used WhatsApp.
+function MessageTicks({ status }: { status: DetailMessage["deliveryStatus"] }) {
+  if (!status || status === "FAILED") {
+    return status === "FAILED" ? <span className="text-[10px] text-bad">Not delivered</span> : null;
+  }
+  const doubled = status === "DELIVERED" || status === "READ";
+  const colorClass = status === "READ" ? "text-[#53bdeb]" : "text-white/60";
+  return (
+    <span className={`inline-flex items-center ${colorClass}`} aria-label={status.toLowerCase()}>
+      <ActionsCheckIcon size={11} />
+      {doubled && <ActionsCheckIcon size={11} className="-ml-[7px]" />}
+    </span>
+  );
+}
+
+// One message bubble, plus its swipe-to-reply gesture (touch) and hover action row (Reply, React,
+// Star, Copy, Forward, Delete — desktop's equivalent of a right-click/long-press context menu).
+// `isMine` covers both AGENT and BOT — from the seller's point of view in their own Inbox, the
+// bot speaks for the business the same way a typed agent reply does, so both sit on "our" side,
+// opposite the customer (USER).
 function MessageRow({
   message,
   isMine,
   visitorId,
+  channel,
   starring,
   deleting,
+  reacting,
   highlighted,
   swipeDx,
   registerRef,
   onReply,
   onStar,
   onCopy,
+  onReact,
+  onForward,
   onDeleteRequest,
   onJumpToQuote,
   onSwipeStart,
@@ -1077,14 +1199,18 @@ function MessageRow({
   message: DetailMessage;
   isMine: boolean;
   visitorId: string;
+  channel: "WHATSAPP" | "WEB";
   starring: boolean;
   deleting: boolean;
+  reacting: boolean;
   highlighted: boolean;
   swipeDx: number;
   registerRef: (el: HTMLDivElement | null) => void;
   onReply: () => void;
   onStar: () => void;
   onCopy: () => void;
+  onReact: (emoji: string) => void;
+  onForward: () => void;
   onDeleteRequest: () => void;
   onJumpToQuote?: () => void;
   onSwipeStart: (clientX: number) => void;
@@ -1092,6 +1218,18 @@ function MessageRow({
   onSwipeEnd: () => void;
 }) {
   const canCopy = message.contentType === "TEXT" || Boolean(message.caption);
+  const linkPreviewUrl = message.contentType === "TEXT" ? extractFirstUrl(message.content) : null;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function handleClick(event: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) setPickerOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [pickerOpen]);
 
   return (
     <div
@@ -1133,6 +1271,9 @@ function MessageRow({
             transition: swipeDx ? "none" : "transform 150ms ease-out",
           }}
         >
+          {message.forwarded && (
+            <p className={`px-3 pt-2 text-[10.5px] italic ${isMine ? "text-white/70" : "text-muted"}`}>Forwarded</p>
+          )}
           {message.replyTo && (
             <button
               type="button"
@@ -1163,12 +1304,29 @@ function MessageRow({
                 message.content,
                 "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
               )}
+              {linkPreviewUrl && <MessageLinkPreview url={linkPreviewUrl} />}
+            </div>
+          )}
+
+          {isMine && channel === "WHATSAPP" && message.deliveryStatus && (
+            <div className="flex justify-end px-3.5 pb-1.5">
+              <MessageTicks status={message.deliveryStatus} />
             </div>
           )}
 
           {message.starred && (
             <span className="absolute -top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#161616]">
               <ActionsStarIcon size={9} filled className="text-orange-2" />
+            </span>
+          )}
+          {(message.customerReaction || message.agentReaction) && (
+            <span
+              className={`absolute -bottom-2 flex items-center gap-0.5 rounded-full border border-line-2 bg-[#161616] px-1 py-0.5 text-[10px] ${
+                isMine ? "left-1.5" : "right-1.5"
+              }`}
+            >
+              {message.customerReaction && <span>{message.customerReaction}</span>}
+              {message.agentReaction && <span>{message.agentReaction}</span>}
             </span>
           )}
         </div>
@@ -1187,6 +1345,45 @@ function MessageRow({
           >
             <ActionsUndoIcon size={11} />
           </button>
+          <div ref={pickerRef} className="relative">
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => setPickerOpen((v) => !v)}
+              disabled={reacting}
+              aria-label="React"
+              aria-pressed={pickerOpen}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-[12px] leading-none transition hover:bg-white/[.08] disabled:opacity-50"
+            >
+              {reacting ? <AnimatedSpinnerIcon size={10} className="text-muted" /> : "🙂"}
+            </button>
+            {pickerOpen && (
+              <div
+                className={`absolute top-[calc(100%+6px)] z-[90] flex items-center gap-0.5 rounded-full border border-line-2 bg-[#161616] p-1 shadow-[0_20px_50px_-16px_rgba(0,0,0,.9)] ${
+                  isMine ? "right-0" : "left-0"
+                }`}
+              >
+                {QUICK_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    data-fx-skip
+                    onClick={() => {
+                      onReact(emoji);
+                      setPickerOpen(false);
+                    }}
+                    aria-label={`React with ${emoji}`}
+                    aria-pressed={message.agentReaction === emoji}
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-[15px] transition hover:bg-white/[.1] ${
+                      message.agentReaction === emoji ? "bg-orange/15" : ""
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             data-fx-skip
@@ -1215,6 +1412,15 @@ function MessageRow({
           <button
             type="button"
             data-fx-skip
+            onClick={onForward}
+            aria-label="Forward"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-white/[.08] hover:text-text"
+          >
+            <ActionsUndoIcon size={11} className="-scale-x-100" />
+          </button>
+          <button
+            type="button"
+            data-fx-skip
             onClick={onDeleteRequest}
             disabled={deleting}
             aria-label="Delete message"
@@ -1228,14 +1434,58 @@ function MessageRow({
   );
 }
 
+// Fetches (once per url, via getLinkPreview's session-gated, SSRF-guarded server action — see
+// src/lib/actions/link-preview.ts) and renders an OpenGraph-style card for a link found in a
+// TEXT message. Renders nothing while loading or if no preview could be built — a missing card
+// just means the plain text (already shown above it) is all there is, never an error state.
+function MessageLinkPreview({ url }: { url: string }) {
+  const [preview, setPreview] = useState<LinkPreviewData | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreview(undefined);
+    getLinkPreview(url).then((data) => {
+      if (!cancelled) setPreview(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  if (!preview) return null;
+
+  return (
+    <a
+      href={preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-fx-skip
+      className="mt-1.5 flex gap-2 overflow-hidden rounded-xl border border-white/10 bg-black/10 no-underline transition hover:brightness-110"
+    >
+      {preview.image && (
+        // eslint-disable-next-line @next/next/no-img-element -- arbitrary remote URL, next/image can't optimize it
+        <img src={preview.image} alt="" className="h-16 w-16 flex-shrink-0 object-cover" />
+      )}
+      <span className="min-w-0 flex-1 py-1.5 pr-2">
+        <span className="block truncate text-[10px] uppercase tracking-wide opacity-60">{preview.siteName}</span>
+        {preview.title && <span className="block truncate text-[12px] font-semibold">{preview.title}</span>}
+        {preview.description && <span className="line-clamp-2 block text-[11px] opacity-75">{preview.description}</span>}
+      </span>
+    </a>
+  );
+}
+
 function ConversationMenu({
   folders,
   currentFolderId,
   archived,
+  blocked,
   restarting,
   archiving,
+  blocking,
   onRestart,
   onArchiveToggle,
+  onBlockToggle,
   onDelete,
   onMoveToFolder,
   onNewFolder,
@@ -1243,10 +1493,13 @@ function ConversationMenu({
   folders: FolderSummary[];
   currentFolderId: string | null;
   archived: boolean;
+  blocked: boolean;
   restarting: boolean;
   archiving: boolean;
+  blocking: boolean;
   onRestart: () => void;
   onArchiveToggle: () => void;
+  onBlockToggle: () => void;
   onDelete: () => void;
   onMoveToFolder: (folderId: string | null) => void;
   onNewFolder: () => void;
@@ -1357,6 +1610,19 @@ function ConversationMenu({
           >
             {archiving ? <AnimatedSpinnerIcon size={13} /> : <ActionsArchiveIcon size={13} />}
             {archived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            type="button"
+            data-fx-skip
+            disabled={blocking}
+            onClick={() => {
+              onBlockToggle();
+              setOpen(false);
+            }}
+            className={`${itemClass} ${blocked ? "" : "text-bad"}`}
+          >
+            {blocking ? <AnimatedSpinnerIcon size={13} /> : <ActionsBlockIcon size={13} />}
+            {blocked ? "Unblock" : "Block"}
           </button>
           <button
             type="button"
@@ -1477,6 +1743,95 @@ function DeleteMessageConfirmModal({
               className="rounded-full bg-bad px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
             >
               {pending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ForwardMessageModal({
+  conversations,
+  pending,
+  error,
+  onCancel,
+  onForward,
+}: {
+  conversations: ConversationSummary[];
+  pending: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onForward: (conversationId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const trimmed = query.trim().toLowerCase();
+  const matches = trimmed
+    ? conversations.filter(
+        (c) => c.visitorId.toLowerCase().includes(trimmed) || c.botName.toLowerCase().includes(trimmed),
+      )
+    : conversations;
+
+  return (
+    <>
+      <div onClick={pending ? undefined : onCancel} aria-hidden="true" className="fixed inset-0 z-[105] bg-black/60" />
+      <div className="fixed inset-0 z-[106] flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Forward message"
+          className="flex max-h-[70vh] w-full max-w-[380px] flex-col rounded-2xl border border-line bg-[#111] p-5 shadow-[0_24px_80px_-16px_rgba(0,0,0,.7)]"
+        >
+          <h3 className="text-[14px] font-semibold">Forward to…</h3>
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by visitor or bot"
+            className="mt-3 w-full rounded-xl border border-line-2 bg-card-2 px-3.5 py-2.5 text-[13px] text-text placeholder:text-muted focus:border-orange-2/50 focus:outline-none"
+          />
+          {error && <p className="mt-2 text-[11.5px] text-bad">{error}</p>}
+          <div className="mt-3 flex-1 overflow-y-auto">
+            {matches.length === 0 ? (
+              <p className="py-6 text-center text-[12.5px] text-muted">No conversations match.</p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {matches.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    data-fx-skip
+                    disabled={pending}
+                    onClick={() => onForward(c.id)}
+                    className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-card-2 disabled:opacity-50"
+                  >
+                    <span
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+                      style={{ background: c.channel === "WHATSAPP" ? "rgba(78,216,142,.15)" : "rgba(255,92,22,.15)" }}
+                    >
+                      {c.channel === "WHATSAPP" ? (
+                        <ChannelsWhatsappIcon size={14} className="text-ok" />
+                      ) : (
+                        <ChannelsWidgetIcon size={14} className="text-orange-2" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-medium text-text">{c.botName}</span>
+                      <span className="block truncate text-[11px] text-muted">{c.visitorId}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={pending}
+              className="rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[12.5px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              Cancel
             </button>
           </div>
         </div>

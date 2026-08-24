@@ -40,8 +40,19 @@ export type RunWhatsAppTurnParams = {
 };
 
 export type RunWhatsAppTurnResult =
-  | { kind: "stored_only" }
-  | { kind: "success"; replies: Reply[]; status: EngineStatus; withinWindow: boolean };
+  | { kind: "stored_only"; blocked: boolean }
+  | {
+      kind: "success";
+      replies: Reply[];
+      status: EngineStatus;
+      withinWindow: boolean;
+      /** Parallel array to `replies` (only populated when `withinWindow` — the out-of-window
+       * branch persists a warning message instead, never actually sent) — each reply's own
+       * Message row id, so the webhook route can back-fill Message.waMessageId once it knows
+       * what Meta's send call returned for that reply (see processInboundMessage in
+       * src/app/api/webhooks/whatsapp/route.ts). */
+      replyMessageIds: string[];
+    };
 
 /**
  * The WhatsApp webhook's counterpart to runChatTurn (src/lib/chat/run-turn.ts) — same engine,
@@ -116,7 +127,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   // in the merge below. Skipped whenever the engine won't run this turn (no flow, or already
   // handed off — see below), since nothing will read it.
   const priorHistory: LlmChatMessage[] =
-    graph && conversation.status !== "HANDOFF"
+    graph && conversation.status !== "HANDOFF" && !conversation.blocked
       ? (
           await prisma.message.findMany({
             where: { conversationId: conversation.id },
@@ -150,16 +161,24 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
 
   // A HANDOFF conversation stays that way for good — step() would no-op on it anyway (see
   // executor.ts), but skipping the engine here also avoids loading the flow graph/history for a
-  // turn that was never going to produce a reply. The message above is still stored either way,
-  // so the seller sees it in the Inbox and can reply there themselves.
-  if (!graph || conversation.status === "HANDOFF") {
+  // turn that was never going to produce a reply. A blocked conversation is the seller's own
+  // "stop bothering me" — same skip, permanently, until they unblock it (setConversationBlocked
+  // in src/lib/actions/inbox.ts). The message above is still stored either way, so the seller
+  // sees it in the Inbox and can reply there themselves (or just has a record of it).
+  if (!graph || conversation.status === "HANDOFF" || conversation.blocked) {
     await prisma.conversation.update({ where: { id: conversation.id }, data: { lastInboundAt } });
     console.log("[whatsapp] stored inbound message, engine not run", {
       botId: params.botId,
       conversationId: conversation.id,
-      reason: conversation.status === "HANDOFF" ? "handoff" : shouldRunEngine ? "no_active_flow" : "connection_paused",
+      reason: conversation.blocked
+        ? "blocked"
+        : conversation.status === "HANDOFF"
+          ? "handoff"
+          : shouldRunEngine
+            ? "no_active_flow"
+            : "connection_paused",
     });
-    return { kind: "stored_only" };
+    return { kind: "stored_only", blocked: conversation.blocked };
   }
 
   const state = parseEngineState(conversation.engineState, graph);
@@ -180,20 +199,28 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   const output = await step(graph, state, params.message, engineDeps);
   const withinWindow = isWithinServiceWindow(lastInboundAt);
 
+  const replyMessageIds: string[] = [];
   if (output.replies.length > 0) {
     if (withinWindow) {
-      await prisma.message.createMany({
-        data: output.replies.map((reply) => ({
-          conversationId: conversation.id,
-          role: "BOT" as const,
-          content: reply.content,
-          contentType: reply.contentType ?? "TEXT",
-          caption: reply.caption ?? null,
-          promptTokens: reply.promptTokens ?? null,
-          completionTokens: reply.completionTokens ?? null,
-          channel: "WHATSAPP" as const,
-        })),
-      });
+      // Sequential create()s rather than one createMany() — unlike createMany, this hands back
+      // each row's own id, which processInboundMessage needs (in the same order as `replies`) to
+      // back-fill Message.waMessageId once it knows what Meta's send call actually returned.
+      for (const reply of output.replies) {
+        const row = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: "BOT",
+            content: reply.content,
+            contentType: reply.contentType ?? "TEXT",
+            caption: reply.caption ?? null,
+            promptTokens: reply.promptTokens ?? null,
+            completionTokens: reply.completionTokens ?? null,
+            channel: "WHATSAPP",
+          },
+          select: { id: true },
+        });
+        replyMessageIds.push(row.id);
+      }
     } else {
       console.warn("[whatsapp] suppressing reply, outside 24h service window", {
         botId: params.botId,
@@ -229,5 +256,5 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     withinWindow,
   });
 
-  return { kind: "success", replies: output.replies, status: output.state.status, withinWindow };
+  return { kind: "success", replies: output.replies, status: output.state.status, withinWindow, replyMessageIds };
 }
