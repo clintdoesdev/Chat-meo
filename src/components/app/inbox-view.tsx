@@ -5,6 +5,7 @@ import {
   ActionsBlockIcon,
   ActionsCheckIcon,
   ActionsCloseIcon,
+  ActionsDownloadIcon,
   ActionsDuplicateIcon,
   ActionsFolderIcon,
   ActionsMoreIcon,
@@ -31,6 +32,7 @@ import {
   deleteConversations,
   deleteFolder,
   deleteMessage,
+  exportConversationsAsText,
   forwardMessage,
   getConversationMessages,
   listConversations,
@@ -133,6 +135,19 @@ function buildRenderItems(messages: DetailMessage[]): RenderItem[] {
   return items;
 }
 
+// Triggers a browser download of `text` as a local file — no server round trip beyond the
+// exportConversationsAsText call that already produced it. The object URL is revoked right after
+// the click since the browser has already grabbed what it needs by then.
+function downloadTextFile(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // "all" | "HANDOFF" | "OPEN" | "RESOLVED" | "ARCHIVED" | `folder:${id}` — kept as plain string
 // rather than a template-literal union since it's compared, never pattern-matched.
 type Filter = string;
@@ -232,6 +247,8 @@ export function InboxView({
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null);
   const [forwardPending, setForwardPending] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
+  const [exportingAll, setExportingAll] = useState(false);
+  const [exportingConversationId, setExportingConversationId] = useState<string | null>(null);
 
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -598,6 +615,28 @@ export function InboxView({
     patchConversation(targetConversationId, { status: "HANDOFF" });
   }
 
+  async function handleExportAll() {
+    setExportingAll(true);
+    const result = await exportConversationsAsText();
+    setExportingAll(false);
+    if (result.error || !result.text) {
+      setReplyError(result.error ?? "Nothing to export.");
+      return;
+    }
+    downloadTextFile(`chatmeo-export-${new Date().toISOString().slice(0, 10)}.txt`, result.text);
+  }
+
+  async function handleExportConversation(conversationId: string, visitorId: string) {
+    setExportingConversationId(conversationId);
+    const result = await exportConversationsAsText([conversationId]);
+    setExportingConversationId(null);
+    if (result.error || !result.text) {
+      setReplyError(result.error ?? "Nothing to export.");
+      return;
+    }
+    downloadTextFile(`chatmeo-${visitorId}-${new Date().toISOString().slice(0, 10)}.txt`, result.text);
+  }
+
   async function handleDelete() {
     if (!activeId) return;
     setDeleting(true);
@@ -762,17 +801,29 @@ export function InboxView({
         <span className="text-[11.5px] text-muted">
           {filtered.length} conversation{filtered.length === 1 ? "" : "s"}
         </span>
-        {filtered.length > 0 && (
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             data-fx-skip
-            onClick={() => setShowDeleteAllConfirm(true)}
-            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-1.5 text-[11.5px] font-semibold text-muted transition hover:border-bad/40 hover:text-bad"
+            onClick={handleExportAll}
+            disabled={exportingAll}
+            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-1.5 text-[11.5px] font-semibold text-muted transition hover:border-orange-2/40 hover:text-text disabled:opacity-50"
           >
-            <ActionsTrashIcon size={11} />
-            Delete all shown
+            {exportingAll ? <AnimatedSpinnerIcon size={11} /> : <ActionsDownloadIcon size={11} />}
+            Export all chats
           </button>
-        )}
+          {filtered.length > 0 && (
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => setShowDeleteAllConfirm(true)}
+              className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-3 py-1.5 text-[11.5px] font-semibold text-muted transition hover:border-bad/40 hover:text-bad"
+            >
+              <ActionsTrashIcon size={11} />
+              Delete all shown
+            </button>
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -933,9 +984,11 @@ export function InboxView({
                 restarting={restarting}
                 archiving={archiving}
                 blocking={blocking}
+                exporting={exportingConversationId === activeId}
                 onRestart={handleRestart}
                 onArchiveToggle={handleArchiveToggle}
                 onBlockToggle={handleBlockToggle}
+                onExport={() => activeId && handleExportConversation(activeId, detail.visitorId)}
                 onDelete={() => setShowDeleteConfirm(true)}
                 onMoveToFolder={handleMoveToFolder}
                 onNewFolder={() => setNewFolderTarget(activeId)}
@@ -1483,9 +1536,11 @@ function ConversationMenu({
   restarting,
   archiving,
   blocking,
+  exporting,
   onRestart,
   onArchiveToggle,
   onBlockToggle,
+  onExport,
   onDelete,
   onMoveToFolder,
   onNewFolder,
@@ -1497,9 +1552,11 @@ function ConversationMenu({
   restarting: boolean;
   archiving: boolean;
   blocking: boolean;
+  exporting: boolean;
   onRestart: () => void;
   onArchiveToggle: () => void;
   onBlockToggle: () => void;
+  onExport: () => void;
   onDelete: () => void;
   onMoveToFolder: (folderId: string | null) => void;
   onNewFolder: () => void;
@@ -1610,6 +1667,19 @@ function ConversationMenu({
           >
             {archiving ? <AnimatedSpinnerIcon size={13} /> : <ActionsArchiveIcon size={13} />}
             {archived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            type="button"
+            data-fx-skip
+            disabled={exporting}
+            onClick={() => {
+              onExport();
+              setOpen(false);
+            }}
+            className={itemClass}
+          >
+            {exporting ? <AnimatedSpinnerIcon size={13} /> : <ActionsDownloadIcon size={13} />}
+            Export chat
           </button>
           <button
             type="button"

@@ -653,3 +653,90 @@ export async function assignConversationToFolder(
   await prisma.conversation.update({ where: { id: conversationId }, data: { folderId } });
   return { error: null };
 }
+
+export type ExportResult = { text: string | null; error: string | null };
+
+const MAX_EXPORT_CONVERSATIONS = 500;
+
+function formatExportTimestamp(date: Date): string {
+  return date.toISOString().slice(0, 16).replace("T", " ");
+}
+
+function exportRoleLabel(role: "BOT" | "USER" | "AGENT", visitorId: string): string {
+  if (role === "USER") return visitorId;
+  if (role === "AGENT") return "You";
+  return "Bot";
+}
+
+function exportMessageLine(
+  message: {
+    role: "BOT" | "USER" | "AGENT";
+    content: string;
+    contentType: "TEXT" | "IMAGE";
+    caption: string | null;
+    createdAt: Date;
+  },
+  visitorId: string,
+): string {
+  const body = message.contentType === "IMAGE" ? `[Image${message.caption ? `: ${message.caption}` : ""}]` : message.content;
+  return `[${formatExportTimestamp(message.createdAt)}] ${exportRoleLabel(message.role, visitorId)}: ${body}`;
+}
+
+/**
+ * Exports full transcripts as one plain-text document — meant to be downloaded and, e.g., pasted
+ * into a chat with an AI assistant to review reply/logic issues against real conversations, not
+ * just the Studio Test drawer's synthetic ones. `conversationIds` omitted or empty exports every
+ * conversation across every bot this seller owns (capped at MAX_EXPORT_CONVERSATIONS, newest
+ * first); otherwise only those ids — still scoped to bots this seller owns, same as every other
+ * action here. An inbound image's actual bytes are never included (that data: URI would make the
+ * export enormous and isn't useful pasted into a chat) — just a bracketed placeholder and its
+ * caption, if any.
+ */
+export async function exportConversationsAsText(conversationIds?: string[]): Promise<ExportResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { text: null, error: "Not signed in." };
+
+  const conversations = await prisma.conversation.findMany({
+    where: {
+      bot: { userId: session.user.id },
+      ...(conversationIds && conversationIds.length > 0 ? { id: { in: conversationIds } } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: MAX_EXPORT_CONVERSATIONS,
+    select: {
+      visitorId: true,
+      status: true,
+      createdAt: true,
+      lastInboundAt: true,
+      bot: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: { role: true, content: true, contentType: true, caption: true, createdAt: true },
+      },
+    },
+  });
+
+  if (conversations.length === 0) return { text: null, error: "No conversations to export." };
+
+  const sections = conversations.map((conversation) => {
+    const channel = conversation.lastInboundAt !== null ? "WhatsApp" : "Web preview";
+    const header = [
+      `Bot: ${conversation.bot.name} · Visitor: ${conversation.visitorId} · Channel: ${channel} · Status: ${conversation.status}`,
+      `Started: ${formatExportTimestamp(conversation.createdAt)}`,
+    ].join("\n");
+    const body =
+      conversation.messages.length > 0
+        ? conversation.messages.map((m) => exportMessageLine(m, conversation.visitorId)).join("\n")
+        : "(no messages)";
+    return `${"=".repeat(60)}\n${header}\n${"-".repeat(60)}\n${body}`;
+  });
+
+  const text = [
+    `Chatmeo export — ${new Date().toISOString()}`,
+    `${conversations.length} conversation${conversations.length === 1 ? "" : "s"}`,
+    "",
+    ...sections,
+  ].join("\n\n");
+
+  return { text, error: null };
+}
