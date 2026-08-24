@@ -38,10 +38,10 @@ const FlowNodeDataSchema = z.object({
   // looser here since the executor is the source of truth for the actual cap.
   delaySeconds: z.number().min(0).max(120).optional(),
   variants: z.array(ReplyVariantSchema).max(20).optional(),
-  // A base64 `data:` URI — sized generously above a 200KB source image (see MAX_IMAGE_BYTES in
-  // node-inspector.tsx) to account for base64's ~33% overhead plus the "data:image/...;base64,"
+  // A base64 `data:` URI — sized generously above a 2MB source image (see MAX_REPLY_IMAGE_BYTES
+  // in node-inspector.tsx) to account for base64's ~33% overhead plus the "data:image/...;base64,"
   // prefix, without leaving the cap effectively unbounded.
-  imageDataUri: z.string().max(300_000).optional(),
+  imageDataUri: z.string().max(2_900_000).optional(),
   variable: z.string().optional(),
   branches: z.array(ConditionBranchSchema).optional(),
   rules: z.array(LogicRuleSchema).optional(),

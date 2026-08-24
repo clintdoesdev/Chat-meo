@@ -53,10 +53,13 @@ function newVariantId(): string {
 
 const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-// Same cap as the Bot avatar upload (src/components/app/bot-settings-modal.tsx) — no blob
-// storage in this app, so this becomes a `data:` URI embedded straight into the flow graph's
-// JSON (see FlowGraphSchema's imageDataUri cap in src/lib/flow-schema.ts).
-const MAX_REPLY_IMAGE_BYTES = 200_000;
+// Looser than the Bot avatar upload's 200KB (src/components/app/bot-settings-modal.tsx) — a
+// Reply node's image is the actual message content shown to visitors/customers, not a small
+// profile thumbnail, so it's worth allowing real photo-quality uploads. No blob storage in this
+// app, so this becomes a `data:` URI embedded straight into the flow graph's JSON — see
+// FlowGraphSchema's imageDataUri cap in src/lib/flow-schema.ts, sized to match this, and
+// WhatsApp's own 5MB image message limit, which this stays safely under.
+const MAX_REPLY_IMAGE_BYTES = 2 * 1024 * 1024;
 
 type NodeInspectorProps = {
   node: FlowNode | null;
@@ -92,7 +95,7 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
       return;
     }
     if (file.size > MAX_REPLY_IMAGE_BYTES) {
-      setImageError("That image is too large — try one under 200KB.");
+      setImageError("That image is too large — try one under 2MB.");
       return;
     }
     const reader = new FileReader();
