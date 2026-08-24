@@ -109,6 +109,19 @@ export type ConversationDetail = {
     contentType: "TEXT" | "IMAGE";
     caption: string | null;
     createdAt: string;
+    starred: boolean;
+    replyToId: string | null;
+    // A lightweight snapshot of the quoted message, for rendering the quote inline — null if
+    // this message isn't a reply, or if the message it quoted has since been deleted (replyToId
+    // itself stays set to the dangling id in that case only via the FK's SetNull, so in practice
+    // a deleted quote just means this comes back null while replyToId is cleared too).
+    replyTo: {
+      id: string;
+      role: "BOT" | "USER" | "AGENT";
+      content: string;
+      contentType: "TEXT" | "IMAGE";
+      caption: string | null;
+    } | null;
   }[];
 };
 
@@ -130,7 +143,17 @@ export async function getConversationMessages(conversationId: string): Promise<C
       bot: { select: { name: true, slug: true, userId: true } },
       messages: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, role: true, content: true, contentType: true, caption: true, createdAt: true },
+        select: {
+          id: true,
+          role: true,
+          content: true,
+          contentType: true,
+          caption: true,
+          createdAt: true,
+          starred: true,
+          replyToId: true,
+          replyTo: { select: { id: true, role: true, content: true, contentType: true, caption: true } },
+        },
       },
     },
   });
@@ -154,6 +177,9 @@ export async function getConversationMessages(conversationId: string): Promise<C
       contentType: m.contentType,
       caption: m.caption,
       createdAt: m.createdAt.toISOString(),
+      starred: m.starred,
+      replyToId: m.replyToId,
+      replyTo: m.replyTo,
     })),
   };
 }
@@ -167,8 +193,18 @@ export async function getConversationMessages(conversationId: string): Promise<C
  * `lastInboundAt` is only ever set by the WhatsApp webhook (see Conversation's schema doc
  * comment) — null means this is a widget conversation, which has no live delivery channel yet,
  * so the reply is only stored for the record rather than actually sent anywhere live.
+ *
+ * `replyToId`, when given (the Inbox's swipe/reply-to-message action), is stored on the new
+ * Message so the Inbox can render it as a quoted reply — and, when the quoted message has a
+ * stored `waMessageId` (an inbound WhatsApp message), passed through to Meta as
+ * `context.message_id` so the reply shows as a real quoted reply on the customer's phone too.
+ * Silently ignored (not an error) if it doesn't resolve to a message in this same conversation.
  */
-export async function sendAgentReply(conversationId: string, content: string): Promise<{ error: string | null }> {
+export async function sendAgentReply(
+  conversationId: string,
+  content: string,
+  replyToId?: string,
+): Promise<{ error: string | null }> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Not signed in." };
 
@@ -187,6 +223,11 @@ export async function sendAgentReply(conversationId: string, content: string): P
   });
   if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
 
+  const quoted = replyToId
+    ? await prisma.message.findUnique({ where: { id: replyToId }, select: { conversationId: true, waMessageId: true } })
+    : null;
+  const resolvedReplyToId = quoted && quoted.conversationId === conversationId ? replyToId : undefined;
+
   const isWhatsApp = conversation.lastInboundAt !== null;
 
   if (isWhatsApp) {
@@ -203,7 +244,13 @@ export async function sendAgentReply(conversationId: string, content: string): P
     }
 
     try {
-      await sendWhatsAppTextMessage(connection.phoneNumberId, conversation.visitorId, trimmed, decrypt(connection.accessToken));
+      await sendWhatsAppTextMessage(
+        connection.phoneNumberId,
+        conversation.visitorId,
+        trimmed,
+        decrypt(connection.accessToken),
+        resolvedReplyToId ? (quoted?.waMessageId ?? undefined) : undefined,
+      );
     } catch (error) {
       console.error("[inbox] failed to send agent reply via WhatsApp", { conversationId, error });
       return { error: "Couldn't send — try again." };
@@ -212,11 +259,52 @@ export async function sendAgentReply(conversationId: string, content: string): P
 
   await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, role: "AGENT", content: trimmed, channel: isWhatsApp ? "WHATSAPP" : "WEB" },
+      data: {
+        conversationId,
+        role: "AGENT",
+        content: trimmed,
+        channel: isWhatsApp ? "WHATSAPP" : "WEB",
+        replyToId: resolvedReplyToId,
+      },
     }),
     prisma.conversation.update({ where: { id: conversationId }, data: { status: "HANDOFF" } }),
   ]);
 
+  return { error: null };
+}
+
+/** Stars or unstars a single message — purely an Inbox organization concept (like
+ * Conversation.archived), no effect on engine/bot behavior. Scoped to bots the signed-in user
+ * owns via the conversation → bot relation. */
+export async function toggleMessageStar(messageId: string, starred: boolean): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: { conversation: { select: { bot: { select: { userId: true } } } } },
+  });
+  if (!message || message.conversation.bot.userId !== session.user.id) return { error: "Message not found." };
+
+  await prisma.message.update({ where: { id: messageId }, data: { starred } });
+  return { error: null };
+}
+
+/** Permanently deletes a single message — the per-message counterpart to deleteConversation.
+ * Unlike deleting a whole conversation, this only removes this one row from the transcript (any
+ * reply that quoted it just loses its quote, per replyToId's onDelete: SetNull); it does not
+ * un-send anything already delivered on WhatsApp. */
+export async function deleteMessage(messageId: string): Promise<{ error: string | null }> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not signed in." };
+
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: { conversation: { select: { bot: { select: { userId: true } } } } },
+  });
+  if (!message || message.conversation.bot.userId !== session.user.id) return { error: "Message not found." };
+
+  await prisma.message.delete({ where: { id: messageId } });
   return { error: null };
 }
 

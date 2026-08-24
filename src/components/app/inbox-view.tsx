@@ -4,16 +4,20 @@ import {
   ActionsArchiveIcon,
   ActionsCheckIcon,
   ActionsCloseIcon,
+  ActionsDuplicateIcon,
   ActionsFolderIcon,
   ActionsMoreIcon,
   ActionsPlusIcon,
   ActionsRestartIcon,
   ActionsSearchIcon,
+  ActionsStarIcon,
   ActionsTrashIcon,
+  ActionsUndoIcon,
   AnimatedSpinnerIcon,
   ChannelsWhatsappIcon,
   ChannelsWidgetIcon,
   CommsSendIcon,
+  CommsUserIcon,
   StatusWarningIcon,
 } from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
@@ -25,17 +29,21 @@ import {
   deleteConversation,
   deleteConversations,
   deleteFolder,
+  deleteMessage,
   getConversationMessages,
   listConversations,
   resolveConversation,
   restartBotForConversation,
   sendAgentReply,
   setConversationArchived,
+  toggleMessageStar,
   type ConversationDetail,
   type ConversationSummary,
   type FolderSummary,
 } from "@/lib/actions/inbox";
 import { timeAgo } from "@/lib/time";
+
+type DetailMessage = ConversationDetail["messages"][number];
 
 export type { ConversationSummary };
 
@@ -52,6 +60,58 @@ const BASE_TITLE = "Inbox — Chatmeo";
 // auto-scrolling if the seller is basically already there, but not if they've scrolled up to
 // read history (matches how every mainstream messaging app behaves).
 const NEAR_BOTTOM_PX = 80;
+// How far (px) a touch-swipe on a message has to travel before releasing it counts as "reply to
+// this", rather than snapping back — matches WhatsApp's own swipe-to-reply gesture. Capped at
+// SWIPE_MAX_PX so the row can't be dragged further than the reply icon needs to fully reveal.
+const SWIPE_REPLY_THRESHOLD_PX = 44;
+const SWIPE_MAX_PX = 64;
+
+function dayDividerLabel(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
+// Short, sender-labeled preview of a quoted message — used both for the compose box's "replying
+// to" bar and the inline quote rendered inside a reply bubble. Mirrors ConversationSummary's own
+// image-preview convention (📷 Photo) rather than showing a raw data: URI.
+function quotePreviewText(message: { role: "BOT" | "USER" | "AGENT"; content: string; contentType: "TEXT" | "IMAGE"; caption: string | null }): string {
+  if (message.contentType === "IMAGE") return message.caption ? `📷 ${message.caption}` : "📷 Photo";
+  return message.content;
+}
+
+function quotePreviewLabel(role: "BOT" | "USER" | "AGENT", visitorId: string): string {
+  if (role === "USER") return visitorId;
+  if (role === "AGENT") return "You";
+  return "Bot";
+}
+
+type RenderItem = { kind: "divider"; key: string; label: string } | { kind: "message"; message: DetailMessage };
+
+// Groups a flat message list into day-divider + message render items — a fresh list every call
+// rather than memoized, matching this file's existing "just recompute it" style for derived view
+// state (see `filtered` in InboxView below).
+function buildRenderItems(messages: DetailMessage[]): RenderItem[] {
+  const items: RenderItem[] = [];
+  let lastDay: string | null = null;
+  for (const message of messages) {
+    const day = new Date(message.createdAt).toDateString();
+    if (day !== lastDay) {
+      items.push({ kind: "divider", key: `divider-${message.id}`, label: dayDividerLabel(message.createdAt) });
+      lastDay = day;
+    }
+    items.push({ kind: "message", message });
+  }
+  return items;
+}
 
 // "all" | "HANDOFF" | "OPEN" | "RESOLVED" | "ARCHIVED" | `folder:${id}` — kept as plain string
 // rather than a template-literal union since it's compared, never pattern-matched.
@@ -131,12 +191,31 @@ export function InboxView({
   // conversation id → the lastMessageAt it had the moment it was last opened. Not persisted (no
   // schema for it) — resets on reload, which is an acceptable trade for something this cheap.
   const [lastSeenAt, setLastSeenAt] = useState<Record<string, string>>({});
+  // The message currently being swiped/hover-replied-to, quoted above the compose box until sent
+  // or cancelled. A lightweight snapshot rather than a live message reference, since the original
+  // could scroll out, get starred/deleted, etc. while this is pending.
+  const [replyingTo, setReplyingTo] = useState<DetailMessage | null>(null);
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [starringId, setStarringId] = useState<string | null>(null);
+  const [messagePendingDeleteId, setMessagePendingDeleteId] = useState<string | null>(null);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  // Briefly highlighted after jumping to a message (clicking a quote, or an in-chat search
+  // match) so the seller's eye actually catches which one it landed on.
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messageQuery, setMessageQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  // In-progress touch swipe on one message row — dx is the live horizontal drag offset in px.
+  const [swipe, setSwipe] = useState<{ id: string; dx: number } | null>(null);
 
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sendingReplyRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
+  const messageRefs = useRef(new Map<string, HTMLDivElement>());
+  const swipeStartRef = useRef<{ id: string; x: number } | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filtered = conversations
     .filter((c) => {
@@ -239,6 +318,10 @@ export function InboxView({
     setDetail(null);
     setReplyText("");
     setReplyError(null);
+    setReplyingTo(null);
+    setStarredOnly(false);
+    setSearchOpen(false);
+    setMessageQuery("");
     nearBottomRef.current = true;
     setLoadingDetail(true);
     const result = await getConversationMessages(id);
@@ -251,11 +334,108 @@ export function InboxView({
   function close() {
     setActiveId(null);
     setDetail(null);
+    setReplyingTo(null);
+  }
+
+  function jumpToMessage(id: string) {
+    const el = messageRefs.current.get(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    setHighlightedMessageId(id);
+    highlightTimeoutRef.current = setTimeout(() => setHighlightedMessageId(null), 1400);
+  }
+
+  async function handleToggleStar(message: DetailMessage) {
+    const next = !message.starred;
+    setStarringId(message.id);
+    setDetail((prev) =>
+      prev ? { ...prev, messages: prev.messages.map((m) => (m.id === message.id ? { ...m, starred: next } : m)) } : prev,
+    );
+    const result = await toggleMessageStar(message.id, next);
+    setStarringId(null);
+    if (result.error) {
+      // Roll back — a failed toggle shouldn't silently leave the UI showing the wrong state.
+      setDetail((prev) =>
+        prev ? { ...prev, messages: prev.messages.map((m) => (m.id === message.id ? { ...m, starred: !next } : m)) } : prev,
+      );
+      setReplyError(result.error);
+    }
+  }
+
+  async function handleDeleteMessage(messageId: string) {
+    setDeletingMessageId(messageId);
+    const result = await deleteMessage(messageId);
+    setDeletingMessageId(null);
+    setMessagePendingDeleteId(null);
+    if (result.error) {
+      setReplyError(result.error);
+      return;
+    }
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: prev.messages
+              .filter((m) => m.id !== messageId)
+              // A message that quoted the one just deleted loses its quote (matches the FK's
+              // SetNull) rather than pointing at nothing.
+              .map((m) => (m.replyToId === messageId ? { ...m, replyToId: null, replyTo: null } : m)),
+          }
+        : prev,
+    );
+    if (replyingTo?.id === messageId) setReplyingTo(null);
+  }
+
+  async function handleCopyMessage(message: DetailMessage) {
+    const text = message.contentType === "IMAGE" ? (message.caption ?? "") : message.content;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard access can be denied (permissions, insecure context) — nothing useful to do
+      // beyond not crashing; the seller can still select-and-copy manually.
+    }
+  }
+
+  // Touch-only (see the pointerType guard in the row's handlers below) swipe-to-reply — desktop
+  // gets the hover action row instead, matching how WhatsApp Web itself splits the two.
+  function handleSwipeMove(message: DetailMessage, clientX: number) {
+    if (swipeStartRef.current?.id !== message.id) return;
+    const dx = Math.max(0, Math.min(SWIPE_MAX_PX, clientX - swipeStartRef.current.x));
+    setSwipe({ id: message.id, dx });
+  }
+
+  function handleSwipeEnd(message: DetailMessage) {
+    if (swipeStartRef.current?.id !== message.id) return;
+    swipeStartRef.current = null;
+    if (swipe && swipe.id === message.id && swipe.dx >= SWIPE_REPLY_THRESHOLD_PX) {
+      setReplyingTo(message);
+    }
+    setSwipe(null);
+  }
+
+  function searchMatchesFor(query: string): DetailMessage[] {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed || !detail) return [];
+    return detail.messages.filter((m) =>
+      (m.contentType === "IMAGE" ? (m.caption ?? "") : m.content).toLowerCase().includes(trimmed),
+    );
+  }
+
+  function handleSearchStep(direction: 1 | -1) {
+    const matches = searchMatchesFor(messageQuery);
+    if (matches.length === 0) return;
+    const next = (matchIndex + direction + matches.length) % matches.length;
+    setMatchIndex(next);
+    jumpToMessage(matches[next].id);
   }
 
   async function handleSendReply() {
     const trimmed = replyText.trim();
     if (!trimmed || !activeId) return;
+
+    const quoting = replyingTo;
 
     // Optimistic: shows up instantly instead of waiting on the round trip (WhatsApp send +
     // DB write) — rolled back below if the send actually fails.
@@ -266,22 +446,36 @@ export function InboxView({
             ...prev,
             messages: [
               ...prev.messages,
-              { id: optimisticId, role: "AGENT", content: trimmed, contentType: "TEXT", caption: null, createdAt: new Date().toISOString() },
+              {
+                id: optimisticId,
+                role: "AGENT",
+                content: trimmed,
+                contentType: "TEXT",
+                caption: null,
+                createdAt: new Date().toISOString(),
+                starred: false,
+                replyToId: quoting?.id ?? null,
+                replyTo: quoting
+                  ? { id: quoting.id, role: quoting.role, content: quoting.content, contentType: quoting.contentType, caption: quoting.caption }
+                  : null,
+              },
             ],
           }
         : prev,
     );
     setReplyText("");
+    setReplyingTo(null);
     setSendingReply(true);
     sendingReplyRef.current = true;
     setReplyError(null);
-    const result = await sendAgentReply(activeId, trimmed);
+    const result = await sendAgentReply(activeId, trimmed, quoting?.id);
     setSendingReply(false);
     sendingReplyRef.current = false;
     if (result.error) {
       setReplyError(result.error);
       setDetail((prev) => (prev ? { ...prev, messages: prev.messages.filter((m) => m.id !== optimisticId) } : prev));
       setReplyText(trimmed);
+      setReplyingTo(quoting);
       return;
     }
     setDetail(await getConversationMessages(activeId));
@@ -611,6 +805,33 @@ export function InboxView({
               <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                data-fx-skip
+                onClick={() => {
+                  setSearchOpen((v) => !v);
+                  setMessageQuery("");
+                }}
+                aria-label={searchOpen ? "Close search" : "Search in conversation"}
+                aria-pressed={searchOpen}
+                className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+                  searchOpen ? "bg-orange/10 text-orange-2" : "text-muted hover:bg-white/[.06] hover:text-text"
+                }`}
+              >
+                <ActionsSearchIcon size={12} />
+              </button>
+              <button
+                type="button"
+                data-fx-skip
+                onClick={() => setStarredOnly((v) => !v)}
+                aria-label={starredOnly ? "Show all messages" : "Show starred messages"}
+                aria-pressed={starredOnly}
+                className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+                  starredOnly ? "bg-orange/10 text-orange-2" : "text-muted hover:bg-white/[.06] hover:text-text"
+                }`}
+              >
+                <ActionsStarIcon size={12} filled={starredOnly} />
+              </button>
               {detail.status !== "RESOLVED" && (
                 <button
                   type="button"
@@ -639,6 +860,49 @@ export function InboxView({
           </div>
         )}
 
+        {detail && searchOpen && (
+          <div className="flex items-center gap-2 border-b border-line bg-card-2/50 px-4 py-2">
+            <ActionsSearchIcon size={12} className="flex-shrink-0 text-muted" />
+            <input
+              autoFocus
+              value={messageQuery}
+              onChange={(event) => {
+                setMessageQuery(event.target.value);
+                setMatchIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleSearchStep(event.shiftKey ? -1 : 1);
+                if (event.key === "Escape") setSearchOpen(false);
+              }}
+              placeholder="Search this conversation…"
+              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-text placeholder:text-muted focus:outline-none"
+            />
+            {messageQuery.trim() && (
+              <span className="flex-shrink-0 text-[11px] text-muted">
+                {searchMatchesFor(messageQuery).length > 0 ? `${matchIndex + 1}/${searchMatchesFor(messageQuery).length}` : "0/0"}
+              </span>
+            )}
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => handleSearchStep(-1)}
+              aria-label="Previous match"
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
+            >
+              <ActionsUndoIcon size={11} className="rotate-90" />
+            </button>
+            <button
+              type="button"
+              data-fx-skip
+              onClick={() => handleSearchStep(1)}
+              aria-label="Next match"
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-white/[.06] hover:text-text"
+            >
+              <ActionsUndoIcon size={11} className="-rotate-90" />
+            </button>
+          </div>
+        )}
+
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-5">
           {loadingDetail && (
             <div className="flex h-full items-center justify-center">
@@ -648,48 +912,45 @@ export function InboxView({
           {!loadingDetail && detail && detail.messages.length === 0 && (
             <p className="py-8 text-center text-[13px] text-muted">No messages in this conversation.</p>
           )}
+          {!loadingDetail && detail && detail.messages.length > 0 && starredOnly && !detail.messages.some((m) => m.starred) && (
+            <p className="py-8 text-center text-[13px] text-muted">No starred messages yet.</p>
+          )}
           {!loadingDetail && detail && (
             <div className="flex flex-col gap-3.5">
-              {detail.messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex items-end gap-2 ${message.role === "USER" ? "flex-row-reverse" : ""}`}
-                >
-                  {message.role !== "USER" && (
-                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-card-2">
-                      {message.role === "AGENT" ? (
-                        <span className="text-[9px] font-bold text-orange-2">A</span>
-                      ) : (
-                        <MeoMark size={14} />
-                      )}
+              {buildRenderItems(starredOnly ? detail.messages.filter((m) => m.starred) : detail.messages).map((item) =>
+                item.kind === "divider" ? (
+                  <div key={item.key} className="my-1 flex items-center justify-center">
+                    <span className="rounded-full bg-card-2 px-3 py-1 text-[10.5px] font-semibold text-muted">
+                      {item.label}
                     </span>
-                  )}
-                  <div
-                    className={`max-w-[76%] overflow-hidden rounded-2xl text-[13px] leading-relaxed ${
-                      message.role === "USER"
-                        ? "rounded-br-md bg-grad-orange text-white"
-                        : "rounded-bl-md bg-card-2 text-text"
-                    }`}
-                  >
-                    {message.contentType === "IMAGE" ? (
-                      <>
-                        {/* eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it */}
-                        <img src={message.content} alt={message.caption ?? "Photo"} className="block max-h-72 w-full object-cover" />
-                        {message.caption && (
-                          <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
-                        )}
-                      </>
-                    ) : (
-                      <div className="whitespace-pre-wrap break-words px-3.5 py-2.5">
-                        {formatMessage(
-                          message.content,
-                          "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
-                        )}
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <MessageRow
+                    key={item.message.id}
+                    message={item.message}
+                    isMine={item.message.role !== "USER"}
+                    visitorId={detail.visitorId}
+                    starring={starringId === item.message.id}
+                    deleting={deletingMessageId === item.message.id}
+                    highlighted={highlightedMessageId === item.message.id}
+                    swipeDx={swipe?.id === item.message.id ? swipe.dx : 0}
+                    registerRef={(el) => {
+                      if (el) messageRefs.current.set(item.message.id, el);
+                      else messageRefs.current.delete(item.message.id);
+                    }}
+                    onReply={() => setReplyingTo(item.message)}
+                    onStar={() => handleToggleStar(item.message)}
+                    onCopy={() => handleCopyMessage(item.message)}
+                    onDeleteRequest={() => setMessagePendingDeleteId(item.message.id)}
+                    onJumpToQuote={item.message.replyTo ? () => jumpToMessage(item.message.replyTo!.id) : undefined}
+                    onSwipeStart={(x) => {
+                      swipeStartRef.current = { id: item.message.id, x };
+                    }}
+                    onSwipeMove={(x) => handleSwipeMove(item.message, x)}
+                    onSwipeEnd={() => handleSwipeEnd(item.message)}
+                  />
+                ),
+              )}
             </div>
           )}
           {!loadingDetail && !detail && (
@@ -700,6 +961,25 @@ export function InboxView({
         {detail && (
           <div className="flex-shrink-0 border-t border-line px-4 py-3">
             {replyError && <p className="mb-2 text-[11.5px] text-bad">{replyError}</p>}
+            {replyingTo && (
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-2 border-orange-2 bg-card-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-orange-2">
+                    {quotePreviewLabel(replyingTo.role, detail.visitorId)}
+                  </p>
+                  <p className="truncate text-[12px] text-muted">{quotePreviewText(replyingTo)}</p>
+                </div>
+                <button
+                  type="button"
+                  data-fx-skip
+                  onClick={() => setReplyingTo(null)}
+                  aria-label="Cancel reply"
+                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-white/[.08] hover:text-text"
+                >
+                  <ActionsCloseIcon size={11} />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 rows={1}
@@ -738,6 +1018,14 @@ export function InboxView({
         />
       )}
 
+      {messagePendingDeleteId && (
+        <DeleteMessageConfirmModal
+          pending={deletingMessageId === messagePendingDeleteId}
+          onCancel={() => setMessagePendingDeleteId(null)}
+          onConfirm={() => handleDeleteMessage(messagePendingDeleteId)}
+        />
+      )}
+
       {showDeleteAllConfirm && (
         <DeleteAllConfirmModal
           count={filtered.length}
@@ -760,6 +1048,183 @@ export function InboxView({
         />
       )}
     </>
+  );
+}
+
+// One message bubble, plus its swipe-to-reply gesture (touch) and hover action row (Reply, Star,
+// Copy, Delete — desktop's equivalent of a right-click/long-press context menu). `isMine` covers
+// both AGENT and BOT — from the seller's point of view in their own Inbox, the bot speaks for the
+// business the same way a typed agent reply does, so both sit on "our" side, opposite the
+// customer (USER).
+function MessageRow({
+  message,
+  isMine,
+  visitorId,
+  starring,
+  deleting,
+  highlighted,
+  swipeDx,
+  registerRef,
+  onReply,
+  onStar,
+  onCopy,
+  onDeleteRequest,
+  onJumpToQuote,
+  onSwipeStart,
+  onSwipeMove,
+  onSwipeEnd,
+}: {
+  message: DetailMessage;
+  isMine: boolean;
+  visitorId: string;
+  starring: boolean;
+  deleting: boolean;
+  highlighted: boolean;
+  swipeDx: number;
+  registerRef: (el: HTMLDivElement | null) => void;
+  onReply: () => void;
+  onStar: () => void;
+  onCopy: () => void;
+  onDeleteRequest: () => void;
+  onJumpToQuote?: () => void;
+  onSwipeStart: (clientX: number) => void;
+  onSwipeMove: (clientX: number) => void;
+  onSwipeEnd: () => void;
+}) {
+  const canCopy = message.contentType === "TEXT" || Boolean(message.caption);
+
+  return (
+    <div
+      ref={registerRef}
+      data-message-id={message.id}
+      className={`group flex items-end gap-2 ${isMine ? "flex-row-reverse" : ""}`}
+    >
+      {!isMine && (
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-card-2 text-muted">
+          <CommsUserIcon size={12} />
+        </span>
+      )}
+      <div className="relative max-w-[76%]">
+        {swipeDx > 0 && (
+          <span
+            className="absolute left-[-32px] top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-card-2 text-orange-2"
+            style={{ opacity: Math.min(1, swipeDx / SWIPE_REPLY_THRESHOLD_PX) }}
+            aria-hidden="true"
+          >
+            <ActionsUndoIcon size={12} />
+          </span>
+        )}
+        <div
+          onPointerDown={(event) => {
+            if (event.pointerType === "touch") onSwipeStart(event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (event.pointerType === "touch") onSwipeMove(event.clientX);
+          }}
+          onPointerUp={(event) => {
+            if (event.pointerType === "touch") onSwipeEnd();
+          }}
+          onPointerCancel={() => onSwipeEnd()}
+          className={`relative overflow-hidden rounded-2xl text-[13px] leading-relaxed ${
+            isMine ? "rounded-br-md bg-grad-orange text-white" : "rounded-bl-md bg-card-2 text-text"
+          } ${highlighted ? "ring-2 ring-orange-2 ring-offset-2 ring-offset-[#111]" : ""}`}
+          style={{
+            transform: swipeDx ? `translateX(${swipeDx}px)` : undefined,
+            transition: swipeDx ? "none" : "transform 150ms ease-out",
+          }}
+        >
+          {message.replyTo && (
+            <button
+              type="button"
+              data-fx-skip
+              onClick={onJumpToQuote}
+              className={`block w-full border-l-2 border-orange-2/70 px-3 py-1.5 text-left text-[11.5px] transition hover:brightness-110 ${
+                isMine ? "bg-black/10" : "bg-white/5"
+              }`}
+            >
+              <span className="block font-semibold text-orange-2">
+                {quotePreviewLabel(message.replyTo.role, visitorId)}
+              </span>
+              <span className="block truncate opacity-80">{quotePreviewText(message.replyTo)}</span>
+            </button>
+          )}
+
+          {message.contentType === "IMAGE" ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- data: URI, next/image can't optimize it */}
+              <img src={message.content} alt={message.caption ?? "Photo"} className="block max-h-72 w-full object-cover" />
+              {message.caption && (
+                <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
+              )}
+            </>
+          ) : (
+            <div className="whitespace-pre-wrap break-words px-3.5 py-2.5">
+              {formatMessage(
+                message.content,
+                "underline decoration-1 underline-offset-2 opacity-90 hover:opacity-100",
+              )}
+            </div>
+          )}
+
+          {message.starred && (
+            <span className="absolute -top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#161616]">
+              <ActionsStarIcon size={9} filled className="text-orange-2" />
+            </span>
+          )}
+        </div>
+
+        <div
+          className={`absolute top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-full border border-line-2 bg-[#161616] p-0.5 opacity-0 shadow-[0_8px_20px_-8px_rgba(0,0,0,.6)] transition-opacity group-hover:opacity-100 min-[640px]:flex ${
+            isMine ? "right-full mr-1.5" : "left-full ml-1.5"
+          }`}
+        >
+          <button
+            type="button"
+            data-fx-skip
+            onClick={onReply}
+            aria-label="Reply"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-white/[.08] hover:text-text"
+          >
+            <ActionsUndoIcon size={11} />
+          </button>
+          <button
+            type="button"
+            data-fx-skip
+            onClick={onStar}
+            disabled={starring}
+            aria-label={message.starred ? "Unstar" : "Star"}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-white/[.08] hover:text-text disabled:opacity-50"
+          >
+            {starring ? (
+              <AnimatedSpinnerIcon size={10} />
+            ) : (
+              <ActionsStarIcon size={11} filled={message.starred} className={message.starred ? "text-orange-2" : undefined} />
+            )}
+          </button>
+          {canCopy && (
+            <button
+              type="button"
+              data-fx-skip
+              onClick={onCopy}
+              aria-label="Copy"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-white/[.08] hover:text-text"
+            >
+              <ActionsDuplicateIcon size={11} />
+            </button>
+          )}
+          <button
+            type="button"
+            data-fx-skip
+            onClick={onDeleteRequest}
+            disabled={deleting}
+            aria-label="Delete message"
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition hover:bg-bad/15 hover:text-bad disabled:opacity-50"
+          >
+            {deleting ? <AnimatedSpinnerIcon size={10} /> : <ActionsTrashIcon size={11} />}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -942,6 +1407,59 @@ function DeleteConversationConfirmModal({
             This permanently deletes the full transcript with{" "}
             <strong className="text-text">{visitorId}</strong>. Unlike archiving, this can&apos;t be undone —
             consider archiving instead if you just want it out of the way.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={pending}
+              className="rounded-full border border-line-2 bg-card-2 px-3.5 py-2 text-[12.5px] font-semibold text-text transition hover:border-orange-2/50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={pending}
+              className="rounded-full bg-bad px-3.5 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
+            >
+              {pending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DeleteMessageConfirmModal({
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div onClick={pending ? undefined : onCancel} aria-hidden="true" className="fixed inset-0 z-[105] bg-black/60" />
+      <div className="fixed inset-0 z-[106] flex items-center justify-center p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Delete message"
+          className="w-full max-w-[380px] rounded-2xl border border-line bg-[#111] p-5 shadow-[0_24px_80px_-16px_rgba(0,0,0,.7)]"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-bad/30 bg-bad/10 text-bad">
+              <StatusWarningIcon size={16} />
+            </span>
+            <h3 className="text-[14px] font-semibold">Delete this message?</h3>
+          </div>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
+            This removes it from the transcript here. It doesn&apos;t un-send anything already
+            delivered to the customer.
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <button

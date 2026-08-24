@@ -254,8 +254,23 @@ model Message {
   completionTokens Int?
   channel          MessageChannel     @default(WEB)
   createdAt        DateTime           @default(now())
+  /// Meta's own message id (`wamid...`) for an inbound WhatsApp message — captured so a seller's
+  /// "reply to this message" (see replyToId below) can pass WhatsApp's own `context.message_id`,
+  /// making the Inbox's reply show as a real quoted reply on the customer's phone too, not just
+  /// here. Never set for a WEB-channel message or an outbound one.
+  waMessageId      String?
+  /// Set when this message was sent as an explicit reply to an earlier one in the same
+  /// conversation — the Inbox's swipe/reply-to-message action (src/lib/actions/inbox.ts). SetNull
+  /// rather than cascading: deleting the quoted message shouldn't take this reply down with it,
+  /// just drop the quote.
+  replyToId        String?
+  /// Starred for later — purely an Inbox organization concept, like Conversation.archived; has no
+  /// effect on engine/bot behavior.
+  starred          Boolean            @default(false)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReplies")
 
   @@index([conversationId])
   @@map("messages")

@@ -5,6 +5,7 @@ import {
   chunkWhatsAppText,
   MetaGraphError,
   sendWhatsAppImageMessage,
+  sendWhatsAppTextMessage,
   toWhatsAppText,
   verifyWebhookSignature,
 } from "./meta-graph";
@@ -108,6 +109,55 @@ describe("toWhatsAppText", () => {
 
   it("leaves a lone, unpaired asterisk alone rather than eating the rest of the message", () => {
     expect(toWhatsAppText("5*3=15, easy math.")).toBe("5*3=15, easy math.");
+  });
+});
+
+describe("sendWhatsAppTextMessage", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("attaches context.message_id to the first chunk when replying to a message", async () => {
+    const bodies: unknown[] = [];
+    global.fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(init?.body as string));
+      return new Response(JSON.stringify({ messages: [{ id: "wamid.new" }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppTextMessage("PHONE_ID", "15551234567", "Sure, here's the info.", "token-123", "wamid.original");
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ context: { message_id: "wamid.original" } });
+  });
+
+  it("attaches the reply context only to the first of several chunks", async () => {
+    const bodies: unknown[] = [];
+    global.fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(init?.body as string));
+      return new Response(JSON.stringify({ messages: [{ id: "wamid.new" }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppTextMessage("PHONE_ID", "15551234567", "a".repeat(5000), "token-123", "wamid.original");
+
+    expect(bodies.length).toBeGreaterThan(1);
+    expect((bodies[0] as { context?: unknown }).context).toEqual({ message_id: "wamid.original" });
+    for (const body of bodies.slice(1)) {
+      expect((body as { context?: unknown }).context).toBeUndefined();
+    }
+  });
+
+  it("omits context entirely when not replying to anything", async () => {
+    const bodies: unknown[] = [];
+    global.fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(init?.body as string));
+      return new Response(JSON.stringify({ messages: [{ id: "wamid.new" }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendWhatsAppTextMessage("PHONE_ID", "15551234567", "Hello there.", "token-123");
+
+    expect((bodies[0] as { context?: unknown }).context).toBeUndefined();
   });
 });
 

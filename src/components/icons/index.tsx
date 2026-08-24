@@ -356,6 +356,28 @@ export function ActionsArchiveIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function ActionsStarIcon({ size = 16, className, filled = false }: IconProps & { filled?: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="5"
+        d="M32 10l6.9 14.4 15.7 2.2-11.4 11.2 2.7 15.8L32 46l-14 7.6 2.7-15.8L9.3 26.6l15.7-2.2z"
+      />
+    </svg>
+  );
+}
+
 export function ActionsUndoIcon({ size = 16, className }: IconProps) {
   return (
     <svg

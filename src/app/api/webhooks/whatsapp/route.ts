@@ -124,6 +124,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
         botId: connection.botId,
         visitorId: message.from,
         message: message.content,
+        waMessageId: message.waMessageId,
         receivedAt: message.receivedAt,
         runEngine: false,
         image,
@@ -143,7 +144,13 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   }
 
   const result = await runWhatsAppTurn(
-    { botId: connection.botId, visitorId: message.from, message: message.content, receivedAt: message.receivedAt },
+    {
+      botId: connection.botId,
+      visitorId: message.from,
+      message: message.content,
+      waMessageId: message.waMessageId,
+      receivedAt: message.receivedAt,
+    },
     { llm: providerLlm, classify: classifierLlm },
   );
   await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);

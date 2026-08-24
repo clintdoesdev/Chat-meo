@@ -277,20 +277,32 @@ export function chunkWhatsAppText(text: string, limit = WHATSAPP_TEXT_MESSAGE_LI
  * parallel so a multi-chunk reply arrives in reading order. `preview_url: true` is what makes
  * WhatsApp actually fetch and render an OG-info card for a link in the text — without it, Meta
  * sends the message as plain text with no preview at all, regardless of how long the customer
- * waits. */
+ * waits. `replyToMessageId`, when given, is Meta's own message id for an earlier inbound message
+ * (Message.waMessageId — see the Inbox's swipe/reply-to action in src/lib/actions/inbox.ts) —
+ * attached only to the *first* chunk (as `context.message_id`) so a long, multi-message reply
+ * doesn't show up as several separate quoted replies to the same original message on the
+ * customer's phone. */
 export async function sendWhatsAppTextMessage(
   phoneNumberId: string,
   to: string,
   text: string,
   accessToken: string,
+  replyToMessageId?: string,
 ): Promise<void> {
-  for (const chunk of chunkWhatsAppText(text)) {
+  const chunks = chunkWhatsAppText(text);
+  for (const [index, chunk] of chunks.entries()) {
     await graphFetch(
       `/${phoneNumberId}/messages`,
       "send message",
       { access_token: accessToken },
       "POST",
-      { messaging_product: "whatsapp", to, type: "text", text: { body: chunk, preview_url: true } },
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: chunk, preview_url: true },
+        ...(index === 0 && replyToMessageId ? { context: { message_id: replyToMessageId } } : {}),
+      },
     );
   }
 }

@@ -20,6 +20,11 @@ export type RunWhatsAppTurnParams = {
    * likewise used to find/create this customer's open Conversation. */
   visitorId: string;
   message: string;
+  /** Meta's own message id for this inbound message — persisted on the Message row so the
+   * Inbox's "reply to this message" action can later pass it back as WhatsApp's own
+   * `context.message_id`, making that reply show as a real quoted reply on the customer's phone
+   * (see sendWhatsAppTextMessage in meta-graph.ts). */
+  waMessageId?: string;
   /** False when the connection is paused (WhatsAppConnection.isActive) — the message still gets
    * stored for the seller's inbox, but the flow is never loaded and the engine never runs,
    * regardless of whether an active flow exists. Defaults to true. */
@@ -132,8 +137,15 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
           contentType: "IMAGE",
           caption: params.image.caption,
           channel: "WHATSAPP",
+          waMessageId: params.waMessageId,
         }
-      : { conversationId: conversation.id, role: "USER", content: params.message, channel: "WHATSAPP" },
+      : {
+          conversationId: conversation.id,
+          role: "USER",
+          content: params.message,
+          channel: "WHATSAPP",
+          waMessageId: params.waMessageId,
+        },
   });
 
   // A HANDOFF conversation stays that way for good — step() would no-op on it anyway (see
