@@ -39,10 +39,13 @@ function newBranchId(): string {
     : `branch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// Deliberately NOT crypto.randomUUID() (unlike newBranchId below, which is never echoed back by
+// an LLM): a Logic rule's id gets sent to and echoed back by the semantic-match classifier (see
+// classifySemanticMatch in engine/executor.ts) — a 36-character UUID's hex runs tokenize into
+// far more tokens than this shorter id does, eating into the classifier's already-small response
+// budget for no benefit, since uniqueness only needs to hold within one Logic node's rule list.
 function newRuleId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function newVariantId(): string {

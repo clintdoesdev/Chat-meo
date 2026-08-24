@@ -1257,6 +1257,34 @@ describe("step: logic node (standalone)", () => {
     ]);
   });
 
+  it("matches a rule id the classifier wrapped in stray text/punctuation, not just an exact answer", async () => {
+    // Regression: the prompt asks for nothing but the bare id, but a model can still wrap it
+    // (quotes, a leading "id: ", trailing punctuation) despite that — exact-equality would treat
+    // that as "no match" even though the model clearly named the right rule.
+    const classifyMock = vi.fn(async () => ({ content: 'The id is "rule-pay".' }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "just sent the money over, should be there now", deps);
+
+    expect(output.replies).toEqual([
+      { content: "Here's your payment link: https://pay.example.com" },
+      { content: "Anything else?" },
+    ]);
+  });
+
+  it("does not match a rule on a NONE (or otherwise unrelated) classifier answer, falling through to the catch-all", async () => {
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ classify: classifyMock });
+    const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "just sent the money over, should be there now", deps);
+
+    // Not the payment-link rule's reply — this graph's rule-else catch-all fires instead (same
+    // as the "falls through to the empty-triggers rule" test above).
+    expect(output.replies).toEqual([{ content: "Let me get a human." }]);
+  });
+
   it("calls the classifier with the deployment's default model/provider, since a standalone Logic node has none of its own", async () => {
     const classifyMock = vi.fn<LlmDep>(async () => ({ content: "NONE" }));
     const deps = createDeps({ classify: classifyMock });

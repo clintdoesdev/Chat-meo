@@ -14,8 +14,14 @@ vi.mock("openai", () => {
   return { default: MockOpenAI };
 });
 
-const { createStreamingProviderLlm, providerLlm, resolveActiveProvider, resolveModel, stripUnauthorizedSensitiveFieldRequests } =
-  await import("./llm");
+const {
+  classifierLlm,
+  createStreamingProviderLlm,
+  providerLlm,
+  resolveActiveProvider,
+  resolveModel,
+  stripUnauthorizedSensitiveFieldRequests,
+} = await import("./llm");
 
 function mockStream(chunks: Array<{ content?: string; finishReason?: string | null }>) {
   return {
@@ -335,5 +341,51 @@ describe("providerLlm / createStreamingProviderLlm empty-reply handling", () => 
       model: "grok-main",
     });
     expect(result.content).toBe("Great, Stephen.");
+  });
+});
+
+describe("classifierLlm", () => {
+  const originalKey = process.env.XAI_API_KEY;
+  const originalProvider = process.env.AI_PROVIDER;
+
+  beforeEach(() => {
+    process.env.XAI_API_KEY = "xai-key";
+    process.env.AI_PROVIDER = "xai";
+    createCompletionMock.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = originalKey;
+    if (originalProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = originalProvider;
+  });
+
+  // Regression: a Logic rule's id is a full crypto.randomUUID() (36 characters) that the
+  // classifier is asked to echo back verbatim (see buildClassifierPrompt in executor.ts) — too
+  // tight a max_tokens here silently truncates the model's answer mid-id on every single call,
+  // so `answer === rule.id` never matches and semantic classification never fires, no matter how
+  // well the customer's message fits a rule. This asserts the budget is generous enough to never
+  // do that (a 36-char UUID reliably tokenizes to well over 20 tokens on a BPE tokenizer).
+  it("requests enough tokens to fit a full rule id (a 36-character UUID) without truncating it", async () => {
+    createCompletionMock.mockResolvedValueOnce({
+      choices: [{ message: { content: "a1b2c3d4-e5f6-4789-a012-b3c4d5e6f789" }, finish_reason: "stop" }],
+      usage: null,
+    });
+
+    await classifierLlm({ systemPrompt: "Classify.", history: [], temperature: 0, model: "grok-main" });
+
+    const params = createCompletionMock.mock.calls[0][0];
+    expect(params.max_tokens).toBeGreaterThanOrEqual(40);
+  });
+
+  it("returns the model's answer verbatim, untrimmed of nothing but surrounding whitespace", async () => {
+    createCompletionMock.mockResolvedValueOnce({
+      choices: [{ message: { content: "  a1b2c3d4-e5f6-4789-a012-b3c4d5e6f789  " }, finish_reason: "stop" }],
+      usage: null,
+    });
+
+    const result = await classifierLlm({ systemPrompt: "Classify.", history: [], temperature: 0, model: "grok-main" });
+    expect(result.content).toBe("a1b2c3d4-e5f6-4789-a012-b3c4d5e6f789");
   });
 });

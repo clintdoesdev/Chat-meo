@@ -275,9 +275,15 @@ export const providerLlm: LlmDep = async ({ systemPrompt, history, temperature, 
   }
 };
 
-// A bare rule id (or "NONE") back is at most a few tokens — this just bounds a misbehaving
-// model's output rather than genuinely needing headroom the way a real reply does.
-const CLASSIFIER_MAX_TOKENS = 20;
+// A bare rule id (or "NONE") back should be at most a few tokens — but a rule id is a full
+// crypto.randomUUID() (36 characters: 32 hex digits + 4 hyphens), and hex runs with no natural
+// word boundaries routinely tokenize into well over 20 tokens on a BPE tokenizer. A tighter
+// budget here doesn't just bound a misbehaving model — it reliably truncates a compliant one
+// mid-id, so `answer === rule.id` (see classifySemanticMatch in executor.ts) never matches and
+// every semantic classification silently comes back "no match," regardless of how well the
+// message actually fits a rule. This is sized to comfortably fit a full UUID plus a few tokens
+// of slop for stray formatting a model might add despite being told not to.
+const CLASSIFIER_MAX_TOKENS = 60;
 
 /** Powers Logic rules' semantic-match fallback (see matchLogicRule/classifySemanticMatch in
  * executor.ts): given a short classification prompt and the visitor's message, expects a bare

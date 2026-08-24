@@ -222,7 +222,13 @@ async function classifySemanticMatch(
       provider,
     });
     const answer = result.content.trim();
-    return candidates.find((rule) => rule.id === answer);
+    // A substring check, not exact equality: despite the prompt asking for nothing but the bare
+    // id, a model can still wrap it in stray quotes/punctuation/a leading "id: " — rule ids are
+    // unique random strings, so this stays unambiguous. Longest-id-first so one id that happens
+    // to be a literal substring of another (not possible for a UUID, but the short fallback
+    // scheme in newRuleId() could theoretically collide this way) can't match the wrong rule.
+    const longestFirst = [...candidates].sort((a, b) => b.id.length - a.id.length);
+    return longestFirst.find((rule) => answer.includes(rule.id));
   } catch (error) {
     deps.logger.error("[engine] Logic rule classification failed", error);
     return undefined;
