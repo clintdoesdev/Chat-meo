@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Chatmeo</string>
-    <string name="title_activity_main">Chatmeo</string>
-    <string name="package_name">app.chatmeo.mobile</string>
-    <string name="custom_url_scheme">app.chatmeo.mobile</string>
-</resources>
