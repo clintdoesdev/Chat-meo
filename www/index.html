@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Chatmeo</title>
+  </head>
+  <body>
+    <!--
+      Never actually shown: capacitor.config.ts sets server.url to the deployed Chatmeo
+      instance, so the native shell loads that live server directly instead of any bundled
+      web assets. This file exists only because `npx cap add android` / `npx cap sync`
+      require webDir to point at a real, non-empty directory — Chatmeo relies on SSR and
+      API routes (auth, Prisma, the WhatsApp webhook, etc.), which can't be shipped as a
+      static bundle the way a fully client-rendered app could.
+    -->
+  </body>
+</html>
