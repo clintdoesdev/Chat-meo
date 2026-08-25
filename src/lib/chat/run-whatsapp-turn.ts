@@ -7,6 +7,7 @@ import { conversationStatusFor, type RunTurnDeps } from "@/lib/chat/run-turn";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
+import { runPythonBotTurn } from "@/lib/python-bot/run-turn";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
 // Mirrors run-turn.ts's constant of the same name.
@@ -79,10 +80,18 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   const bot = shouldRunEngine
     ? await prisma.bot.findUnique({
         where: { id: params.botId },
-        select: { flows: { where: { isActive: true }, take: 1, select: { id: true, graph: true } } },
+        select: {
+          flows: { where: { isActive: true }, take: 1, select: { id: true, graph: true } },
+          pythonBot: { select: { code: true, enabled: true } },
+        },
       })
     : null;
-  const flowRow = bot?.flows[0];
+  // Python Bot mode (see PythonBot in prisma/schema.prisma) bypasses the Flow graph entirely —
+  // when enabled, `graph` deliberately stays null even if the bot also happens to have an active
+  // flow (e.g. left over from before Python Bot mode was turned on), so nothing below ever falls
+  // back to running both.
+  const pythonBotCode = bot?.pythonBot?.enabled ? bot.pythonBot.code : null;
+  const flowRow = pythonBotCode ? undefined : bot?.flows[0];
   const graph = flowRow ? adaptPersistedGraph(parseFlowGraph(flowRow.graph) ?? defaultFlowGraph()) : null;
   if (graph && flowRow) await attachAiNodeDocuments(graph, flowRow.id);
 
@@ -165,7 +174,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   // "stop bothering me" — same skip, permanently, until they unblock it (setConversationBlocked
   // in src/lib/actions/inbox.ts). The message above is still stored either way, so the seller
   // sees it in the Inbox and can reply there themselves (or just has a record of it).
-  if (!graph || conversation.status === "HANDOFF" || conversation.blocked) {
+  if ((!graph && !pythonBotCode) || conversation.status === "HANDOFF" || conversation.blocked) {
     await prisma.conversation.update({ where: { id: conversation.id }, data: { lastInboundAt } });
     console.log("[whatsapp] stored inbound message, engine not run", {
       botId: params.botId,
@@ -178,6 +187,37 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
             ? "no_active_flow"
             : "connection_paused",
     });
+    return { kind: "stored_only", blocked: conversation.blocked };
+  }
+
+  if (pythonBotCode) {
+    const result = await runPythonBotTurn({
+      conversationId: conversation.id,
+      pythonState: conversation.pythonState,
+      message: params.message,
+      code: pythonBotCode,
+      botId: params.botId,
+    });
+    const withinWindow = isWithinServiceWindow(lastInboundAt);
+    const replies: Reply[] = result.replies.map((content) => ({ content }));
+    const replyMessageIds = await persistWhatsAppReplies(conversation.id, replies, withinWindow, params.botId);
+
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { lastInboundAt } });
+
+    console.log("[whatsapp] python bot turn", {
+      botId: params.botId,
+      conversationId: conversation.id,
+      replyCount: replies.length,
+      handoff: result.handoff,
+      withinWindow,
+    });
+
+    return { kind: "success", replies, status: result.handoff ? "HANDOFF" : "AWAITING_INPUT", withinWindow, replyMessageIds };
+  }
+  if (!graph) {
+    // Unreachable: the gate above already returns "stored_only" whenever neither graph nor
+    // pythonBotCode is set. Narrows `graph` for everything below rather than a non-null
+    // assertion.
     return { kind: "stored_only", blocked: conversation.blocked };
   }
 
@@ -198,50 +238,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
 
   const output = await step(graph, state, params.message, engineDeps);
   const withinWindow = isWithinServiceWindow(lastInboundAt);
-
-  const replyMessageIds: string[] = [];
-  if (output.replies.length > 0) {
-    if (withinWindow) {
-      // Sequential create()s rather than one createMany() — unlike createMany, this hands back
-      // each row's own id, which processInboundMessage needs (in the same order as `replies`) to
-      // back-fill Message.waMessageId once it knows what Meta's send call actually returned.
-      for (const reply of output.replies) {
-        const row = await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            role: "BOT",
-            content: reply.content,
-            contentType: reply.contentType ?? "TEXT",
-            caption: reply.caption ?? null,
-            promptTokens: reply.promptTokens ?? null,
-            completionTokens: reply.completionTokens ?? null,
-            channel: "WHATSAPP",
-          },
-          select: { id: true },
-        });
-        replyMessageIds.push(row.id);
-      }
-    } else {
-      console.warn("[whatsapp] suppressing reply, outside 24h service window", {
-        botId: params.botId,
-        conversationId: conversation.id,
-        lastInboundAt,
-      });
-      await prisma.message.createMany({
-        data: output.replies.map((reply) => ({
-          conversationId: conversation.id,
-          role: "BOT" as const,
-          // An image reply's raw `data:` URI has no place embedded in this warning's text — its
-          // caption (or a bare placeholder) stands in for it instead, same as engine/executor.ts's
-          // own local history summary does for the same reason.
-          content: `${OUTSIDE_WINDOW_WARNING} (Intended reply: "${
-            reply.contentType === "IMAGE" ? (reply.caption ?? "[image]") : reply.content
-          }")`,
-          channel: "WHATSAPP" as const,
-        })),
-      });
-    }
-  }
+  const replyMessageIds = await persistWhatsAppReplies(conversation.id, output.replies, withinWindow, params.botId);
 
   await prisma.conversation.update({
     where: { id: conversation.id },
@@ -257,4 +254,59 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
   });
 
   return { kind: "success", replies: output.replies, status: output.state.status, withinWindow, replyMessageIds };
+}
+
+/** Shared by both the Flow graph path and the Python Bot path: persists a turn's outbound
+ * replies as Message rows, respecting Meta's 24h service window exactly the same way regardless
+ * of which engine produced them — see OUTSIDE_WINDOW_WARNING's doc comment above. Returns each
+ * reply's own Message row id (in order), or an empty array when the window suppressed them, so
+ * processInboundMessage can back-fill Message.waMessageId once it knows what Meta's send call
+ * actually returned. */
+async function persistWhatsAppReplies(
+  conversationId: string,
+  replies: Reply[],
+  withinWindow: boolean,
+  botId: string,
+): Promise<string[]> {
+  if (replies.length === 0) return [];
+
+  if (!withinWindow) {
+    console.warn("[whatsapp] suppressing reply, outside 24h service window", { botId, conversationId });
+    await prisma.message.createMany({
+      data: replies.map((reply) => ({
+        conversationId,
+        role: "BOT" as const,
+        // An image reply's raw `data:` URI has no place embedded in this warning's text — its
+        // caption (or a bare placeholder) stands in for it instead, same as engine/executor.ts's
+        // own local history summary does for the same reason.
+        content: `${OUTSIDE_WINDOW_WARNING} (Intended reply: "${
+          reply.contentType === "IMAGE" ? (reply.caption ?? "[image]") : reply.content
+        }")`,
+        channel: "WHATSAPP" as const,
+      })),
+    });
+    return [];
+  }
+
+  // Sequential create()s rather than one createMany() — unlike createMany, this hands back each
+  // row's own id, which processInboundMessage needs (in the same order as `replies`) to
+  // back-fill Message.waMessageId once it knows what Meta's send call actually returned.
+  const replyMessageIds: string[] = [];
+  for (const reply of replies) {
+    const row = await prisma.message.create({
+      data: {
+        conversationId,
+        role: "BOT",
+        content: reply.content,
+        contentType: reply.contentType ?? "TEXT",
+        caption: reply.caption ?? null,
+        promptTokens: reply.promptTokens ?? null,
+        completionTokens: reply.completionTokens ?? null,
+        channel: "WHATSAPP",
+      },
+      select: { id: true },
+    });
+    replyMessageIds.push(row.id);
+  }
+  return replyMessageIds;
 }

@@ -7,6 +7,7 @@ import { attachAiNodeDocuments } from "@/lib/chat/attach-ai-documents";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
 import { prisma } from "@/lib/prisma";
+import { runPythonBotTurn } from "@/lib/python-bot/run-turn";
 import { sendPushToUser } from "@/lib/push/send";
 
 const MESSAGE_PREVIEW_LENGTH = 140;
@@ -58,6 +59,7 @@ export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess 
           status: true,
           testMode: true,
           flows: { where: { isActive: true }, take: 1, select: { id: true } },
+          pythonBot: { select: { enabled: true } },
         },
       },
     },
@@ -65,7 +67,11 @@ export async function resolveBotAccess(botPublicKey: string): Promise<BotAccess 
   if (!apiKey) return null;
   return {
     botId: apiKey.bot.id,
-    live: apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0,
+    // Python Bot mode's own `enabled` toggle is a complete, independent publish signal — see
+    // runChatTurn below — rather than also requiring Bot.status: "LIVE" (the Studio canvas's own
+    // Publish button), since a bot that only ever uses Python Bot mode may never visit the canvas
+    // page (and its auto-created default Flow) at all.
+    live: apiKey.bot.pythonBot?.enabled === true || (apiKey.bot.status === "LIVE" && apiKey.bot.flows.length > 0),
     allowedDomains: apiKey.allowedDomains,
     testMode: apiKey.bot.testMode,
   };
@@ -91,12 +97,18 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
           name: true,
           status: true,
           flows: { where: { isActive: true }, take: 1, select: { id: true, graph: true } },
+          pythonBot: { select: { code: true, enabled: true } },
         },
       },
     },
   });
 
-  if (!apiKey || apiKey.bot.status !== "LIVE") return { kind: "not_found" };
+  if (!apiKey) return { kind: "not_found" };
+  if (apiKey.bot.pythonBot?.enabled) {
+    return runPythonBotTurnFor(apiKey.bot.id, apiKey.bot.userId, apiKey.bot.name, apiKey.bot.pythonBot.code, params);
+  }
+
+  if (apiKey.bot.status !== "LIVE") return { kind: "not_found" };
   const flow = apiKey.bot.flows[0];
   if (!flow) return { kind: "not_found" };
 
@@ -206,4 +218,83 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
   });
 
   return { kind: "success", replies: output.replies, status: output.state.status };
+}
+
+/**
+ * runChatTurn's counterpart for a bot in Python Bot mode (see PythonBot in
+ * prisma/schema.prisma) — same Conversation/Message persistence and push-notification behavior,
+ * but the reply comes from runPythonBotTurn's sandboxed script instead of stepping the Flow
+ * graph. Split out from runChatTurn rather than interleaved with it since the two paths share
+ * almost nothing beyond "find/create the conversation, persist the message, persist the reply."
+ */
+async function runPythonBotTurnFor(
+  botId: string,
+  botUserId: string,
+  botName: string,
+  code: string,
+  params: RunTurnParams,
+): Promise<RunTurnResult> {
+  let conversation = await prisma.conversation.findFirst({
+    where: { botId, visitorId: params.visitorId, status: "OPEN" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!conversation) {
+    conversation = await prisma.conversation.create({ data: { botId, visitorId: params.visitorId } });
+  }
+
+  if (params.message) {
+    await prisma.message.create({
+      data: { conversationId: conversation.id, role: "USER", content: params.message },
+    });
+  }
+
+  const result = await runPythonBotTurn({
+    conversationId: conversation.id,
+    pythonState: conversation.pythonState,
+    message: params.message ?? "",
+    code,
+    botId,
+  });
+
+  if (result.replies.length > 0) {
+    await prisma.message.createMany({
+      data: result.replies.map((content) => ({ conversationId: conversation.id, role: "BOT" as const, content })),
+    });
+  }
+
+  // Deferred via after() so a push service round trip never adds latency to the widget's own
+  // reply — same pattern as runChatTurn above.
+  if (params.message) {
+    const preview = previewOf(params.message);
+    after(() =>
+      sendPushToUser(botUserId, {
+        title: `New message · ${botName}`,
+        body: preview,
+        url: "/app/inbox",
+      }).catch((error) => console.error("[chat] failed to send new-message push", { conversationId: conversation.id, error })),
+    );
+  }
+  if (result.handoff) {
+    after(() =>
+      sendPushToUser(botUserId, {
+        title: `${botName} needs a human`,
+        body: `${params.visitorId} needs your help.`,
+        url: "/app/inbox",
+      }).catch((error) => console.error("[chat] failed to send handoff push", { conversationId: conversation.id, error })),
+    );
+  }
+
+  console.log("[chat] python bot turn", {
+    botId,
+    conversationId: conversation.id,
+    hadInboundMessage: Boolean(params.message),
+    replyCount: result.replies.length,
+    handoff: result.handoff,
+  });
+
+  return {
+    kind: "success",
+    replies: result.replies.map((content) => ({ content })),
+    status: result.handoff ? "HANDOFF" : "AWAITING_INPUT",
+  };
 }

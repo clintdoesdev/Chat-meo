@@ -12,7 +12,7 @@ import {
   type Connection,
   type FinalConnectionState,
 } from "@xyflow/react";
-import { ChevronLeft, Share2 } from "lucide-react";
+import { ChevronLeft, Share2, Terminal } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -694,6 +694,15 @@ function StudioCanvas({
               Save
             </button>
           )}
+
+          <Link
+            href={`/app/studio/${bot.slug}/python-bot`}
+            title="Run this bot from a Python file instead of the flow graph"
+            className="flex items-center gap-1.5 rounded-full border border-line-2 bg-card-2 px-4 py-2 text-[13px] font-semibold text-text transition hover:border-orange-2/50"
+          >
+            <Terminal size={13} />
+            Python Bot
+          </Link>
 
           <button
             type="button"

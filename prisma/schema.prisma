@@ -183,9 +183,37 @@ model Bot {
   apiKeys            BotApiKey[]
   whatsappConnection WhatsAppConnection?
   whatsAppShortLinks WhatsAppShortLink[]
+  pythonBot          PythonBot?
 
   @@index([userId])
   @@map("bots")
+}
+
+/// A bot owner's own Python file, run in an isolated sandbox (see src/lib/python-bot/sandbox.ts)
+/// in place of the Flow Studio graph entirely — the "whole-bot bypass" mode. At most one per Bot.
+/// While `enabled`, both runChatTurn (widget) and runWhatsAppTurn skip loading/stepping the Flow
+/// graph altogether and hand each inbound message straight to this code instead; a Bot with no
+/// PythonBot row (or one with enabled: false) behaves exactly as before this feature existed.
+model PythonBot {
+  id        String   @id @default(cuid())
+  botId     String   @unique
+  /// The script itself, run fresh in a new sandbox on every turn (see Conversation.pythonState
+  /// for how it keeps memory across turns despite that) — see src/lib/python-bot/sandbox.ts's
+  /// RUNNER_SOURCE for the exact contract (chatmeo_input in, chatmeo_reply/chatmeo_state out).
+  code      String   @db.Text
+  enabled   Boolean  @default(false)
+  /// The most recent run's error message (a script exception, a sandbox failure, malformed
+  /// output), if the last turn failed — cleared on the next successful run. Surfaced in the
+  /// Studio's Python Bot page so an owner can tell a silent production failure apart from the
+  /// bot legitimately having nothing to say.
+  lastError String?  @db.Text
+  lastRunAt DateTime?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("python_bots")
 }
 
 model Flow {
@@ -226,6 +254,12 @@ model Conversation {
   /// our side by ignoring the customer rather than by anything Meta does differently.
   blocked       Boolean            @default(false)
   folderId      String?
+  /// The Python Bot's own free-form memory for this conversation (see PythonBot above) — whatever
+  /// its script last returned as `chatmeo_state`, round-tripped verbatim on the next turn. Plays
+  /// the same role `engineState` plays for the Flow graph engine, but is never read by it (and
+  /// vice versa) — a Bot only ever uses one or the other, decided by PythonBot.enabled at the
+  /// moment each turn runs.
+  pythonState   Json               @default("{}")
   createdAt     DateTime           @default(now())
 
   bot      Bot                 @relation(fields: [botId], references: [id], onDelete: Cascade)
