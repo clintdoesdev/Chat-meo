@@ -16,7 +16,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.20" apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.3.20" apply false
-    // com.google.gms.google-services (Firebase/FCM) is added once google-services.json exists —
-    // see the "Wire up FCM push notifications" follow-up. Applying it without that file present
-    // fails the build outright, so it stays out until there's something for it to read.
+    // google-services.json now exists (android/app/) so this can be applied — see
+    // app/build.gradle.kts for where it's actually used.
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.chatmeo.mobile.data.ChatmeoRepository
 import app.chatmeo.mobile.data.LoginOutcome
+import app.chatmeo.mobile.push.registerCurrentFcmToken
 import kotlinx.coroutines.launch
 
 enum class LoginStep { CREDENTIALS, TWO_FACTOR }
@@ -38,7 +39,10 @@ class LoginViewModel(private val repository: ChatmeoRepository) : ViewModel() {
             )
             loading = false
             when (outcome) {
-                is LoginOutcome.Success -> loggedIn = true
+                is LoginOutcome.Success -> {
+                    loggedIn = true
+                    registerCurrentFcmToken(repository)
+                }
                 is LoginOutcome.TwoFactorRequired -> {
                     step = LoginStep.TWO_FACTOR
                     twoFactorMethod = outcome.method

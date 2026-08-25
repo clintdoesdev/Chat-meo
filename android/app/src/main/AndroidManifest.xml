@@ -24,5 +24,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".push.ChatmeoMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Default channel/color FCM falls back to for a `notification` payload delivered while
+             the app is backgrounded (system-built notification, ChatmeoMessagingService.onMessageReceived
+             isn't invoked in that case) — kept in sync with ChatmeoApplication's channel and
+             colors.xml's chatmeo_orange. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="chatmeo_messages" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/chatmeo_orange" />
     </application>
 </manifest>

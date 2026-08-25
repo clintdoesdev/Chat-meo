@@ -28,6 +28,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Write google-services.json
+        # Firebase config — gitignored (android/.gitignore) since it's per-project and machine/CI
+        # specific, not something to commit. Not a high-sensitivity secret in the way an API
+        # server key is (Firebase's own docs note the Android client config is safe to ship inside
+        # an APK — real access control is the package name + signing cert, not this file's
+        # contents) but it's still project-specific, hence a repo secret rather than committing it.
+        working-directory: android/app
+        run: echo "$GOOGLE_SERVICES_JSON" > google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
