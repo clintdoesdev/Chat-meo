@@ -109,8 +109,29 @@ model User {
   verificationCodes   VerificationCode[]
   conversationFolders ConversationFolder[]
   pushSubscriptions   PushSubscription[]
+  deviceTokens        DeviceToken[]
 
   @@map("users")
+}
+
+/// One row per native-app install this user is signed into — an FCM registration token,
+/// registered by the Android app (see src/app/api/v1/push/register/route.ts) once it has both a
+/// Bearer token (signed in) and a token from Firebase. Distinct from PushSubscription (that one's
+/// the *browser's* Web Push subscription, a different delivery mechanism entirely) — sending a
+/// push notification means fanning out to both tables, one per channel. `token` unique rather
+/// than `[userId, token]`: FCM can hand the same token to a different signed-in user after a
+/// sign-out/sign-in-as-someone-else on the same device, and re-registering should move it to the
+/// new owner, not collide.
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 /// One row per browser/device the user has enabled push notifications on (a user can have

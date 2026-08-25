@@ -4,6 +4,9 @@ import { auth } from "@/auth";
 import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState } from "@/engine/executor";
 import { Prisma } from "@/generated/prisma/client";
+import type { ConversationDetail, ConversationSummary } from "@/lib/chat/inbox-queries";
+import { getConversationMessagesForUser, listConversationsForUser } from "@/lib/chat/inbox-queries";
+import { sendAgentReplyForUser } from "@/lib/chat/send-agent-reply";
 import { decrypt } from "@/lib/crypto";
 import { parseFlowGraph } from "@/lib/flow-schema";
 import { defaultFlowGraph } from "@/lib/flow-types";
@@ -11,25 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { sendWhatsAppImageMessage, sendWhatsAppReaction, sendWhatsAppTextMessage } from "@/lib/whatsapp/meta-graph";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
-export type ConversationSummary = {
-  id: string;
-  botName: string;
-  botSlug: string;
-  status: "OPEN" | "RESOLVED" | "HANDOFF";
-  visitorId: string;
-  messageCount: number;
-  lastMessageAt: string;
-  lastMessagePreview: string;
-  lastMessageRole: "BOT" | "USER" | "AGENT" | null;
-  archived: boolean;
-  blocked: boolean;
-  folderId: string | null;
-  // Same signal sendAgentReply already uses to route the reply — a widget conversation never gets
-  // a WhatsApp webhook hit, so lastInboundAt stays null for it forever.
-  channel: "WHATSAPP" | "WEB";
-};
-
-const MAX_CONVERSATIONS = 200;
+export type { ConversationSummary, ConversationDetail };
 
 /** Every conversation across every bot this seller owns, newest-activity-first — the Inbox list's
  * data source, both for the initial page load and for InboxView's polling refresh (see its
@@ -37,181 +22,21 @@ const MAX_CONVERSATIONS = 200;
 export async function listConversations(): Promise<ConversationSummary[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
-
-  const bots = await prisma.bot.findMany({
-    where: { userId: session.user.id },
-    select: { id: true, name: true, slug: true },
-  });
-  if (bots.length === 0) return [];
-  const botById = new Map(bots.map((bot) => [bot.id, bot]));
-
-  const conversations = await prisma.conversation.findMany({
-    where: { botId: { in: bots.map((bot) => bot.id) } },
-    orderBy: { createdAt: "desc" },
-    take: MAX_CONVERSATIONS,
-    select: {
-      id: true,
-      botId: true,
-      status: true,
-      visitorId: true,
-      createdAt: true,
-      archived: true,
-      blocked: true,
-      folderId: true,
-      lastInboundAt: true,
-      _count: { select: { messages: true } },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { role: true, content: true, contentType: true, createdAt: true },
-      },
-    },
-  });
-
-  return conversations
-    .map((conversation): ConversationSummary => {
-      const bot = botById.get(conversation.botId);
-      const lastMessage = conversation.messages[0] ?? null;
-      return {
-        id: conversation.id,
-        botName: bot?.name ?? "Unknown bot",
-        botSlug: bot?.slug ?? "",
-        status: conversation.status,
-        visitorId: conversation.visitorId,
-        messageCount: conversation._count.messages,
-        lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
-        lastMessagePreview: !lastMessage
-          ? "No messages yet"
-          : lastMessage.contentType === "IMAGE"
-            ? "📷 Photo"
-            : lastMessage.content,
-        lastMessageRole: lastMessage?.role ?? null,
-        archived: conversation.archived,
-        blocked: conversation.blocked,
-        folderId: conversation.folderId,
-        channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
-      };
-    })
-    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+  return listConversationsForUser(session.user.id);
 }
-
-export type ConversationDetail = {
-  id: string;
-  status: "OPEN" | "RESOLVED" | "HANDOFF";
-  visitorId: string;
-  createdAt: string;
-  archived: boolean;
-  blocked: boolean;
-  folderId: string | null;
-  channel: "WHATSAPP" | "WEB";
-  botName: string;
-  botSlug: string;
-  messages: {
-    id: string;
-    role: "BOT" | "USER" | "AGENT";
-    content: string;
-    contentType: "TEXT" | "IMAGE";
-    caption: string | null;
-    createdAt: string;
-    starred: boolean;
-    replyToId: string | null;
-    // A lightweight snapshot of the quoted message, for rendering the quote inline — null if
-    // this message isn't a reply, or if the message it quoted has since been deleted (replyToId
-    // itself stays set to the dangling id in that case only via the FK's SetNull, so in practice
-    // a deleted quote just means this comes back null while replyToId is cleared too).
-    replyTo: {
-      id: string;
-      role: "BOT" | "USER" | "AGENT";
-      content: string;
-      contentType: "TEXT" | "IMAGE";
-      caption: string | null;
-    } | null;
-    // Emoji each side reacted with — either can be null/absent. See Message.customerReaction and
-    // .agentReaction's schema doc comments.
-    customerReaction: string | null;
-    agentReaction: string | null;
-    // Outbound-only (BOT/AGENT + WhatsApp) delivery lifecycle — null for a WEB message or before
-    // Meta's first status callback. See Message.deliveryStatus's schema doc comment.
-    deliveryStatus: "SENT" | "DELIVERED" | "READ" | "FAILED" | null;
-    // True for a message created by the Inbox's "forward" action — see forwardMessage below.
-    forwarded: boolean;
-  }[];
-};
 
 /** Full transcript for one conversation, scoped to bots the signed-in user owns. */
 export async function getConversationMessages(conversationId: string): Promise<ConversationDetail | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
-
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: {
-      id: true,
-      status: true,
-      visitorId: true,
-      createdAt: true,
-      archived: true,
-      blocked: true,
-      folderId: true,
-      lastInboundAt: true,
-      bot: { select: { name: true, slug: true, userId: true } },
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          contentType: true,
-          caption: true,
-          createdAt: true,
-          starred: true,
-          replyToId: true,
-          replyTo: { select: { id: true, role: true, content: true, contentType: true, caption: true } },
-          customerReaction: true,
-          agentReaction: true,
-          deliveryStatus: true,
-          forwarded: true,
-        },
-      },
-    },
-  });
-
-  if (!conversation || conversation.bot.userId !== session.user.id) return null;
-
-  return {
-    id: conversation.id,
-    status: conversation.status,
-    visitorId: conversation.visitorId,
-    createdAt: conversation.createdAt.toISOString(),
-    archived: conversation.archived,
-    blocked: conversation.blocked,
-    folderId: conversation.folderId,
-    channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
-    botName: conversation.bot.name,
-    botSlug: conversation.bot.slug,
-    messages: conversation.messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      contentType: m.contentType,
-      caption: m.caption,
-      createdAt: m.createdAt.toISOString(),
-      starred: m.starred,
-      replyToId: m.replyToId,
-      replyTo: m.replyTo,
-      customerReaction: m.customerReaction,
-      agentReaction: m.agentReaction,
-      deliveryStatus: m.deliveryStatus,
-      forwarded: m.forwarded,
-    })),
-  };
+  return getConversationMessagesForUser(session.user.id, conversationId);
 }
 
 /**
- * Lets the seller reply directly from the Inbox, as themselves rather than the bot — the
- * human-takeover counterpart to a handoff node. Always flips the conversation to HANDOFF (even
- * if it was still OPEN/bot-driven) so runWhatsAppTurn's engine stays quiet on this conversation
- * from here on; a seller who jumps in manually clearly doesn't want the bot talking over them.
+ * Lets the seller reply directly from the Inbox, as themselves rather than the bot. Deliberately
+ * leaves conversation.status untouched — see sendAgentReplyForUser's own comment
+ * (src/lib/chat/send-agent-reply.ts) for why forcing every manual reply into HANDOFF was itself a
+ * bug (it permanently stuck a perfectly normal conversation showing "Needs a human").
  *
  * `lastInboundAt` is only ever set by the WhatsApp webhook (see Conversation's schema doc
  * comment) — null means this is a widget conversation, which has no live delivery channel yet,
@@ -231,82 +56,7 @@ export async function sendAgentReply(
   const session = await auth();
   if (!session?.user?.id) return { error: "Not signed in." };
 
-  const trimmed = content.trim();
-  if (!trimmed) return { error: "Message can't be empty." };
-
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: {
-      id: true,
-      botId: true,
-      visitorId: true,
-      lastInboundAt: true,
-      bot: { select: { userId: true } },
-    },
-  });
-  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
-
-  const quoted = replyToId
-    ? await prisma.message.findUnique({ where: { id: replyToId }, select: { conversationId: true, waMessageId: true } })
-    : null;
-  const resolvedReplyToId = quoted && quoted.conversationId === conversationId ? replyToId : undefined;
-
-  const isWhatsApp = conversation.lastInboundAt !== null;
-
-  if (isWhatsApp) {
-    if (!isWithinServiceWindow(conversation.lastInboundAt)) {
-      return { error: "Can't send — outside WhatsApp's 24h reply window. The customer needs to message again first." };
-    }
-
-    const connection = await prisma.whatsAppConnection.findUnique({
-      where: { botId: conversation.botId },
-      select: { phoneNumberId: true, accessToken: true },
-    });
-    if (!connection?.accessToken) {
-      return { error: "This bot's WhatsApp connection isn't active." };
-    }
-
-    let sentWaMessageId: string | undefined;
-    try {
-      sentWaMessageId = await sendWhatsAppTextMessage(
-        connection.phoneNumberId,
-        conversation.visitorId,
-        trimmed,
-        decrypt(connection.accessToken),
-        resolvedReplyToId ? (quoted?.waMessageId ?? undefined) : undefined,
-      );
-    } catch (error) {
-      console.error("[inbox] failed to send agent reply via WhatsApp", { conversationId, error });
-      return { error: "Couldn't send — try again." };
-    }
-
-    // Deliberately doesn't touch conversation.status — sending a reply is not the same thing as
-    // the conversation needing one (that's what HANDOFF/"Needs a human" means, see the label in
-    // inbox-view.tsx). Forcing every manual reply into HANDOFF used to mean a seller replying to
-    // a perfectly normal OPEN conversation — just adding a personal note, answering something the
-    // bot missed — got permanently stuck showing "Needs a human" afterward, even though a human
-    // had just handled it. A conversation that was already HANDOFF (the bot explicitly gave up)
-    // stays HANDOFF until the seller explicitly resolves it or restarts the bot (resolveConversation
-    // / restartBotForConversation) — replying to help doesn't by itself mean "fully done."
-    await prisma.message.create({
-      data: {
-        conversationId,
-        role: "AGENT",
-        content: trimmed,
-        channel: "WHATSAPP",
-        replyToId: resolvedReplyToId,
-        waMessageId: sentWaMessageId,
-        deliveryStatus: sentWaMessageId ? "SENT" : undefined,
-      },
-    });
-    return { error: null };
-  }
-
-  await prisma.message.create({
-    data: { conversationId, role: "AGENT", content: trimmed, channel: "WEB", replyToId: resolvedReplyToId },
-  });
-
-  return { error: null };
+  return sendAgentReplyForUser(session.user.id, conversationId, content, replyToId);
 }
 
 /** Stars or unstars a single message — purely an Inbox organization concept (like

@@ -1,4 +1,3 @@
-import bcryptjs from "bcryptjs";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import authConfig from "@/auth.config";
@@ -7,20 +6,10 @@ import {
   TwoFactorRequiredEmailError,
   TwoFactorRequiredTotpError,
 } from "@/lib/auth-errors";
-import { sendNewSignInEmail, sendTwoFactorCodeEmail } from "@/lib/email/send";
-import { issueVerificationCode, verifyCode } from "@/lib/otp";
+import { verifyCredentials } from "@/lib/auth/verify-credentials";
+import { sendNewSignInEmail } from "@/lib/email/send";
 import { prisma } from "@/lib/prisma";
 import { getClientInfo } from "@/lib/request-info";
-import { decryptSecret } from "@/lib/secret-crypto";
-import { verifyTotpCode } from "@/lib/totp";
-
-// A precomputed bcrypt hash with no known plaintext. Comparing against this when a
-// user doesn't exist (or has no password) keeps authorize()'s timing indistinguishable
-// from the "wrong password" path, closing a user-enumeration side channel.
-const DUMMY_HASH = "$2b$10$VK/yXBml5EWgxKKpF0a/oe2NmtJwzOCu7yPE/lWotQBgSHeCTWroi";
-
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_MINUTES = 15;
 
 export const { handlers, auth, signIn, signOut, unstable_update: updateSession } = NextAuth({
   ...authConfig,
@@ -42,64 +31,22 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
           return null;
         }
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const result = await verifyCredentials(email, password, typeof code === "string" && code.length > 0 ? code : undefined);
 
-        // Always run a bcrypt compare, even when there's no real hash to check against,
-        // so "no such user" and "wrong password" take the same amount of time.
-        const isValid = await bcryptjs.compare(password, user?.passwordHash ?? DUMMY_HASH);
-
-        if (!user?.passwordHash || !isValid) {
-          if (user?.passwordHash) {
-            await registerFailedAttempt(user.id, user.failedLoginAttempts);
-          }
-          return null;
-        }
-
-        if (user.lockedUntil && user.lockedUntil > new Date()) {
-          return null;
-        }
-
-        // Password is correct — lockout resets only once the whole sign-in (including
-        // any required 2FA code) succeeds, so a wrong 2FA guess still counts toward it.
-        if (user.twoFactorEnabled && user.twoFactorMethod === "TOTP" && user.totpSecret) {
-          if (typeof code !== "string" || code.length === 0) {
-            throw new TwoFactorRequiredTotpError();
-          }
-
-          const valid = verifyTotpCode(decryptSecret(user.totpSecret), code);
-          if (!valid) {
-            await registerFailedAttempt(user.id, user.failedLoginAttempts);
+        switch (result.kind) {
+          case "ok":
+            return result.user;
+          case "invalid_credentials":
+          case "locked_out":
+            // Locked-out and plain-wrong-credentials both surface as NextAuth's generic
+            // CredentialsSignin here, same as before this was extracted into
+            // verifyCredentials — the web sign-in form has never distinguished the two.
+            return null;
+          case "two_factor_required":
+            throw result.method === "TOTP" ? new TwoFactorRequiredTotpError() : new TwoFactorRequiredEmailError();
+          case "invalid_two_factor_code":
             throw new InvalidTwoFactorCodeError();
-          }
-        } else if (user.twoFactorEnabled) {
-          if (typeof code !== "string" || code.length === 0) {
-            const freshCode = await issueVerificationCode(user.id, "TWO_FACTOR");
-            if (freshCode) {
-              await sendTwoFactorCodeEmail(user.email, freshCode);
-            }
-            throw new TwoFactorRequiredEmailError();
-          }
-
-          const result = await verifyCode(user.id, "TWO_FACTOR", code);
-          if (result !== "ok") {
-            await registerFailedAttempt(user.id, user.failedLoginAttempts);
-            throw new InvalidTwoFactorCodeError();
-          }
         }
-
-        if (user.failedLoginAttempts > 0) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { failedLoginAttempts: 0, lockedUntil: null },
-          });
-        }
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          image: user.image,
-        };
       },
     }),
   ],
@@ -159,17 +106,3 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
     },
   },
 });
-
-async function registerFailedAttempt(userId: string, currentAttempts: number) {
-  const attempts = currentAttempts + 1;
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      failedLoginAttempts: attempts,
-      lockedUntil:
-        attempts >= MAX_FAILED_ATTEMPTS
-          ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
-          : undefined,
-    },
-  });
-}
