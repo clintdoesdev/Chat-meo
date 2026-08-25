@@ -31,7 +31,11 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          # @capacitor/android's own build.gradle declares sourceCompatibility/
+          # targetCompatibility JavaVersion.VERSION_21 — javac under JDK 17 can't target a
+          # release newer than its own version ("invalid source release: 21"), so this has to
+          # be at least 21, not just whatever satisfies AGP 8.13's own (lower) floor.
+          java-version: "21"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
