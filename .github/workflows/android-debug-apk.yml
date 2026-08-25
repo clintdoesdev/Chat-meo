@@ -19,7 +19,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # @capacitor/cli 8.x requires Node >=22 (`npx cap sync` fails outright below that) —
+          # matches the Next.js app's own dev/build environment too, not just Capacitor's floor.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
