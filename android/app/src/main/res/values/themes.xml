@@ -1,8 +1,16 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Chatmeo's web app is dark-first (see src/app/globals.css) — mirrored here rather than
          following system light/dark, so the native shell matches the brand instead of looking
-         like a different, unrelated app when a user's phone is in light mode. -->
-    <style name="Theme.Chatmeo" parent="Theme.Material3.Dark.NoActionBar">
+         like a different, unrelated app when a user's phone is in light mode.
+
+         Parented from the plain platform theme, not a "Theme.Material3.*" XML style — those
+         names belong to the classic View-system Material Components library
+         (com.google.android.material:material), which this Compose-only app never depends on.
+         Compose's own Material3 (androidx.compose.material3, in ChatmeoTheme.kt) is a completely
+         separate thing from that XML theme system and needs no XML style of its own — this
+         parent theme only has to supply a sane system-window baseline (status bar, edge-to-edge
+         behavior) before setContent {} hands rendering over to Compose. -->
+    <style name="Theme.Chatmeo" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@color/chatmeo_bg</item>
         <item name="android:navigationBarColor">@color/chatmeo_bg</item>
         <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
