@@ -73,8 +73,13 @@ dependencies {
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.5.0")
+    // Pinned to the 4.x line deliberately, not "latest" (5.x, since 5.4.0) — okhttp3:okhttp 5.x's
+    // AAR now declares it needs compileSdk 37+, but AGP 8.13.0 (this project's version) only
+    // supports up to compileSdk 36 ("An issue was found when checking AAR metadata" was the
+    // actual CI failure this pin fixes). 4.12.0 predates that requirement and is still the
+    // long-established, widely-used stable line.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
