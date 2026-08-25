@@ -280,29 +280,31 @@ export async function sendAgentReply(
       return { error: "Couldn't send — try again." };
     }
 
-    await prisma.$transaction([
-      prisma.message.create({
-        data: {
-          conversationId,
-          role: "AGENT",
-          content: trimmed,
-          channel: "WHATSAPP",
-          replyToId: resolvedReplyToId,
-          waMessageId: sentWaMessageId,
-          deliveryStatus: sentWaMessageId ? "SENT" : undefined,
-        },
-      }),
-      prisma.conversation.update({ where: { id: conversationId }, data: { status: "HANDOFF" } }),
-    ]);
+    // Deliberately doesn't touch conversation.status — sending a reply is not the same thing as
+    // the conversation needing one (that's what HANDOFF/"Needs a human" means, see the label in
+    // inbox-view.tsx). Forcing every manual reply into HANDOFF used to mean a seller replying to
+    // a perfectly normal OPEN conversation — just adding a personal note, answering something the
+    // bot missed — got permanently stuck showing "Needs a human" afterward, even though a human
+    // had just handled it. A conversation that was already HANDOFF (the bot explicitly gave up)
+    // stays HANDOFF until the seller explicitly resolves it or restarts the bot (resolveConversation
+    // / restartBotForConversation) — replying to help doesn't by itself mean "fully done."
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: "AGENT",
+        content: trimmed,
+        channel: "WHATSAPP",
+        replyToId: resolvedReplyToId,
+        waMessageId: sentWaMessageId,
+        deliveryStatus: sentWaMessageId ? "SENT" : undefined,
+      },
+    });
     return { error: null };
   }
 
-  await prisma.$transaction([
-    prisma.message.create({
-      data: { conversationId, role: "AGENT", content: trimmed, channel: "WEB", replyToId: resolvedReplyToId },
-    }),
-    prisma.conversation.update({ where: { id: conversationId }, data: { status: "HANDOFF" } }),
-  ]);
+  await prisma.message.create({
+    data: { conversationId, role: "AGENT", content: trimmed, channel: "WEB", replyToId: resolvedReplyToId },
+  });
 
   return { error: null };
 }
@@ -447,22 +449,22 @@ export async function forwardMessage(messageId: string, targetConversationId: st
     }
   }
 
-  await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        conversationId: target.id,
-        role: "AGENT",
-        content: source.content,
-        contentType: source.contentType,
-        caption: source.caption,
-        channel: isWhatsApp ? "WHATSAPP" : "WEB",
-        forwarded: true,
-        waMessageId: sentWaMessageId,
-        deliveryStatus: sentWaMessageId ? "SENT" : undefined,
-      },
-    }),
-    prisma.conversation.update({ where: { id: target.id }, data: { status: "HANDOFF" } }),
-  ]);
+  // See sendAgentReply's comment above — a forwarded message is still just an AGENT message,
+  // and shouldn't force the target conversation into "Needs a human" any more than a typed
+  // reply should.
+  await prisma.message.create({
+    data: {
+      conversationId: target.id,
+      role: "AGENT",
+      content: source.content,
+      contentType: source.contentType,
+      caption: source.caption,
+      channel: isWhatsApp ? "WHATSAPP" : "WEB",
+      forwarded: true,
+      waMessageId: sentWaMessageId,
+      deliveryStatus: sentWaMessageId ? "SENT" : undefined,
+    },
+  });
 
   return { error: null };
 }

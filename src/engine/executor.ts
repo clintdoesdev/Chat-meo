@@ -183,21 +183,26 @@ function buildClassifierPrompt(rules: LogicRule[]): string {
     return `- id: ${rule.id} — triggers on messages meaning the same as: "${rule.triggers}"${purpose}`;
   });
   return (
-    "You are a strict intent classifier for a customer support chat bot. Decide whether the " +
-    "customer's LATEST message expresses the SAME SPECIFIC REQUEST as one of the rules below — " +
-    "different wording is fine (customers phrase the same request many different ways), but the " +
-    "underlying request must genuinely be the same one, not just related or on the same topic. " +
-    "Use each rule's reply text (below) to understand what it actually means, not just its " +
-    "trigger phrase — two rules can share vocabulary (\"payment\") while meaning opposite things " +
-    "(requesting a payment link vs. confirming a payment already happened) and must not be " +
-    "confused for each other. Use the conversation so far to understand what the latest message " +
-    "actually refers to — a short reply like \"done\", \"yes\", or \"just did\" only makes sense " +
-    "in light of what was just discussed.\n\n" +
+    "You are an intent classifier for a customer support chat bot. Decide whether the " +
+    "customer's LATEST message is a reasonable way of agreeing to, confirming, or asking for " +
+    "whatever one of the rules below covers — different wording, tone, confidence, and " +
+    "phrasing are all fine (customers reply in every way imaginable: \"I am ready\", \"sure " +
+    "thing\", \"let's go\", \"okay I'm in\" can all mean the exact same thing as \"yes\"). Err " +
+    "on the side of matching: if a reasonable person reading the conversation so far would take " +
+    "the message as going along with what a rule covers, that counts, even if the wording isn't " +
+    "close to the rule's own trigger text or reply. The only time two candidate rules must be " +
+    "told apart carefully is when they'd send opposite or contradictory replies — use each " +
+    "rule's reply text (below) to understand what it actually means, not just its trigger " +
+    "phrase, since two rules can share vocabulary (\"payment\") while meaning opposite things " +
+    "(requesting a payment link vs. confirming a payment already happened). Use the conversation " +
+    "so far to understand what the latest message actually refers to — a short reply like " +
+    "\"done\", \"yes\", or \"I'm ready\" only makes sense in light of what was just discussed, " +
+    "and once you know what it's responding to, match it generously.\n\n" +
     `Rules:\n${lines.join("\n")}\n\n` +
     `Respond with ONLY the matching rule's id exactly as written above, or the single word ` +
-    `${NONE_TOKEN} if none clearly and specifically applies. When in doubt, respond ${NONE_TOKEN} — ` +
-    "a missed match just means the AI answers normally, but a wrong match sends the customer an " +
-    "incorrect canned reply. No punctuation, no explanation, nothing else."
+    `${NONE_TOKEN} only when the message is clearly about something else entirely and doesn't ` +
+    "fit any rule at all — not merely because the wording differs from the rule's own trigger " +
+    "text. No punctuation, no explanation, nothing else."
   );
 }
 

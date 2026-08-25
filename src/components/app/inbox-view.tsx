@@ -525,7 +525,6 @@ export function InboxView({
       return;
     }
     setDetail(await getConversationMessages(activeId));
-    patchConversation(activeId, { status: "HANDOFF" });
   }
 
   async function handleResolve() {
@@ -612,7 +611,6 @@ export function InboxView({
     }
     setForwardingMessageId(null);
     if (activeId === targetConversationId) setDetail(await getConversationMessages(targetConversationId));
-    patchConversation(targetConversationId, { status: "HANDOFF" });
   }
 
   async function handleExportAll() {

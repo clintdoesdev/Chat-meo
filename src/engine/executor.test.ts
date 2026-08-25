@@ -1746,11 +1746,11 @@ describe("step: logic node semantic (AI) matching", () => {
     expect(call.temperature).toBe(0);
     expect(capturedHistory).toEqual([{ role: "user", content: "hello there" }]);
     expect(call.systemPrompt).toContain("rule-pay");
-    // Guards against a classifier that fires too eagerly on merely-related messages: the prompt
-    // must tell it to require the same specific request, not just shared topic/wording, and to
-    // default to no match when it isn't sure.
-    expect(call.systemPrompt).toMatch(/same specific request/i);
-    expect(call.systemPrompt).toMatch(/when in doubt.*NONE/i);
+    // The prompt should bias toward matching (different wording/phrasing/confidence is fine,
+    // NONE is only for messages clearly about something else) rather than requiring a narrow
+    // exact-request match — see the "I am ready" == "yes" style regression this guards against.
+    expect(call.systemPrompt).toMatch(/err on the side of matching/i);
+    expect(call.systemPrompt).toMatch(/clearly about something else entirely/i);
   });
 
   it("includes each candidate rule's reply text in the prompt, not just its trigger phrase", async () => {
