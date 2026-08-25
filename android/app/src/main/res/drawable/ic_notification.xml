@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar/notification icon — Android requires this to be a plain white silhouette on
+     transparent (it tints and masks this itself; any color/gradient here is ignored or looks
+     wrong), so this is the Meo mark's outline only, no eyes/gradient. See
+     src/components/meo-mark.tsx for the source shape this is traced from. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64"
+    android:tint="#FFFFFF">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M32,6C17,6 6,16.4 6,30c0,7.8 3.8,14.5 9.9,18.9 -0.4,3.2 -1.7,6.3 -4.2,8.7 -0.7,0.7 -0.2,1.9 0.8,1.8 5.4,-0.5 10.2,-2.6 13.8,-5 1.8,0.3 3.7,0.5 5.7,0.5 15,0 26,-10.4 26,-23.9S47,6 32,6z" />
+</vector>

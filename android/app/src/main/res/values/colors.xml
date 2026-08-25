@@ -1,0 +1,10 @@
+<resources>
+    <!-- The Meo brand gradient's two stops (src/components/shared-defs.tsx) — chatmeo_orange is
+         used as the flat/solid color anywhere a gradient isn't practical (status bar, splash
+         background, notification accent). -->
+    <color name="chatmeo_orange">#FF5C16</color>
+    <color name="chatmeo_orange_light">#FF7A2F</color>
+    <color name="chatmeo_bg">#0C0C0C</color>
+    <color name="chatmeo_surface">#161616</color>
+    <color name="white">#FFFFFF</color>
+</resources>

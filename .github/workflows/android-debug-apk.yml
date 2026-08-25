@@ -1,0 +1,40 @@
+name: Android debug APK
+
+# Builds Chatmeo's native Android app (android/ — Kotlin + Jetpack Compose, talking to
+# /api/v1/* over Retrofit, no WebView involved) and uploads a debug APK as this run's artifact,
+# for installing on a device/emulator to check the native app itself without Android Studio.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # AGP 8.13 itself only needs 17, but the app module's own build.gradle.kts sets
+          # sourceCompatibility/targetCompatibility to 17 as well — this just has to be >= that.
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmeo-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
