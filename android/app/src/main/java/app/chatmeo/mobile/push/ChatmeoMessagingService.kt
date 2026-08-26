@@ -24,13 +24,11 @@ class ChatmeoMessagingService : FirebaseMessagingService() {
         // onNewToken can fire before the user has ever logged in (a token is generated at
         // install time) — registerIfLoggedIn silently no-ops in that case; MainActivity registers
         // the then-current token again right after a successful login to cover that gap.
-        val pendingResult = goAsync()
+        // No goAsync() here — that's a BroadcastReceiver API, not available on Service (which
+        // FirebaseMessagingService extends); FCM already keeps the process alive around this
+        // callback long enough for a short suspend call like this one.
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                registerIfLoggedIn(token)
-            } finally {
-                pendingResult.finish()
-            }
+            registerIfLoggedIn(token)
         }
     }
 
