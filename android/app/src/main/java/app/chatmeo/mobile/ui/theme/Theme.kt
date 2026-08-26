@@ -1,6 +1,7 @@
 package app.chatmeo.mobile.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -37,6 +38,12 @@ fun ChatmeoTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = ChatmeoColorScheme,
         typography = ChatmeoTypography,
-        content = content,
-    )
+    ) {
+        // Without this Surface, LocalContentColor never gets set from the color scheme (it
+        // defaults to plain black regardless of theme) — every Text() without an explicit color
+        // was rendering black-on-near-black, unreadable. Surface(color = background) is what
+        // actually wires background/onBackground into text's default color, same as the
+        // Scaffold-based screens already got for free from Scaffold's own internal Surface.
+        Surface(color = MaterialTheme.colorScheme.background, content = content)
+    }
 }
