@@ -93,7 +93,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
+    // Not firebase-messaging-ktx — Firebase merged the Kotlin extensions into the base artifact
+    // and dropped the separate -ktx module (real CI failure this fixes: "Could not find
+    // com.google.firebase:firebase-messaging-ktx:." — the BOM has no version for it anymore).
+    implementation("com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
