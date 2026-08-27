@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NavDashboardIcon, NavFlowsIcon, NavInboxIcon, NavSettingsIcon } from "@/components/icons";
+import { NavDashboardIcon, NavFlowsIcon, NavInboxIcon } from "@/components/icons";
+import { ToolsMenu } from "@/components/app/tools-menu";
 
+// Settings used to be a 4th entry here, duplicating what the avatar menu (top-bar.tsx) already
+// links to — the avatar/profile icon is visible at every breakpoint (it's outside the
+// min-[760px]-gated nav pills), so dropping it here just removes the redundant second path
+// instead of removing access to Settings.
 const NAV_ITEMS = [
   { href: "/app", label: "Overview", Icon: NavDashboardIcon },
   { href: "/app/studio", label: "Studio", Icon: NavFlowsIcon },
   { href: "/app/inbox", label: "Inbox", Icon: NavInboxIcon },
-  { href: "/app/settings", label: "Settings", Icon: NavSettingsIcon },
 ];
 
 export function NavLinks({ variant }: { variant: "top" | "bottom" }) {
@@ -38,6 +42,7 @@ export function NavLinks({ variant }: { variant: "top" | "bottom" }) {
           </Link>
         );
       })}
+      <ToolsMenu variant={variant} />
     </>
   );
 }
