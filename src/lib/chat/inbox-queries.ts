@@ -194,3 +194,25 @@ export async function getConversationMessagesForUser(userId: string, conversatio
     })),
   };
 }
+
+/**
+ * Archiving is purely an Inbox organization concept (see Conversation.archived's schema doc
+ * comment) — it hides a conversation from the default view without touching `status`, so it has
+ * no effect on whether the bot keeps replying. Shared by src/lib/actions/inbox.ts's
+ * setConversationArchived (the web Server Action) and the mobile REST API
+ * (src/app/api/v1/conversations/[id]/route.ts), same split as listConversationsForUser above.
+ */
+export async function setConversationArchivedForUser(
+  userId: string,
+  conversationId: string,
+  archived: boolean,
+): Promise<{ error: string | null }> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== userId) return { error: "Conversation not found." };
+
+  await prisma.conversation.update({ where: { id: conversationId }, data: { archived } });
+  return { error: null };
+}

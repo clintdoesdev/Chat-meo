@@ -18,6 +18,11 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
       "src/generated/**",
+      // Separate self-contained projects with their own tooling (mobile/'s own ESLint config via
+      // `expo lint`, android/ has no JS/TS at all) — same reasoning as excluding them from
+      // tsconfig.json above.
+      "android/**",
+      "mobile/**",
     ],
   },
 ];
