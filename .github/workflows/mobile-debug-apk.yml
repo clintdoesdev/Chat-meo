@@ -1,0 +1,58 @@
+name: Mobile debug APK
+
+# Builds Chatmeo's React Native (Expo) mobile app (mobile/ — talking to /api/v1/* the same way the
+# now-retired Kotlin app did) into a real, installable debug APK. This sandbox's own egress proxy
+# blocks api.expo.dev entirely, which rules out both `expo start --tunnel` (needs it for the ngrok
+# handshake) and EAS Build (needs it for everything) as ways to get this onto a device from here —
+# GitHub Actions runners have normal internet access, so this is the same "build in CI, download
+# the artifact" pattern already used for the Kotlin app's android-debug-apk.yml.
+#
+# `expo prebuild` generates a disposable native mobile/android/ project on the fly (gitignored,
+# never committed — see mobile/.gitignore) from app.json + the installed Expo packages, then it's
+# a completely ordinary Gradle build from there.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prebuild native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmeo-mobile-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
