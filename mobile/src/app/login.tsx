@@ -12,6 +12,7 @@ import { login as loginRequest } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { GradientButton } from "@/components/gradient-button";
 import { MeoMark } from "@/components/meo-mark";
+import { registerForPushNotifications } from "@/lib/push/notifications";
 import { useAuthStore } from "@/store/auth";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
@@ -45,6 +46,7 @@ export default function LoginScreen() {
       );
       if (response.token && response.user) {
         await setSession(response.token, response.user);
+        registerForPushNotifications();
       } else if (response.requiresTwoFactor) {
         setStep("twoFactor");
         setTwoFactorMethod(response.method ?? "EMAIL");

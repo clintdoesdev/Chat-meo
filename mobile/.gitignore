@@ -18,6 +18,10 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Firebase config — per-project, not committed (same reasoning as android/.gitignore in this
+# repo's now-retired Kotlin app); CI writes it from a repo secret before building.
+google-services.json
+
 # Metro
 .metro-health-check*
 
