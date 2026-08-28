@@ -29,14 +29,19 @@ async function ensureNotificationChannel(): Promise<void> {
   });
 }
 
-/** Requests permission (if needed) and registers this device's FCM token with the backend via
- * the existing POST /api/v1/push/register — same endpoint the Kotlin app used, same DeviceToken
- * table, same src/lib/push/fcm.ts send path server-side. Called on startup for an already-signed-
- * in user and right after a successful login, since a token can exist before either of those
- * (Android issues one at install time). Best-effort throughout: a declined permission or a failed
- * registration call just means no push notifications, never a broken app. */
-export async function registerForPushNotifications(): Promise<void> {
-  if (!Device.isDevice) return; // Emulators/simulators don't have real push tokens.
+/** Every place this can stop short, reported back instead of swallowed — the original
+ * implementation caught nothing, so a device-token or registration failure looked identical to
+ * "working fine" from the app's own point of view. Surfaced on the Settings screen's
+ * notifications card so a failure is visible without needing a computer + adb logcat. */
+export type PushRegistrationStatus =
+  | { state: "not-a-device" }
+  | { state: "permission-denied" }
+  | { state: "token-failed"; message: string }
+  | { state: "register-failed"; message: string }
+  | { state: "registered" };
+
+export async function registerForPushNotifications(): Promise<PushRegistrationStatus> {
+  if (!Device.isDevice) return { state: "not-a-device" }; // Emulators/simulators don't have real push tokens.
 
   await ensureNotificationChannel();
 
@@ -46,10 +51,24 @@ export async function registerForPushNotifications(): Promise<void> {
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
-  if (finalStatus !== "granted") return;
+  if (finalStatus !== "granted") return { state: "permission-denied" };
 
-  const { data: token } = await Notifications.getDevicePushTokenAsync();
-  await registerPushToken(token).catch(() => {
-    // Fire-and-forget, same as every other push-registration path in this app.
-  });
+  let token: string;
+  try {
+    token = (await Notifications.getDevicePushTokenAsync()).data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[push] failed to get device token", { error });
+    return { state: "token-failed", message };
+  }
+
+  try {
+    await registerPushToken(token);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[push] failed to register token with server", { error });
+    return { state: "register-failed", message };
+  }
+
+  return { state: "registered" };
 }
