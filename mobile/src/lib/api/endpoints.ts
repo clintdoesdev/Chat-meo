@@ -5,6 +5,7 @@ import type {
   ConversationsResponse,
   ErrorResponse,
   LoginResponse,
+  PushTestResponse,
 } from "@/lib/api/types";
 
 export function login(email: string, password: string, code?: string): Promise<LoginResponse> {
@@ -49,4 +50,8 @@ export function registerPushToken(token: string): Promise<ErrorResponse> {
     method: "POST",
     body: JSON.stringify({ token }),
   });
+}
+
+export function sendTestPush(): Promise<PushTestResponse> {
+  return apiFetch<PushTestResponse>("/api/v1/push/test");
 }

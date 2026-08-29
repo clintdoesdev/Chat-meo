@@ -87,3 +87,16 @@ export type ConversationDetailDto = {
 export type ConversationDetailResponse = {
   conversation: ConversationDetailDto;
 };
+
+export type WebPushDiagnostics =
+  | { configured: false }
+  | { configured: true; subscriptionCount: number; sent: number; failed: { statusCode?: number; message: string }[] };
+
+export type FcmDiagnostics =
+  | { configured: false }
+  | { configured: true; tokenCount: number; sent: number; failed: { code?: string; message: string }[] };
+
+export type PushTestResponse = {
+  webPush: WebPushDiagnostics;
+  fcm: FcmDiagnostics;
+};

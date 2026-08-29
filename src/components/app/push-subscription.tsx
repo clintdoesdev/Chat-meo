@@ -3,6 +3,27 @@
 import { useEffect, useState } from "react";
 import { CommsBellIcon } from "@/components/icons";
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/actions/push";
+import type { PushDiagnostics } from "@/lib/push/send";
+
+function describeTestResult(result: PushDiagnostics): string {
+  const fcm = !result.fcm.configured
+    ? "FCM: server has no Firebase key configured."
+    : result.fcm.tokenCount === 0
+      ? "FCM: no Android device token on file."
+      : result.fcm.sent > 0
+        ? `FCM: sent to ${result.fcm.sent}/${result.fcm.tokenCount} device(s).`
+        : `FCM: send failed — ${result.fcm.failed.map((f) => `${f.code ?? "error"}: ${f.message}`).join("; ")}`;
+
+  const web = !result.webPush.configured
+    ? "Web push: server has no VAPID keys configured."
+    : result.webPush.subscriptionCount === 0
+      ? "Web push: no browser subscription on file."
+      : result.webPush.sent > 0
+        ? `Web push: sent to ${result.webPush.sent}/${result.webPush.subscriptionCount} subscription(s).`
+        : `Web push: send failed — ${result.webPush.failed.map((f) => `${f.statusCode ?? "error"}: ${f.message}`).join("; ")}`;
+
+  return `${fcm}\n${web}`;
+}
 
 /** web-push's applicationServerKey wants raw bytes, not the base64url string VAPID keys are
  * normally shared as. */
@@ -21,6 +42,8 @@ export function PushSubscriptionToggle() {
   const [supported, setSupported] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
@@ -74,19 +97,49 @@ export function PushSubscriptionToggle() {
     }
   }
 
+  async function handleTest() {
+    if (testing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const response = await fetch("/api/push/test");
+      const json = (await response.json()) as PushDiagnostics | { error: string };
+      setTestResult("error" in json ? json.error : describeTestResult(json));
+    } catch (error) {
+      setTestResult(error instanceof Error ? error.message : "Request failed.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   if (!supported) return null;
 
   return (
-    <button
-      type="button"
-      data-fx-skip
-      onClick={handleToggle}
-      disabled={busy}
-      aria-pressed={subscribed}
-      className="flex w-full items-center gap-2 rounded-[11px] px-3 py-2.5 text-left text-[12.5px] font-medium text-muted transition-colors hover:bg-card-2 hover:text-text disabled:opacity-50"
-    >
-      <CommsBellIcon size={13} className={subscribed ? "text-orange-2" : undefined} />
-      {subscribed ? "Push notifications on" : "Enable push notifications"}
-    </button>
+    <>
+      <button
+        type="button"
+        data-fx-skip
+        onClick={handleToggle}
+        disabled={busy}
+        aria-pressed={subscribed}
+        className="flex w-full items-center gap-2 rounded-[11px] px-3 py-2.5 text-left text-[12.5px] font-medium text-muted transition-colors hover:bg-card-2 hover:text-text disabled:opacity-50"
+      >
+        <CommsBellIcon size={13} className={subscribed ? "text-orange-2" : undefined} />
+        {subscribed ? "Push notifications on" : "Enable push notifications"}
+      </button>
+      {subscribed ? (
+        <button
+          type="button"
+          data-fx-skip
+          onClick={handleTest}
+          disabled={testing}
+          className="flex w-full items-center gap-2 rounded-[11px] px-3 py-2.5 text-left text-[12.5px] font-medium text-muted transition-colors hover:bg-card-2 hover:text-text disabled:opacity-50"
+        >
+          <CommsBellIcon size={13} />
+          {testing ? "Sending…" : "Send test notification"}
+        </button>
+      ) : null}
+      {testResult ? <p className="whitespace-pre-line px-3 py-1 text-[11px] text-muted">{testResult}</p> : null}
+    </>
   );
 }

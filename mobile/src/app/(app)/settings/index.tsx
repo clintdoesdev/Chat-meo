@@ -1,11 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { sendTestPush as sendTestPushRequest } from "@/lib/api/endpoints";
+import type { PushTestResponse } from "@/lib/api/types";
 import { registerForPushNotifications, type PushRegistrationStatus } from "@/lib/push/notifications";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
 type CardState = { loading: boolean; result: PushRegistrationStatus | null };
+
+function describeTestResult(result: PushTestResponse): string {
+  const fcm = !result.fcm.configured
+    ? "FCM: server has no Firebase key configured."
+    : result.fcm.tokenCount === 0
+      ? "FCM: no device token on file for this account."
+      : result.fcm.sent > 0
+        ? `FCM: sent to ${result.fcm.sent}/${result.fcm.tokenCount} device(s).`
+        : `FCM: send failed — ${result.fcm.failed.map((f) => `${f.code ?? "error"}: ${f.message}`).join("; ")}`;
+
+  const web = !result.webPush.configured
+    ? "Web push: server has no VAPID keys configured."
+    : result.webPush.subscriptionCount === 0
+      ? "Web push: no browser subscription on file for this account."
+      : result.webPush.sent > 0
+        ? `Web push: sent to ${result.webPush.sent}/${result.webPush.subscriptionCount} subscription(s).`
+        : `Web push: send failed — ${result.webPush.failed.map((f) => `${f.statusCode ?? "error"}: ${f.message}`).join("; ")}`;
+
+  return `${fcm}\n${web}`;
+}
 
 const STATUS_COPY: Record<PushRegistrationStatus["state"], { label: string; ok: boolean }> = {
   registered: { label: "Notifications are on — new messages will alert this device.", ok: true },
@@ -24,6 +46,10 @@ const STATUS_COPY: Record<PushRegistrationStatus["state"], { label: string; ok: 
  * plus the raw error text, so the next report is a specific error instead of "not working." */
 function NotificationsCard() {
   const [state, setState] = useState<CardState>({ loading: true, result: null });
+  const [testState, setTestState] = useState<{ loading: boolean; text: string | null }>({
+    loading: false,
+    text: null,
+  });
 
   const check = useCallback(() => {
     setState({ loading: true, result: null });
@@ -34,6 +60,13 @@ function NotificationsCard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState only runs after check()'s internal await, same pattern as inbox/index.tsx's fetch-on-mount effect
     check();
   }, [check]);
+
+  function runTest() {
+    setTestState({ loading: true, text: null });
+    sendTestPushRequest()
+      .then((result) => setTestState({ loading: false, text: describeTestResult(result) }))
+      .catch((error) => setTestState({ loading: false, text: `Request failed: ${error instanceof Error ? error.message : String(error)}` }));
+  }
 
   const copy = state.result ? STATUS_COPY[state.result.state] : null;
   const errorDetail =
@@ -58,6 +91,13 @@ function NotificationsCard() {
           </Pressable>
         </>
       )}
+
+      <View style={styles.divider} />
+
+      <Pressable style={styles.retryButton} onPress={runTest} disabled={testState.loading}>
+        <Text style={styles.retryLabel}>{testState.loading ? "Sending…" : "Send test push"}</Text>
+      </Pressable>
+      {testState.text ? <Text style={styles.errorDetail}>{testState.text}</Text> : null}
     </View>
   );
 }
@@ -120,6 +160,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontFamily: fontFamily.regular,
     fontSize: 12,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.line,
+    marginVertical: spacing.xs,
   },
   retryButton: {
     alignSelf: "flex-start",
