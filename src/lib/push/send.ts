@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureFcmConfigured, getFcmConfigError, getMessaging } from "@/lib/push/fcm";
-import { ensurePushConfigured, webpush } from "@/lib/push/vapid";
+import { ensurePushConfigured, getVapidConfigError, webpush } from "@/lib/push/vapid";
 
 export type PushPayload = {
   title: string;
@@ -10,7 +10,7 @@ export type PushPayload = {
 };
 
 export type WebPushDiagnostics =
-  | { configured: false }
+  | { configured: false; configError: string | null }
   | { configured: true; subscriptionCount: number; sent: number; failed: { statusCode?: number; message: string }[] };
 
 export type FcmDiagnostics =
@@ -45,8 +45,12 @@ export async function sendTestPush(userId: string): Promise<PushDiagnostics> {
 
 async function sendWebPush(userId: string, payload: PushPayload): Promise<WebPushDiagnostics> {
   if (!ensurePushConfigured()) {
-    console.warn("[push] VAPID keys not set — skipping web push", { userId });
-    return { configured: false };
+    const configError = getVapidConfigError();
+    console.warn(
+      configError ? "[push] VAPID keys are set but invalid — skipping web push" : "[push] VAPID keys not set — skipping web push",
+      { userId, configError },
+    );
+    return { configured: false, configError };
   }
 
   const subscriptions = await prisma.pushSubscription.findMany({

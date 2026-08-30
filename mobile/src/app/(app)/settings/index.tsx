@@ -21,7 +21,9 @@ function describeTestResult(result: PushTestResponse): string {
         : `FCM: send failed — ${result.fcm.failed.map((f) => `${f.code ?? "error"}: ${f.message}`).join("; ")}`;
 
   const web = !result.webPush.configured
-    ? "Web push: server has no VAPID keys configured."
+    ? result.webPush.configError
+      ? `Web push: VAPID keys are set but invalid — ${result.webPush.configError}`
+      : "Web push: server has no VAPID keys configured."
     : result.webPush.subscriptionCount === 0
       ? "Web push: no browser subscription on file for this account."
       : result.webPush.sent > 0

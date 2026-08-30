@@ -89,7 +89,7 @@ export type ConversationDetailResponse = {
 };
 
 export type WebPushDiagnostics =
-  | { configured: false }
+  | { configured: false; configError: string | null }
   | { configured: true; subscriptionCount: number; sent: number; failed: { statusCode?: number; message: string }[] };
 
 export type FcmDiagnostics =
