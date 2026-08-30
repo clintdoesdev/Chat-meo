@@ -5,7 +5,11 @@ import { adaptPersistedGraph } from "@/engine/adapt-graph";
 import { createInitialState } from "@/engine/executor";
 import { Prisma } from "@/generated/prisma/client";
 import type { ConversationDetail, ConversationSummary } from "@/lib/chat/inbox-queries";
-import { getConversationMessagesForUser, listConversationsForUser } from "@/lib/chat/inbox-queries";
+import {
+  getConversationMessagesForUser,
+  listConversationsForUser,
+  setConversationArchivedForUser,
+} from "@/lib/chat/inbox-queries";
 import { sendAgentReplyForUser } from "@/lib/chat/send-agent-reply";
 import { decrypt } from "@/lib/crypto";
 import { parseFlowGraph } from "@/lib/flow-schema";
@@ -323,15 +327,7 @@ export async function deleteConversations(conversationIds: string[]): Promise<{ 
 export async function setConversationArchived(conversationId: string, archived: boolean): Promise<{ error: string | null }> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Not signed in." };
-
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: { bot: { select: { userId: true } } },
-  });
-  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
-
-  await prisma.conversation.update({ where: { id: conversationId }, data: { archived } });
-  return { error: null };
+  return setConversationArchivedForUser(session.user.id, conversationId, archived);
 }
 
 export type FolderSummary = { id: string; name: string };

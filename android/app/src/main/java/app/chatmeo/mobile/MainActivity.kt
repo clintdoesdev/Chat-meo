@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import app.chatmeo.mobile.push.registerCurrentFcmToken
 import app.chatmeo.mobile.ui.navigation.ChatmeoNavHost
 import app.chatmeo.mobile.ui.navigation.ROUTE_HOME
 import app.chatmeo.mobile.ui.navigation.ROUTE_LOGIN
@@ -33,8 +34,12 @@ class MainActivity : ComponentActivity() {
         splashScreen.setKeepOnScreenCondition { startDestination == null }
 
         lifecycleScope.launch {
-            val existingToken = (application as ChatmeoApplication).tokenStore.token.first()
+            val app = application as ChatmeoApplication
+            val existingToken = app.tokenStore.token.first()
             startDestination = if (existingToken != null) ROUTE_HOME else ROUTE_LOGIN
+            // Covers a device token issued (or refreshed) while the app had no active session to
+            // register it against — cheap no-op registration otherwise.
+            if (existingToken != null) registerCurrentFcmToken(app.repository)
         }
 
         requestNotificationPermissionIfNeeded()

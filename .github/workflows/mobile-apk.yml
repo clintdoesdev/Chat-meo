@@ -1,0 +1,77 @@
+name: Mobile release APK
+
+# Builds Chatmeo's React Native (Expo) mobile app (mobile/ — talking to /api/v1/* the same way the
+# now-retired Kotlin app did) into a real, installable APK. This sandbox's own egress proxy blocks
+# api.expo.dev entirely, which rules out both `expo start --tunnel` (needs it for the ngrok
+# handshake) and EAS Build (needs it for everything) as ways to get this onto a device from here —
+# GitHub Actions runners have normal internet access, so this is the same "build in CI, download
+# the artifact" pattern already used for the Kotlin app's android-debug-apk.yml.
+#
+# Builds the *release* variant, not debug, despite this being for testing, not an actual release —
+# confirmed by the real failure on round 1's debug build ("Unable to load script... The device must
+# be on the same Wi-Fi network... to connect to Metro"): React Native's debug build type fetches its
+# JS bundle live from a running Metro dev server by design, so a debug APK installed with no Metro
+# anywhere nearby can never load. Release embeds the JS bundle directly into the APK's assets at
+# build time instead — fully standalone, no dev server needed — and (confirmed by inspecting the
+# generated mobile/android/app/build.gradle) a fresh Expo project's release build type is signed
+# with the same debug keystore by default, so this still installs exactly like a debug build with
+# no extra signing setup required.
+#
+# `expo prebuild` generates a disposable native mobile/android/ project on the fly (gitignored,
+# never committed — see mobile/.gitignore) from app.json + the installed Expo packages, then it's
+# a completely ordinary Gradle build from there.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Write google-services.json
+        # Reuses the same GOOGLE_SERVICES_JSON repo secret already set up for the retired Kotlin
+        # app's CI (android-debug-apk.yml) — this app has the same package name (app.chatmeo.mobile)
+        # and uses the same Firebase project, so the same config file is valid for both.
+        working-directory: mobile
+        run: echo "$GOOGLE_SERVICES_JSON" > google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prebuild native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmeo-mobile-release-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

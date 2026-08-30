@@ -1,8 +1,11 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -43,14 +46,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+// Kotlin 2.3's Android Gradle plugin integration hard-errors on the old `kotlinOptions { jvmTarget
+// = "17" }` block ("Using 'jvmTarget: String' is an error. Please migrate to the compilerOptions
+// DSL.") — this is that migration, kept equivalent to the sourceCompatibility/targetCompatibility
+// above.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
@@ -81,6 +91,12 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    // Not firebase-messaging-ktx — Firebase merged the Kotlin extensions into the base artifact
+    // and dropped the separate -ktx module (real CI failure this fixes: "Could not find
+    // com.google.firebase:firebase-messaging-ktx:." — the BOM has no version for it anymore).
+    implementation("com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
