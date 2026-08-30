@@ -46,6 +46,7 @@ export function PushSubscriptionToggle() {
   const [supported, setSupported] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
@@ -68,6 +69,7 @@ export function PushSubscriptionToggle() {
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!publicKey || busy) return;
     setBusy(true);
+    setToggleError(null);
 
     try {
       const registration = await navigator.serviceWorker.ready;
@@ -82,20 +84,39 @@ export function PushSubscriptionToggle() {
         return;
       }
 
+      // Browsers refuse to show the permission prompt again once it's been denied for this site
+      // — requestPermission() just silently resolves "denied" with no UI at all, which is
+      // indistinguishable from "the button did nothing" without this check. The fix isn't
+      // anything this code can do — the user has to clear it from the browser's own site
+      // settings (padlock/site-info icon in the address bar → Permissions → Notifications).
+      if (Notification.permission === "denied") {
+        setToggleError(
+          "Notifications are blocked for this site in your browser. Tap the icon next to the address bar → site settings → Notifications, and change it from Block to Allow (or reset it), then try again.",
+        );
+        return;
+      }
+
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
+      if (permission !== "granted") {
+        setToggleError("Notification permission wasn't granted.");
+        return;
+      }
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
       });
       const json = subscription.toJSON();
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        setToggleError("Browser returned an incomplete push subscription.");
+        return;
+      }
 
       await subscribeToPush({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
       setSubscribed(true);
     } catch (error) {
       console.error("[push] toggle failed", error);
+      setToggleError(error instanceof Error ? error.message : "Something went wrong enabling notifications.");
     } finally {
       setBusy(false);
     }
@@ -136,6 +157,7 @@ export function PushSubscriptionToggle() {
         <CommsBellIcon size={13} className={subscribed ? "text-orange-2" : undefined} />
         {subscribed ? "Push notifications on" : "Enable push notifications"}
       </button>
+      {toggleError ? <p className="whitespace-pre-line px-3 py-1 text-[11px] text-bad">{toggleError}</p> : null}
       {subscribed ? (
         <button
           type="button"
