@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ensureFcmConfigured, getMessaging } from "@/lib/push/fcm";
+import { ensureFcmConfigured, getFcmConfigError, getMessaging } from "@/lib/push/fcm";
 import { ensurePushConfigured, webpush } from "@/lib/push/vapid";
 
 export type PushPayload = {
@@ -14,7 +14,7 @@ export type WebPushDiagnostics =
   | { configured: true; subscriptionCount: number; sent: number; failed: { statusCode?: number; message: string }[] };
 
 export type FcmDiagnostics =
-  | { configured: false }
+  | { configured: false; configError: string | null }
   | { configured: true; tokenCount: number; sent: number; failed: { code?: string; message: string }[] };
 
 export type PushDiagnostics = { webPush: WebPushDiagnostics; fcm: FcmDiagnostics };
@@ -87,8 +87,14 @@ async function sendWebPush(userId: string, payload: PushPayload): Promise<WebPus
 
 async function sendFcmPush(userId: string, payload: PushPayload): Promise<FcmDiagnostics> {
   if (!ensureFcmConfigured()) {
-    console.warn("[push] FIREBASE_SERVICE_ACCOUNT_JSON not set — skipping FCM push", { userId });
-    return { configured: false };
+    const configError = getFcmConfigError();
+    console.warn(
+      configError
+        ? "[push] FIREBASE_SERVICE_ACCOUNT_JSON is set but invalid — skipping FCM push"
+        : "[push] FIREBASE_SERVICE_ACCOUNT_JSON not set — skipping FCM push",
+      { userId, configError },
+    );
+    return { configured: false, configError };
   }
 
   const deviceTokens = await prisma.deviceToken.findMany({ where: { userId }, select: { token: true } });

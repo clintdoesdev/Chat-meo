@@ -8,6 +8,12 @@ export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const diagnostics = await sendTestPush(session.user.id);
-  return NextResponse.json(diagnostics);
+  try {
+    const diagnostics = await sendTestPush(session.user.id);
+    return NextResponse.json(diagnostics);
+  } catch (error) {
+    console.error("[push] /api/push/test threw", { userId: session.user.id, error });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: `Test push threw: ${message}` }, { status: 500 });
+  }
 }
