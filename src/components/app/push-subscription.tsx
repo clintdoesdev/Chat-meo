@@ -34,7 +34,17 @@ function describeTestResult(result: PushDiagnostics): string {
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
+  let rawData: string;
+  try {
+    rawData = atob(base64);
+  } catch {
+    // atob's own error ("The string to be decoded is not correctly encoded") doesn't point
+    // anywhere near the actual fix — this does, since a bad copy-paste of the env var's value
+    // (quotes, extra whitespace) is by far the most common way to get here.
+    throw new Error(
+      "NEXT_PUBLIC_VAPID_PUBLIC_KEY isn't valid base64 — check the value in Vercel for stray quotes or whitespace.",
+    );
+  }
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
@@ -66,7 +76,10 @@ export function PushSubscriptionToggle() {
   }, []);
 
   async function handleToggle() {
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    // .trim() guards against a stray trailing newline or leading/trailing whitespace from
+    // however the env var's value was pasted in — atob() throws on anything that isn't valid
+    // base64, and whitespace is the single most common way a copy-paste introduces that.
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
     if (!publicKey || busy) return;
     setBusy(true);
     setToggleError(null);
