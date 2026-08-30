@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { sendTestPush as sendTestPushRequest } from "@/lib/api/endpoints";
+import { sendTestPush as sendTestPushRequest, type PushTestResult } from "@/lib/api/endpoints";
 import type { PushTestResponse } from "@/lib/api/types";
 import { registerForPushNotifications, type PushRegistrationStatus } from "@/lib/push/notifications";
 import { colors, radius, spacing } from "@/theme/tokens";
@@ -64,8 +64,15 @@ function NotificationsCard() {
   function runTest() {
     setTestState({ loading: true, text: null });
     sendTestPushRequest()
-      .then((result) => setTestState({ loading: false, text: describeTestResult(result) }))
-      .catch((error) => setTestState({ loading: false, text: `Request failed: ${error instanceof Error ? error.message : String(error)}` }));
+      .then((response: PushTestResult) => {
+        if (response.ok) {
+          setTestState({ loading: false, text: describeTestResult(response.result) });
+        } else {
+          const snippet = response.bodyText.slice(0, 300);
+          setTestState({ loading: false, text: `HTTP ${response.status} — ${snippet}` });
+        }
+      })
+      .catch((error) => setTestState({ loading: false, text: `Request failed — ${error instanceof Error ? error.message : String(error)}` }));
   }
 
   const copy = state.result ? STATUS_COPY[state.result.state] : null;

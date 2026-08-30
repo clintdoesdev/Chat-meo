@@ -103,7 +103,12 @@ export function PushSubscriptionToggle() {
     setTestResult(null);
     try {
       const response = await fetch("/api/push/test");
-      const json = (await response.json()) as PushDiagnostics | { error: string };
+      const bodyText = await response.text();
+      if (!response.ok) {
+        setTestResult(`HTTP ${response.status} — ${bodyText.slice(0, 300)}`);
+        return;
+      }
+      const json = JSON.parse(bodyText) as PushDiagnostics | { error: string };
       setTestResult("error" in json ? json.error : describeTestResult(json));
     } catch (error) {
       setTestResult(error instanceof Error ? error.message : "Request failed.");

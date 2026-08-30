@@ -1,4 +1,5 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, API_BASE_URL } from "@/lib/api/client";
+import { useAuthStore } from "@/store/auth";
 import type {
   BotsResponse,
   ConversationDetailResponse,
@@ -52,6 +53,24 @@ export function registerPushToken(token: string): Promise<ErrorResponse> {
   });
 }
 
-export function sendTestPush(): Promise<PushTestResponse> {
-  return apiFetch<PushTestResponse>("/api/v1/push/test");
+export type PushTestResult =
+  | { ok: true; result: PushTestResponse }
+  | { ok: false; status: number; bodyText: string };
+
+/** Bypasses apiFetch's throw-on-non-2xx + JSON-only parsing on purpose — this is a debug tool, so
+ * it needs the raw status and raw body text (an HTML 404/500 page included) rather than apiFetch's
+ * normal "Something went wrong" fallback, to actually tell a route-not-deployed-yet 404 apart from
+ * a route-deployed-but-crashed 500. */
+export async function sendTestPush(): Promise<PushTestResult> {
+  const token = useAuthStore.getState().token;
+  const response = await fetch(`${API_BASE_URL}/api/v1/push/test`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const bodyText = await response.text();
+  if (!response.ok) return { ok: false, status: response.status, bodyText };
+  try {
+    return { ok: true, result: JSON.parse(bodyText) as PushTestResponse };
+  } catch {
+    return { ok: false, status: response.status, bodyText };
+  }
 }
