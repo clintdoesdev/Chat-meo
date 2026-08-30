@@ -11,7 +11,9 @@ type CardState = { loading: boolean; result: PushRegistrationStatus | null };
 
 function describeTestResult(result: PushTestResponse): string {
   const fcm = !result.fcm.configured
-    ? "FCM: server has no Firebase key configured."
+    ? result.fcm.configError
+      ? `FCM: Firebase key is set but invalid — ${result.fcm.configError}`
+      : "FCM: server has no Firebase key configured."
     : result.fcm.tokenCount === 0
       ? "FCM: no device token on file for this account."
       : result.fcm.sent > 0

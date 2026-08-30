@@ -93,7 +93,7 @@ export type WebPushDiagnostics =
   | { configured: true; subscriptionCount: number; sent: number; failed: { statusCode?: number; message: string }[] };
 
 export type FcmDiagnostics =
-  | { configured: false }
+  | { configured: false; configError: string | null }
   | { configured: true; tokenCount: number; sent: number; failed: { code?: string; message: string }[] };
 
 export type PushTestResponse = {

@@ -7,7 +7,9 @@ import type { PushDiagnostics } from "@/lib/push/send";
 
 function describeTestResult(result: PushDiagnostics): string {
   const fcm = !result.fcm.configured
-    ? "FCM: server has no Firebase key configured."
+    ? result.fcm.configError
+      ? `FCM: Firebase key is set but invalid — ${result.fcm.configError}`
+      : "FCM: server has no Firebase key configured."
     : result.fcm.tokenCount === 0
       ? "FCM: no Android device token on file."
       : result.fcm.sent > 0

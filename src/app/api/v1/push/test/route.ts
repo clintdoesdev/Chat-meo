@@ -10,6 +10,12 @@ export async function GET(request: NextRequest) {
   const userId = await requireMobileUser(request);
   if (!userId) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const diagnostics = await sendTestPush(userId);
-  return NextResponse.json(diagnostics);
+  try {
+    const diagnostics = await sendTestPush(userId);
+    return NextResponse.json(diagnostics);
+  } catch (error) {
+    console.error("[push] /api/v1/push/test threw", { userId, error });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: `Test push threw: ${message}` }, { status: 500 });
+  }
 }
