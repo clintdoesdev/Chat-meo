@@ -4,7 +4,7 @@ import { useAuthStore } from "@/store/auth";
 // server-rendered page to read an env var from, so this is the same reasoning as the Android
 // sibling app's BuildConfig.API_BASE_URL (android/app/build.gradle.kts): public by definition
 // once it ships in an installed app, so there's nothing gained by indirecting through an env var.
-const API_BASE_URL = "https://chatmeo.app";
+export const API_BASE_URL = "https://chatmeo.app";
 
 export class ApiError extends Error {
   status: number;
