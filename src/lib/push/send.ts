@@ -7,6 +7,11 @@ export type PushPayload = {
   body: string;
   /** App path to open (or focus) when the notification is clicked — see public/sw.js. */
   url: string;
+  /** The specific conversation this notification is about, if any — the mobile app's notification
+   * tap handler uses this to deep-link straight into that conversation (inbox/[id].tsx) instead of
+   * just opening the Inbox list. Web has no per-conversation route to send this to yet, so `url`
+   * stays the plain Inbox path for it; this only rides along in the FCM data payload below. */
+  conversationId?: string;
 };
 
 export type WebPushDiagnostics =
@@ -108,7 +113,7 @@ async function sendFcmPush(userId: string, payload: PushPayload): Promise<FcmDia
     .sendEachForMulticast({
       tokens: deviceTokens.map((d) => d.token),
       notification: { title: payload.title, body: payload.body },
-      data: { url: payload.url },
+      data: { url: payload.url, ...(payload.conversationId ? { conversationId: payload.conversationId } : {}) },
       android: { notification: { channelId: "chatmeo_messages", color: "#FF5C16" } },
     })
     .catch((error) => {

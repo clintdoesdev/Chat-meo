@@ -37,23 +37,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "widget", label: "Widget" },
 ];
 
-// Known "status" circle emoji some flow templates use as a lightweight progress marker inside
-// message text (WhatsApp itself only renders real unicode emoji, so the sent message keeps it) —
-// swapped for a plain colored dot in the *preview list* only, for visual consistency with the
-// rest of this app's own icon language. The full conversation view still shows the raw message
-// text exactly as sent.
-const STATUS_DOT_COLORS: Record<string, string> = {
-  "🟡": colors.orange2,
-  "🟢": colors.ok,
-  "🔴": colors.bad,
-};
-const STATUS_DOT_PATTERN = /^(🟡|🟢|🔴)\s*/u;
-
-function extractStatusDot(text: string): { color: string | null; rest: string } {
-  const match = STATUS_DOT_PATTERN.exec(text);
-  if (!match) return { color: null, rest: text };
-  return { color: STATUS_DOT_COLORS[match[1]] ?? null, rest: text.slice(match[0].length) };
-}
 
 export default function InboxScreen() {
   const router = useRouter();
@@ -208,7 +191,6 @@ function ConversationRow({
   const isWhatsApp = conversation.channel === "WHATSAPP";
   const ChannelIcon = isWhatsApp ? ChannelsWhatsappIcon : ChannelsWidgetIcon;
   const contact = isWhatsApp ? formatPhoneNumber(conversation.visitorId) : conversation.visitorId;
-  const { color: statusColor, rest: previewText } = extractStatusDot(conversation.lastMessagePreview);
 
   return (
     <Swipeable
@@ -229,9 +211,8 @@ function ConversationRow({
           </View>
           <View style={styles.rowBottomLine}>
             <ChannelIcon size={13} color={colors.muted} />
-            {statusColor && <View style={[styles.statusDot, { backgroundColor: statusColor }]} />}
             <Text style={styles.rowPreview} numberOfLines={1}>
-              {previewText}
+              {conversation.lastMessagePreview}
             </Text>
             {awaitingReply ? <View style={styles.unreadPillWrap}><UnreadPill /></View> : null}
           </View>
@@ -294,9 +275,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line2,
   },
+  // A solid fill, not just a border-color shift — two clearly distinct states rather than a
+  // shade the near-black background could still wash out.
   filterPillActive: {
-    backgroundColor: colors.card2,
-    borderColor: colors.orange2,
+    backgroundColor: colors.orange,
+    borderColor: colors.orange,
   },
   filterLabel: {
     color: colors.muted,
@@ -304,7 +287,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
   },
   filterLabelActive: {
-    color: colors.text,
+    color: colors.white,
   },
   centered: {
     flex: 1,
@@ -363,11 +346,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs + 2,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
   rowPreview: {
     flex: 1,

@@ -59,11 +59,12 @@ export async function GET(request: NextRequest) {
 /** Best-effort "needs a human" push — only called when runWhatsAppTurn reports a fresh
  * transition into HANDOFF (see the call sites below; a conversation already in HANDOFF never
  * reaches the engine again, so this never fires twice for the same handoff). */
-async function notifyHandoff(userId: string, botName: string, visitorId: string): Promise<void> {
+async function notifyHandoff(userId: string, botName: string, visitorId: string, conversationId: string): Promise<void> {
   await sendPushToUser(userId, {
     title: `${botName} needs a human`,
     body: `${visitorId} needs your help.`,
     url: "/app/inbox",
+    conversationId,
   }).catch((error) => {
     console.error("[whatsapp webhook] failed to send handoff push", { error });
   });
@@ -159,7 +160,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     { llm: providerLlm, classify: classifierLlm },
   );
   if (result.kind === "success" && result.status === "HANDOFF") {
-    await notifyHandoff(connection.bot.userId, connection.bot.name, message.from);
+    await notifyHandoff(connection.bot.userId, connection.bot.name, message.from, result.conversationId);
   }
   // Outside the 24h window, runWhatsAppTurn already persisted a warning in place of the reply
   // (see OUTSIDE_WINDOW_WARNING there) — Graph API would just reject a normal send anyway, so

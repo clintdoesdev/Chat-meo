@@ -159,6 +159,91 @@ export function ActionsContactIcon({ size = 16, color = "#f5f5f5" }: IconProps) 
   );
 }
 
+/** Not in the web icon set. Attachment-type markers for message bubbles and previews — replaces
+ * 📷/📄/🎥/🎤 emoji, which read as inconsistent placeholder glyphs next to this app's own icon
+ * language everywhere else in the UI (message text itself still uses real emoji freely; these are
+ * only for the app-drawn "this is a photo/document/video/audio" indicator around it). */
+export function AttachmentPhotoIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Rect x={6} y={12} width={52} height={40} rx={7} fill="none" stroke={color} strokeWidth={5} />
+      <Circle cx={22} cy={26} r={5} fill={color} />
+      <Path fill={color} d="m14 46 13-14 9 9 8-10 12 15Z" />
+    </Svg>
+  );
+}
+
+export function AttachmentDocumentIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Path
+        fill="none"
+        stroke={color}
+        strokeWidth={5}
+        strokeLinejoin="round"
+        d="M16 6h22l10 10v42a2 2 0 0 1-2 2H16a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"
+      />
+      <Path fill="none" stroke={color} strokeWidth={5} strokeLinejoin="round" d="M38 6v10h10" />
+      <Path fill="none" stroke={color} strokeWidth={5} strokeLinecap="round" d="M22 34h20M22 44h20" />
+    </Svg>
+  );
+}
+
+export function AttachmentVideoIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Rect x={6} y={16} width={38} height={32} rx={7} fill="none" stroke={color} strokeWidth={5} />
+      <Path fill={color} d="M50 26 60 19v26l-10-7Z" />
+    </Svg>
+  );
+}
+
+export function AttachmentAudioIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Rect x={24} y={6} width={16} height={32} rx={8} fill={color} />
+      <Path
+        fill="none"
+        stroke={color}
+        strokeWidth={5}
+        strokeLinecap="round"
+        d="M14 30a18 18 0 0 0 36 0M32 48v10"
+      />
+    </Svg>
+  );
+}
+
+/** Not in the web icon set (the web password field uses an inline SVG, see sign-in-card.tsx) —
+ * mobile's own version of the same show/hide-password toggle. */
+export function ActionsEyeIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size}>
+      <Path
+        fill="none"
+        stroke={color}
+        strokeWidth={1.6}
+        d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"
+      />
+      <Circle cx={12} cy={12} r={2.6} fill="none" stroke={color} strokeWidth={1.6} />
+    </Svg>
+  );
+}
+
+export function ActionsEyeOffIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size}>
+      <Path
+        fill="none"
+        stroke={color}
+        strokeWidth={1.6}
+        d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"
+      />
+      <Circle cx={12} cy={12} r={2.6} fill="none" stroke={color} strokeWidth={1.6} />
+      <Path fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" d="M4 4l16 16" />
+    </Svg>
+  );
+}
+
 /** Not in the web icon set — the web app has no back button (browser chrome handles that), but
  * mobile screens need one. Drawn in the same minimal stroke style as the rest of this set rather
  * than reaching for a generic icon-library glyph. */

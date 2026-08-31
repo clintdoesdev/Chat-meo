@@ -191,6 +191,7 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
         title: `${apiKey.bot.name} needs a human`,
         body: `${params.visitorId} needs your help.`,
         url: "/app/inbox",
+        conversationId: conversation.id,
       }).catch((error) => console.error("[chat] failed to send handoff push", { conversationId: conversation.id, error })),
     );
   }
@@ -257,6 +258,7 @@ async function runPythonBotTurnFor(
         title: `${botName} needs a human`,
         body: `${params.visitorId} needs your help.`,
         url: "/app/inbox",
+        conversationId: conversation.id,
       }).catch((error) => console.error("[chat] failed to send handoff push", { conversationId: conversation.id, error })),
     );
   }

@@ -1,6 +1,7 @@
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack, useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -42,11 +43,14 @@ export default function RootLayout() {
     if (ready && token) registerForPushNotifications();
   }, [ready, token]);
 
-  // Tapping a notification just opens the Inbox — no deep-link to the specific conversation yet,
-  // same deliberately-scoped choice the Kotlin app made.
+  // A handoff push carries the specific conversation's id in its FCM data payload (see
+  // notifyHandoff in the WhatsApp webhook route) — deep-link straight into it so answering doesn't
+  // require finding it again in the list. Falls back to the plain Inbox for any notification that
+  // has no conversationId (the "send test push" diagnostic, mainly).
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push("/inbox");
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const conversationId = response.notification.request.content.data?.conversationId;
+      router.push(typeof conversationId === "string" ? `/inbox/${conversationId}` : "/inbox");
     });
     return () => subscription.remove();
   }, [router]);
@@ -55,18 +59,20 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
-        <StatusBar style="light" />
-        <OfflineBanner />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-          <Stack.Protected guard={!token}>
-            <Stack.Screen name="login" />
-          </Stack.Protected>
-          <Stack.Protected guard={!!token}>
-            <Stack.Screen name="(app)" />
-          </Stack.Protected>
-        </Stack>
-      </GestureHandlerRootView>
+      <KeyboardProvider>
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
+          <StatusBar style="light" />
+          <OfflineBanner />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+            <Stack.Protected guard={!token}>
+              <Stack.Screen name="login" />
+            </Stack.Protected>
+            <Stack.Protected guard={!!token}>
+              <Stack.Screen name="(app)" />
+            </Stack.Protected>
+          </Stack>
+        </GestureHandlerRootView>
+      </KeyboardProvider>
     </ErrorBoundary>
   );
 }

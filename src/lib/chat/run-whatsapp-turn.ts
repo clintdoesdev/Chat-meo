@@ -41,9 +41,10 @@ export type RunWhatsAppTurnParams = {
 };
 
 export type RunWhatsAppTurnResult =
-  | { kind: "stored_only"; blocked: boolean }
+  | { kind: "stored_only"; blocked: boolean; conversationId: string }
   | {
       kind: "success";
+      conversationId: string;
       replies: Reply[];
       status: EngineStatus;
       withinWindow: boolean;
@@ -188,7 +189,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
             ? "no_active_flow"
             : "connection_paused",
     });
-    return { kind: "stored_only", blocked: conversation.blocked };
+    return { kind: "stored_only", blocked: conversation.blocked, conversationId: conversation.id };
   }
 
   if (pythonBotCode) {
@@ -213,13 +214,13 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
       withinWindow,
     });
 
-    return { kind: "success", replies, status: result.handoff ? "HANDOFF" : "AWAITING_INPUT", withinWindow, replyMessageIds };
+    return { kind: "success", conversationId: conversation.id, replies, status: result.handoff ? "HANDOFF" : "AWAITING_INPUT", withinWindow, replyMessageIds };
   }
   if (!graph) {
     // Unreachable: the gate above already returns "stored_only" whenever neither graph nor
     // pythonBotCode is set. Narrows `graph` for everything below rather than a non-null
     // assertion.
-    return { kind: "stored_only", blocked: conversation.blocked };
+    return { kind: "stored_only", blocked: conversation.blocked, conversationId: conversation.id };
   }
 
   const state = parseEngineState(conversation.engineState, graph);
@@ -254,7 +255,7 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     withinWindow,
   });
 
-  return { kind: "success", replies: output.replies, status: output.state.status, withinWindow, replyMessageIds };
+  return { kind: "success", conversationId: conversation.id, replies: output.replies, status: output.state.status, withinWindow, replyMessageIds };
 }
 
 /** Shared by both the Flow graph path and the Python Bot path: persists a turn's outbound
