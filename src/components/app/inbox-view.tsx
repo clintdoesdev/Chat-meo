@@ -48,7 +48,7 @@ import {
   type FolderSummary,
 } from "@/lib/actions/inbox";
 import { getLinkPreview, type LinkPreviewData } from "@/lib/actions/link-preview";
-import { mediaPreview, type MessageContentTypeDto } from "@/lib/chat/inbox-queries";
+import { mediaPreview, type MessageContentTypeDto } from "@/lib/message-preview";
 import { timeAgo } from "@/lib/time";
 
 // WhatsApp's own quick-reaction set — matches what its picker offers, so the seller's reaction
@@ -930,8 +930,8 @@ export function InboxView({
         </div>
 
         {detail && (
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-b border-line px-4 py-2.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <ChannelBadge channel={detail.channel} />
               <StatusBadge status={detail.status} />
               {detail.blocked && (
@@ -939,7 +939,7 @@ export function InboxView({
                   Blocked
                 </span>
               )}
-              <span className="text-[11px] text-muted">Started {timeAgo(detail.createdAt)}</span>
+              <span className="hidden text-[11px] text-muted min-[420px]:inline">Started {timeAgo(detail.createdAt)}</span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-1.5">
               <button

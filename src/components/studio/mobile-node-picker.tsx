@@ -16,9 +16,14 @@ export function MobileAddNodeButton({ onClick }: { onClick: () => void }) {
       data-fx-skip
       onClick={onClick}
       aria-label="Add node"
-      className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full
+      // bottom-20 (not bottom-4) below the 760px breakpoint — the site's own fixed mobile tab bar
+      // (top-bar.tsx, ~64px tall, z-[70]) sits on top of anything positioned at the canvas
+      // container's actual bottom edge otherwise, which left roughly half of this button covered
+      // and its taps swallowed by the tab bar underneath. Reverts to bottom-4 once that tab bar
+      // hides itself at min-[760px], well before this button hides at min-[1020px].
+      className="absolute bottom-20 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full
         border border-orange-2/40 bg-grad-orange text-white shadow-[0_10px_30px_-10px_rgba(255,92,22,.7)]
-        transition active:scale-95 min-[1020px]:hidden"
+        transition active:scale-95 min-[760px]:bottom-4 min-[1020px]:hidden"
     >
       <ActionsPlusIcon size={20} />
     </button>
