@@ -31,6 +31,7 @@ export type BotDto = {
   status: string;
   avatarUrl?: string | null;
   primaryColor?: string | null;
+  conversationCount: number;
 };
 
 export type BotsResponse = {
@@ -106,4 +107,37 @@ export type PushTestResponse = {
 export type FlowResponse = {
   flowId: string;
   graph: FlowGraph;
+};
+
+export type Trend = { percent: number; direction: "up" | "down" };
+
+export type ChatsStartedBuckets = { today: number; yesterday: number; last7Days: number; last30Days: number };
+
+export type OverviewStatsResponse = {
+  botsCount: number;
+  botsTrend: Trend | null;
+  botsSpark: number[];
+  conversationsCount: number;
+  conversationsTrend: Trend | null;
+  conversationsSpark: number[];
+  resolutionRate: number | null;
+  resolutionTrend: Trend | null;
+  resolutionSpark: number[];
+  messagesCount: number;
+  messagesThisMonth: number;
+  messagesTrend: Trend | null;
+  messagesSpark: number[];
+  chatsStarted: ChatsStartedBuckets;
+};
+
+export type WhatsAppConnectionDto = {
+  status: "CONNECTED" | "DISCONNECTED" | "TOKEN_EXPIRED" | "BANNED";
+  isActive: boolean;
+  displayPhoneNumber: string;
+  connectedAt: string;
+};
+
+export type WhatsAppConnectConfigResponse = {
+  configured: boolean;
+  connection: WhatsAppConnectionDto | null;
 };

@@ -7,7 +7,9 @@ import type {
   ErrorResponse,
   FlowResponse,
   LoginResponse,
+  OverviewStatsResponse,
   PushTestResponse,
+  WhatsAppConnectConfigResponse,
 } from "@/lib/api/types";
 import type { FlowGraph } from "@/lib/flow/types";
 
@@ -56,6 +58,28 @@ export function saveFlow(botId: string, flowId: string, graph: FlowGraph): Promi
   return apiFetch<ErrorResponse>(`/api/v1/bots/${botId}/flow`, {
     method: "PATCH",
     body: JSON.stringify({ flowId, graph }),
+  });
+}
+
+export function getOverviewStats(): Promise<OverviewStatsResponse> {
+  return apiFetch<OverviewStatsResponse>("/api/v1/stats/overview");
+}
+
+export function getWhatsAppConnection(botId: string): Promise<WhatsAppConnectConfigResponse> {
+  return apiFetch<WhatsAppConnectConfigResponse>(`/api/v1/bots/${botId}/whatsapp`);
+}
+
+export function setWhatsAppActive(botId: string, isActive: boolean): Promise<ErrorResponse> {
+  return apiFetch<ErrorResponse>(`/api/v1/bots/${botId}/whatsapp`, {
+    method: "PATCH",
+    body: JSON.stringify({ isActive }),
+  });
+}
+
+export function disconnectWhatsApp(botId: string): Promise<ErrorResponse> {
+  return apiFetch<ErrorResponse>(`/api/v1/bots/${botId}/whatsapp`, {
+    method: "PATCH",
+    body: JSON.stringify({ disconnect: true }),
   });
 }
 
