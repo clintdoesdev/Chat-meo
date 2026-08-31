@@ -1842,6 +1842,79 @@ describe("step: logic node semantic (AI) matching", () => {
     expect(output.replies).toEqual([{ content: "Great, thanks for letting me know!" }]);
   });
 
+  it("does not treat a negated keyword as a literal match, deferring to the classifier instead", async () => {
+    // Regression: "payment" appears in "I don't want a payment" too, but the customer means the
+    // opposite of what the rule is for — a plain substring/word-boundary check can't tell these
+    // apart, so a nearby negation word should stop the keyword pass from confidently firing and
+    // let the classifier (which actually understands "don't want") decide instead.
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [
+              {
+                id: "rule-link",
+                label: "Asks for a payment link",
+                triggers: "payment, invoice, pay now, checkout",
+                reply: "Sure — here's your payment link: https://pay.example.com",
+              },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "No problem, let me know if that changes!" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    const output = await step(graph, state, "I don't want a payment right now", deps);
+
+    // The keyword pass found nothing confident, so it fell through to the classifier (which also
+    // found nothing here) and then to the LLM itself, exactly as if "payment" had never appeared
+    // in the message at all.
+    expect(classifyMock).toHaveBeenCalledTimes(1);
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(output.replies).toEqual([{ content: "No problem, let me know if that changes!" }]);
+  });
+
+  it("still fires on an unrelated negation elsewhere in the message, outside the keyword's window", async () => {
+    const graph: FlowGraph = {
+      nodes: [
+        { id: "ai-1", type: "ai", data: { systemPrompt: "Help.", model: "grok-main", temperature: 0.3 } },
+        {
+          id: "logic-1",
+          type: "logic",
+          data: {
+            rules: [{ id: "rule-link", label: "Asks for a payment link", triggers: "payment", reply: "Here's your link." }],
+          },
+        },
+      ],
+      edges: [{ id: "e-logic", source: "ai-1", target: "logic-1", sourceHandle: "logic" }],
+    };
+    const llmMock = vi.fn(async () => ({ content: "unused" }));
+    const classifyMock = vi.fn(async () => ({ content: "NONE" }));
+    const deps = createDeps({ llm: llmMock, classify: classifyMock });
+    const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+    // "not" here is nowhere near "payment" — plenty of words separate them — so it shouldn't
+    // suppress the match.
+    const output = await step(
+      graph,
+      state,
+      "I am not able to visit the store this week, can you send me a payment link instead",
+      deps,
+    );
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(output.replies).toEqual([{ content: "Here's your link." }]);
+  });
+
   it("falls back to the classifier when no keyword literally matches, and fires the rule it names", async () => {
     const llmMock = vi.fn(async () => ({ content: "unused" }));
     const classifyMock = vi.fn(async () => ({ content: "rule-pay" }));

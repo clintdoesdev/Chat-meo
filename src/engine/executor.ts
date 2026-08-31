@@ -127,6 +127,67 @@ const GENERIC_KEYWORDS = new Set([
   "hey",
 ]);
 
+// Negation words that can flip a keyword's meaning ("I don't want a payment" vs. "I want a
+// payment") — checked only in the handful of words immediately around a matched keyword (see
+// NEGATION_WINDOW/hasNegationNearKeyword below), not the whole message.
+const NEGATION_WORDS = new Set([
+  "not",
+  "no",
+  "never",
+  "without",
+  "don't",
+  "dont",
+  "doesn't",
+  "doesnt",
+  "didn't",
+  "didnt",
+  "won't",
+  "wont",
+  "can't",
+  "cant",
+  "cannot",
+  "couldn't",
+  "couldnt",
+  "isn't",
+  "isnt",
+  "aren't",
+  "arent",
+  "wasn't",
+  "wasnt",
+  "weren't",
+  "werent",
+  "haven't",
+  "havent",
+  "hasn't",
+  "hasnt",
+  "hadn't",
+  "hadnt",
+]);
+
+// How many words of lookback/lookahead around a matched keyword count as "nearby" for negation
+// purposes — wide enough to catch "I don't want to make a payment" (three words between "don't"
+// and "payment") without reaching so far that an unrelated negation earlier in a longer message
+// gets blamed on this keyword.
+const NEGATION_WINDOW = 4;
+
+/** True when a negation word sits within NEGATION_WINDOW words of the keyword's own match
+ * position — "I don't want a payment" negates "payment"; "no thanks, but I do need a payment
+ * link" (the negation is nowhere near "payment") does not. A cheap, local heuristic, not real
+ * language understanding: it exists purely to stop the free keyword pass from confidently
+ * misfiring on the single most common failure shape (negating the very thing a trigger word
+ * names) before falling through to the paid semantic pass (see classifySemanticMatch), which
+ * actually reads the message in context — it isn't meant to catch every kind of ambiguity, only
+ * this one common, cheaply-detectable shape of it. */
+function hasNegationNearKeyword(message: string, keyword: string): boolean {
+  const match = new RegExp(`\\b${escapeRegExp(keyword)}\\b`).exec(message);
+  if (!match) return false;
+
+  const before = match.input.slice(0, match.index).trim().split(/\s+/).filter(Boolean);
+  const after = match.input.slice(match.index + match[0].length).trim().split(/\s+/).filter(Boolean);
+  const nearby = [...before.slice(-NEGATION_WINDOW), ...after.slice(0, NEGATION_WINDOW)];
+  return nearby.some((word) => NEGATION_WORDS.has(word.replace(/[!.?,;:]+$/, "")));
+}
+
 function matchLogicKeyword(
   rules: LogicRule[],
   rawMessage: string,
@@ -150,7 +211,13 @@ function matchLogicKeyword(
     // inside "payments", "repayment", "prepayment", etc., firing the rule for messages that
     // aren't actually asking for what the trigger describes (e.g. "I've made payments" —
     // already-paid, a different intent entirely — matching a "wants a payment link" trigger).
-    return keywords.some((keyword) => new RegExp(`\\b${escapeRegExp(keyword)}\\b`).test(message));
+    // A keyword with a negation word right next to it (see hasNegationNearKeyword) doesn't count
+    // as a confident literal match either — that message falls through to the semantic pass
+    // instead, the same as if no keyword had matched at all.
+    return keywords.some(
+      (keyword) =>
+        new RegExp(`\\b${escapeRegExp(keyword)}\\b`).test(message) && !hasNegationNearKeyword(message, keyword),
+    );
   });
 }
 
