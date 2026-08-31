@@ -1,21 +1,28 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type TextStyle,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { NavBackIcon, CommsSendIcon } from "@/components/icons";
+import {
+  AttachmentAudioIcon,
+  AttachmentDocumentIcon,
+  AttachmentPhotoIcon,
+  AttachmentVideoIcon,
+  NavBackIcon,
+  CommsSendIcon,
+} from "@/components/icons";
 import { ApiError } from "@/lib/api/client";
 import { getMessages, sendMessage } from "@/lib/api/endpoints";
 import type { ConversationDetailDto, MessageDto, QuotedMessageDto } from "@/lib/api/types";
@@ -24,19 +31,43 @@ import { fontFamily } from "@/theme/fonts";
 
 const READ_TICK_COLOR = "#4EC5D8";
 
-function mediaPreviewText(contentType: MessageDto["contentType"], content: string, caption?: string | null, fileName?: string | null): string {
+type MediaPreview = { Icon: ComponentType<{ size?: number; color?: string }> | null; text: string };
+
+/** The app-drawn "this is a photo/document/video/audio" indicator for a quoted-message or
+ * reply-bar preview — an icon, not the 📷/📄/🎥/🎤 emoji this used to prefix the text with, since
+ * that's UI chrome the app itself generates, not something the user or bot typed. */
+function mediaPreview(contentType: MessageDto["contentType"], content: string, caption?: string | null, fileName?: string | null): MediaPreview {
   switch (contentType) {
     case "IMAGE":
-      return caption ? `📷 ${caption}` : "📷 Photo";
+      return { Icon: AttachmentPhotoIcon, text: caption ?? "Photo" };
     case "DOCUMENT":
-      return `📄 ${fileName ?? caption ?? "Document"}`;
+      return { Icon: AttachmentDocumentIcon, text: fileName ?? caption ?? "Document" };
     case "VIDEO":
-      return caption ? `🎥 ${caption}` : "🎥 Video";
+      return { Icon: AttachmentVideoIcon, text: caption ?? "Video" };
     case "AUDIO":
-      return "🎤 Audio";
+      return { Icon: AttachmentAudioIcon, text: "Audio" };
     default:
-      return content;
+      return { Icon: null, text: content };
   }
+}
+
+function MediaPreviewLabel({
+  preview,
+  textStyle,
+  iconColor,
+}: {
+  preview: MediaPreview;
+  textStyle: TextStyle | TextStyle[];
+  iconColor: string;
+}) {
+  return (
+    <View style={styles.mediaPreviewRow}>
+      {preview.Icon ? <preview.Icon size={12} color={iconColor} /> : null}
+      <Text style={textStyle} numberOfLines={1}>
+        {preview.text}
+      </Text>
+    </View>
+  );
 }
 
 function quoteLabel(role: "BOT" | "USER" | "AGENT", visitorId: string): string {
@@ -74,10 +105,6 @@ export default function ConversationDetailScreen() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageDto | null>(null);
-  // Measured rather than a guessed constant — headerHeight feeds iOS's KeyboardAvoidingView
-  // offset below, and a wrong hardcoded number is exactly the kind of thing that looks fine on
-  // one device and leaves a gap (or overlap) on any other.
-  const [headerHeight, setHeaderHeight] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -120,7 +147,7 @@ export default function ConversationDetailScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.header} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+      <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backButton}>
           <NavBackIcon size={18} color={colors.text} />
         </Pressable>
@@ -145,14 +172,15 @@ export default function ConversationDetailScreen() {
       ) : (
         <KeyboardAvoidingView
           style={styles.flex}
-          // iOS has no OS-level equivalent of Android's windowSoftInputMode, so it needs this
-          // explicit padding behavior; Android instead gets it for free from app.json's
-          // android.softwareKeyboardLayoutMode: "resize" (the RN equivalent of adjustResize) —
-          // the OS shrinks the whole window when the keyboard opens, so this flex column's
-          // bottom-pinned reply bar already ends up above the keyboard with no JS involved,
-          // and stacking KeyboardAvoidingView's own adjustment on top of that would double it up.
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
+          // react-native-keyboard-controller's version (not RN's own) — it drives this padding
+          // off the live native keyboard-animation callback on both platforms (keyboardWillShow/
+          // keyboardWillChangeFrame on iOS, WindowInsetsAnimationCallback on Android via
+          // app.json's android.softwareKeyboardLayoutMode: "resize"), so the reply bar rises and
+          // falls in step with the keyboard's own curve instead of snapping in after the fact.
+          // automaticOffset measures the header above this view itself, so no manual layout
+          // tracking is needed for the offset the way RN's own KeyboardAvoidingView requires.
+          behavior="padding"
+          automaticOffset
         >
           <FlatList
             ref={listRef}
@@ -176,9 +204,11 @@ export default function ConversationDetailScreen() {
             <View style={styles.replyingBar}>
               <View style={styles.replyingTextWrap}>
                 <Text style={styles.replyingLabel}>{quoteLabel(replyingTo.role, conversation?.visitorId ?? "")}</Text>
-                <Text style={styles.replyingText} numberOfLines={1}>
-                  {mediaPreviewText(replyingTo.contentType, replyingTo.content, replyingTo.caption, replyingTo.fileName)}
-                </Text>
+                <MediaPreviewLabel
+                  preview={mediaPreview(replyingTo.contentType, replyingTo.content, replyingTo.caption, replyingTo.fileName)}
+                  textStyle={styles.replyingText}
+                  iconColor={colors.muted}
+                />
               </View>
               <Pressable onPress={() => setReplyingTo(null)} hitSlop={10}>
                 <Text style={styles.replyingCancel}>✕</Text>
@@ -217,9 +247,11 @@ function QuotedMessage({ quote, visitorId }: { quote: QuotedMessageDto; visitorI
   return (
     <View style={styles.quote}>
       <Text style={styles.quoteLabel}>{quoteLabel(quote.role, visitorId)}</Text>
-      <Text style={styles.quoteText} numberOfLines={1}>
-        {mediaPreviewText(quote.contentType, quote.content, quote.caption, quote.fileName)}
-      </Text>
+      <MediaPreviewLabel
+        preview={mediaPreview(quote.contentType, quote.content, quote.caption, quote.fileName)}
+        textStyle={styles.quoteText}
+        iconColor={colors.muted}
+      />
     </View>
   );
 }
@@ -253,37 +285,37 @@ function MessageBubble({
         onLongPress={onLongPress}
         style={[styles.bubble, fromCustomer ? styles.bubbleCustomer : styles.bubbleUs]}
       >
-        {message.forwarded && <Text style={[styles.forwardedLabel, !fromCustomer && styles.forwardedLabelOnOrange]}>Forwarded</Text>}
+        {message.forwarded && <Text style={styles.forwardedLabel}>Forwarded</Text>}
         {message.replyTo && <QuotedMessage quote={message.replyTo} visitorId={visitorId} />}
 
         {message.contentType === "IMAGE" ? (
           <>
             <Image source={{ uri: message.content }} style={styles.attachmentImage} resizeMode="cover" />
-            {message.caption ? (
-              <Text style={[styles.bubbleText, !fromCustomer && styles.bubbleTextOnOrange]}>{message.caption}</Text>
-            ) : null}
+            {message.caption ? <Text style={styles.bubbleText}>{message.caption}</Text> : null}
           </>
         ) : message.contentType === "DOCUMENT" || message.contentType === "VIDEO" || message.contentType === "AUDIO" ? (
           <Pressable style={styles.attachmentCard} onPress={() => openAttachment(message.content)}>
-            <Text style={styles.attachmentIcon}>
-              {message.contentType === "DOCUMENT" ? "📄" : message.contentType === "VIDEO" ? "🎥" : "🎤"}
-            </Text>
+            {message.contentType === "DOCUMENT" ? (
+              <AttachmentDocumentIcon size={22} color={colors.orange2} />
+            ) : message.contentType === "VIDEO" ? (
+              <AttachmentVideoIcon size={22} color={colors.orange2} />
+            ) : (
+              <AttachmentAudioIcon size={22} color={colors.orange2} />
+            )}
             <View style={styles.attachmentTextWrap}>
-              <Text style={[styles.bubbleText, styles.attachmentTitle, !fromCustomer && styles.bubbleTextOnOrange]} numberOfLines={1}>
+              <Text style={[styles.bubbleText, styles.attachmentTitle]} numberOfLines={1}>
                 {message.contentType === "DOCUMENT" ? (message.fileName ?? "Document") : message.contentType === "VIDEO" ? "Video" : "Voice message"}
               </Text>
-              <Text style={[styles.attachmentHint, !fromCustomer && styles.bubbleTextOnOrange]}>Tap to open</Text>
-              {message.caption ? (
-                <Text style={[styles.bubbleText, !fromCustomer && styles.bubbleTextOnOrange]}>{message.caption}</Text>
-              ) : null}
+              <Text style={styles.attachmentHint}>Tap to open</Text>
+              {message.caption ? <Text style={styles.bubbleText}>{message.caption}</Text> : null}
             </View>
           </Pressable>
         ) : (
-          <Text style={[styles.bubbleText, !fromCustomer && styles.bubbleTextOnOrange]}>{message.content}</Text>
+          <Text style={styles.bubbleText}>{message.content}</Text>
         )}
 
         <View style={styles.metaRow}>
-          <Text style={[styles.metaTime, !fromCustomer && styles.metaTimeOnOrange]}>{formatTime(message.createdAt)}</Text>
+          <Text style={styles.metaTime}>{formatTime(message.createdAt)}</Text>
           {!fromCustomer && channel === "WHATSAPP" && <DeliveryTicks status={message.deliveryStatus} />}
         </View>
 
@@ -364,16 +396,19 @@ const styles = StyleSheet.create({
   bubbleCustomer: {
     backgroundColor: colors.card,
   },
+  // Not a solid orange fill: a long bot caption (a promo message with an image, say) turned the
+  // whole bubble into a full-bleed orange card that read as an ad glued into the thread rather
+  // than a chat bubble. Orange stays reserved for the accent border + small interactive/unread
+  // elements elsewhere, matching every other "our" bubble's dark background.
   bubbleUs: {
-    backgroundColor: colors.orange,
+    backgroundColor: colors.card2,
+    borderWidth: 1,
+    borderColor: "rgba(255,92,22,0.35)",
   },
   bubbleText: {
     color: colors.text,
     fontFamily: fontFamily.regular,
     fontSize: 14.5,
-  },
-  bubbleTextOnOrange: {
-    color: colors.white,
   },
   forwardedLabel: {
     color: colors.muted,
@@ -381,9 +416,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     fontSize: 11,
     marginBottom: 4,
-  },
-  forwardedLabelOnOrange: {
-    color: "rgba(255,255,255,0.75)",
   },
   quote: {
     borderLeftWidth: 2,
@@ -404,6 +436,11 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 12,
   },
+  mediaPreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   attachmentImage: {
     width: 220,
     height: 220,
@@ -416,9 +453,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     minWidth: 180,
-  },
-  attachmentIcon: {
-    fontSize: 22,
   },
   attachmentTextWrap: {
     flex: 1,
@@ -443,9 +477,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontFamily: fontFamily.regular,
     fontSize: 10.5,
-  },
-  metaTimeOnOrange: {
-    color: "rgba(255,255,255,0.75)",
   },
   tick: {
     color: colors.muted,

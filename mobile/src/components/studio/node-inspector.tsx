@@ -1,4 +1,5 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { NODE_KIND_META, type ConditionBranch, type FlowNode, type FlowNodeData, type LogicRule, type ReplyVariant } from "@/lib/flow/types";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
@@ -30,7 +31,7 @@ export function NodeInspector({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView style={styles.overlay} behavior="padding">
         <Pressable style={styles.overlayBackdrop} onPress={onClose} />
         <View style={styles.sheet}>
           {node && meta && (
@@ -162,7 +163,7 @@ export function NodeInspector({
             </>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
