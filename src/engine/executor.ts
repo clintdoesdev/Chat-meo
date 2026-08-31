@@ -18,11 +18,12 @@ const MAX_HOPS_PER_STEP = 25;
 const WEBHOOK_TIMEOUT_MS = 5000;
 const HANDOFF_MESSAGE = "Your message is being sent to a live team to assist you.";
 const LOOP_GUARD_MESSAGE = "Something went wrong on our end — let's start over.";
-// Reply node's optional pre-send pause (see ReplyNode.data.delaySeconds) — capped well short of
-// typical serverless function timeouts, since on synchronous channels (the web widget, the
-// Studio Test drawer) this blocks the visitor's own request for the full duration; on WhatsApp
-// it's safely backgrounded, but the cap stays the same everywhere for one predictable ceiling.
-export const MAX_REPLY_DELAY_SECONDS = 120;
+// Every non-AI node's optional pre-send pause (see e.g. ReplyNode.data.delaySeconds,
+// LogicNode.data.delaySeconds) — capped well short of typical serverless function timeouts,
+// since on synchronous channels (the web widget, the Studio Test drawer) this blocks the
+// visitor's own request for the full duration; on WhatsApp it's safely backgrounded, but the cap
+// stays the same everywhere for one predictable ceiling.
+export const MAX_NODE_DELAY_SECONDS = 120;
 // WhatsApp's own hard cap on a media message's caption (Meta rejects anything longer) — applied
 // uniformly across channels for consistent behavior rather than only when this happens to be a
 // WhatsApp conversation. A ReplyNode's message longer than this sends as its own separate reply
@@ -32,6 +33,15 @@ export const MAX_IMAGE_CAPTION_LENGTH = 1024;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Shared by every non-AI node kind's optional pre-send pause — see MAX_NODE_DELAY_SECONDS. A
+ * no-op for unset/zero/negative values, so every call site can pass a node's raw
+ * `data.delaySeconds` straight through without its own guard. */
+async function applyNodeDelay(delaySeconds: number | undefined): Promise<void> {
+  if (delaySeconds && delaySeconds > 0) {
+    await sleep(Math.min(delaySeconds, MAX_NODE_DELAY_SECONDS) * 1000);
+  }
 }
 
 /** A fresh conversation, positioned at the flow's Start node (or immediately ended if the
@@ -381,6 +391,9 @@ async function runLogicAttachedNode(
 
   if (matchedRule) {
     if (matchedRule.reply.trim()) {
+      // The attached LogicNode's own delaySeconds, not the host AI/Reply node's — see
+      // LogicNode.data.delaySeconds's doc comment in types.ts.
+      await applyNodeDelay(logicNode?.type === "logic" ? logicNode.data.delaySeconds : undefined);
       const text = interpolate(matchedRule.reply, variables);
       replies.push({ content: text });
       history.push({ role: "assistant", content: text });
@@ -557,6 +570,7 @@ export async function step(
         // whatever's wired after Start instead of the greeting configured on Start itself.
         const text = interpolate(node.data.text ?? "", variables);
         if (text) {
+          await applyNodeDelay(node.data.delaySeconds);
           replies.push({ content: text });
           history.push({ role: "assistant", content: text });
         }
@@ -568,6 +582,7 @@ export async function step(
 
       case "message": {
         const text = interpolate(node.data.text ?? "", variables);
+        await applyNodeDelay(node.data.delaySeconds);
         replies.push({ content: text });
         history.push({ role: "assistant", content: text });
         const edge = nextEdge(graph, node.id);
@@ -632,10 +647,7 @@ export async function step(
           node.data.provider,
           false,
           async () => {
-            const delaySeconds = node.data.delaySeconds;
-            if (delaySeconds && delaySeconds > 0) {
-              await sleep(Math.min(delaySeconds, MAX_REPLY_DELAY_SECONDS) * 1000);
-            }
+            await applyNodeDelay(node.data.delaySeconds);
             let text = interpolate(pickReplyText(node.data), variables);
             let usage: LlmUsage | undefined;
             if (node.data.randomizeWording) {
@@ -692,6 +704,7 @@ export async function step(
         const matched = input !== undefined ? await matchLogicRule(node.data.rules, input, history, deps) : undefined;
         if (matched) {
           if (matched.reply.trim()) {
+            await applyNodeDelay(node.data.delaySeconds);
             const text = interpolate(matched.reply, variables);
             replies.push({ content: text });
             history.push({ role: "assistant", content: text });
@@ -708,6 +721,7 @@ export async function step(
 
       case "capture": {
         const question = interpolate(node.data.question ?? "", variables);
+        await applyNodeDelay(node.data.delaySeconds);
         replies.push({ content: question });
         status = "AWAITING_INPUT";
         currentNodeId = node.id;
@@ -742,6 +756,7 @@ export async function step(
         // On its own line so the widget's existing URL auto-linking (see format-message.tsx) turns it
         // into a real clickable link without this node needing its own reply/message schema.
         const text = linkText ? `${linkText}\n${url}` : url;
+        await applyNodeDelay(node.data.delaySeconds);
         replies.push({ content: text });
         history.push({ role: "assistant", content: text });
         const edge = nextEdge(graph, node.id);
@@ -754,6 +769,7 @@ export async function step(
         // node.data.note is an internal note for the human teammate, not customer-facing —
         // the customer always sees the same fixed message, and only on our own web widget.
         if ((deps.channel ?? "web") === "web") {
+          await applyNodeDelay(node.data.delaySeconds);
           replies.push({ content: HANDOFF_MESSAGE });
         }
         status = "HANDOFF";

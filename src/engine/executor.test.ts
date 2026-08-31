@@ -75,6 +75,38 @@ describe("step: linear flow", () => {
     ]);
   });
 
+  it("pauses for delaySeconds before a Start node's greeting", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph: FlowGraph = {
+        nodes: [{ id: "start-1", type: "start", data: { text: "Hey there!", delaySeconds: 3 } }],
+        edges: [],
+      };
+      const state = createInitialState(graph);
+      const promise = step(graph, state, undefined, createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await promise).replies).toEqual([{ content: "Hey there!" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses for delaySeconds before a Message node sends", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph: FlowGraph = {
+        nodes: [{ id: "msg-1", type: "message", data: { text: "Still typing…", delaySeconds: 3 } }],
+        edges: [],
+      };
+      const state: EngineState = { currentNodeId: "msg-1", variables: {}, status: "RUNNING" };
+      const promise = step(graph, state, undefined, createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await promise).replies).toEqual([{ content: "Still typing…" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("interpolates {{variables}} into message text", async () => {
     const graph: FlowGraph = {
       nodes: [
@@ -133,6 +165,22 @@ describe("step: link node", () => {
 
     expect(output.replies).toEqual([{ content: "View pricing\nhttps://example.com/pricing" }]);
     expect(output.state.status).toBe("ENDED");
+  });
+
+  it("pauses for delaySeconds before sending the link", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph: FlowGraph = {
+        nodes: [{ id: "link-1", type: "link", data: { url: "https://example.com", delaySeconds: 3 } }],
+        edges: [],
+      };
+      const state: EngineState = { currentNodeId: "link-1", variables: {}, status: "RUNNING" };
+      const promise = step(graph, state, undefined, createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await promise).replies).toEqual([{ content: "https://example.com" }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends just the bare URL when no link text is set", async () => {
@@ -205,6 +253,22 @@ describe("step: capture pause/resume", () => {
       variables: {},
       status: "AWAITING_INPUT",
     });
+  });
+
+  it("pauses for delaySeconds before asking the question", async () => {
+    vi.useFakeTimers();
+    try {
+      const delayedGraph: FlowGraph = {
+        nodes: [{ id: "capture-1", type: "capture", data: { question: "What's your email?", variableName: "email", delaySeconds: 3 } }],
+        edges: [],
+      };
+      const state: EngineState = { currentNodeId: "capture-1", variables: {}, status: "RUNNING" };
+      const promise = step(delayedGraph, state, undefined, createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await promise).replies).toEqual([{ content: "What's your email?" }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stores the visitor's answer and continues on the next step", async () => {
@@ -952,7 +1016,7 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
     expect(output.replies).toEqual([{ content: "We'll be with you shortly." }]);
   });
 
-  it("pauses for delaySeconds before sending, capped at MAX_REPLY_DELAY_SECONDS", async () => {
+  it("pauses for delaySeconds before sending, capped at MAX_NODE_DELAY_SECONDS", async () => {
     vi.useFakeTimers();
     try {
       const graph: FlowGraph = {
@@ -963,7 +1027,7 @@ describe("step: reply node (non-AI replacement for the ai node)", () => {
       const state: EngineState = { currentNodeId: "reply-1", variables: {}, status: "RUNNING" };
 
       const promise = step(graph, state, "hi", deps);
-      // A huge configured delay is capped at MAX_REPLY_DELAY_SECONDS (120s) rather than honored
+      // A huge configured delay is capped at MAX_NODE_DELAY_SECONDS (120s) rather than honored
       // verbatim — advancing just past the cap should be enough for the reply to land.
       await vi.advanceTimersByTimeAsync(120_000);
       const output = await promise;
@@ -1026,6 +1090,24 @@ describe("step: handoff", () => {
     expect(output.replies).toEqual([]);
     expect(output.state.status).toBe("HANDOFF");
     expect(output.state.currentNodeId).toBeNull();
+  });
+
+  it("pauses for delaySeconds before the fixed handoff message on the web channel", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph: FlowGraph = {
+        nodes: [{ id: "handoff-1", type: "handoff", data: { delaySeconds: 3 } }],
+        edges: [],
+      };
+      const state: EngineState = { currentNodeId: "handoff-1", variables: {}, status: "RUNNING" };
+      const promise = step(graph, state, undefined, createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      const output = await promise;
+      expect(output.replies).toEqual([{ content: "Your message is being sent to a live team to assist you." }]);
+      expect(output.state.status).toBe("HANDOFF");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1186,6 +1268,31 @@ describe("step: logic node (standalone)", () => {
     const output = await step(graph, state, "what's the weather like", createDeps());
 
     expect(output.replies).toEqual([{ content: "Let me get a human." }]);
+  });
+
+  it("pauses for the node's own delaySeconds before a matched rule's reply", async () => {
+    vi.useFakeTimers();
+    try {
+      const delayedGraph: FlowGraph = {
+        nodes: [
+          {
+            id: "logic-1",
+            type: "logic",
+            data: {
+              delaySeconds: 3,
+              rules: [{ id: "rule-pay", label: "Payment link", triggers: "invoice", reply: "Here's the link." }],
+            },
+          },
+        ],
+        edges: [],
+      };
+      const state: EngineState = { currentNodeId: "logic-1", variables: {}, status: "RUNNING" };
+      const promise = step(delayedGraph, state, "Can I get an invoice?", createDeps());
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await promise).replies).toEqual([{ content: "Here's the link." }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ends without a reply when there's no visitor message to match against", async () => {
@@ -1376,6 +1483,30 @@ describe("step: logic node attached to an AI node", () => {
       { content: "Your message is being sent to a live team to assist you." },
     ]);
     expect(output.state.status).toBe("HANDOFF");
+  });
+
+  it("pauses for the attached Logic node's own delaySeconds, not the host AI node's", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph = buildGraph();
+      const logicNode = graph.nodes.find((node) => node.id === "logic-1");
+      if (logicNode?.type === "logic") logicNode.data.delaySeconds = 3;
+      const llmMock = vi.fn(async () => ({ content: "unused" }));
+      const deps = createDeps({ llm: llmMock });
+      const state: EngineState = { currentNodeId: "ai-1", variables: {}, status: "RUNNING" };
+
+      const promise = step(graph, state, "Can you send me an invoice?", deps);
+      await vi.advanceTimersByTimeAsync(3000);
+      const output = await promise;
+
+      expect(llmMock).not.toHaveBeenCalled();
+      expect(output.replies).toEqual([
+        { content: "Here's your payment link: https://pay.example.com" },
+        { content: "Your message is being sent to a live team to assist you." },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stays open on the AI node when a matched rule has no route wired, and locks out the LLM", async () => {

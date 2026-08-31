@@ -10,9 +10,13 @@ function adaptNode(node: PersistedNode): FlowNode | null {
   const data = node.data;
   switch (node.type) {
     case "start":
-      return { id: node.id, type: "start", data: { text: data.text } };
+      return { id: node.id, type: "start", data: { text: data.text, delaySeconds: data.delaySeconds } };
     case "message":
-      return { id: node.id, type: "message", data: { text: data.text ?? "" } };
+      return {
+        id: node.id,
+        type: "message",
+        data: { text: data.text ?? "", delaySeconds: data.delaySeconds },
+      };
     case "ai":
       return {
         id: node.id,
@@ -57,7 +61,11 @@ function adaptNode(node: PersistedNode): FlowNode | null {
       return {
         id: node.id,
         type: "capture",
-        data: { question: data.question ?? "", variableName: data.variableName ?? "" },
+        data: {
+          question: data.question ?? "",
+          variableName: data.variableName ?? "",
+          delaySeconds: data.delaySeconds,
+        },
       };
     case "webhook":
       return {
@@ -76,14 +84,19 @@ function adaptNode(node: PersistedNode): FlowNode | null {
             triggers: rule.triggers,
             reply: rule.reply,
           })),
+          delaySeconds: data.delaySeconds,
         },
       };
     case "handoff":
-      return { id: node.id, type: "handoff", data: { note: data.note } };
+      return { id: node.id, type: "handoff", data: { note: data.note, delaySeconds: data.delaySeconds } };
     case "silentHandoff":
       return { id: node.id, type: "silentHandoff", data: { note: data.note } };
     case "link":
-      return { id: node.id, type: "link", data: { url: data.url ?? "", linkText: data.linkText } };
+      return {
+        id: node.id,
+        type: "link",
+        data: { url: data.url ?? "", linkText: data.linkText, delaySeconds: data.delaySeconds },
+      };
     default:
       return null;
   }

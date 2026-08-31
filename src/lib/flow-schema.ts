@@ -34,7 +34,7 @@ const FlowNodeDataSchema = z.object({
   temperature: z.number().min(0).max(1).optional(),
   maxReplies: z.number().int().min(1).max(50).optional(),
   randomizeWording: z.boolean().optional(),
-  // Seconds, capped to MAX_REPLY_DELAY_SECONDS in engine/executor.ts (120) — kept slightly
+  // Seconds, capped to MAX_NODE_DELAY_SECONDS in engine/executor.ts (120) — kept slightly
   // looser here since the executor is the source of truth for the actual cap.
   delaySeconds: z.number().min(0).max(120).optional(),
   variants: z.array(ReplyVariantSchema).max(20).optional(),
