@@ -7,7 +7,7 @@ import { WhatsAppConnectRedirectHandler } from "@/components/app/whatsapp-connec
 import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
 import { startOfCurrentMonth } from "@/lib/date-utils";
 import { prisma } from "@/lib/prisma";
-import { bucketByDay, weekOverWeekTrend } from "@/lib/stats";
+import { bucketByDay, chatsStartedBuckets, weekOverWeekTrend } from "@/lib/stats";
 
 export default async function OverviewPage() {
   const session = await auth();
@@ -49,6 +49,7 @@ export default async function OverviewPage() {
   const conversationDates = conversations.map((c) => c.createdAt);
   const resolvedDates = resolvedConversations.map((c) => c.createdAt);
   const messageDates = messages.map((m) => m.createdAt);
+  const chatsStarted = chatsStartedBuckets(conversationDates);
 
   return (
     <div>
@@ -93,6 +94,37 @@ export default async function OverviewPage() {
           caption={`${messagesThisMonth} this month`}
           icon={NodesMessageIcon}
         />
+      </div>
+
+      <div className="mb-3.5">
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Chats started</h2>
+        <div className="grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
+          <StatCard label="Today" value={String(chatsStarted.today)} trend={null} spark={[]} compact icon={NavInboxIcon} />
+          <StatCard
+            label="Yesterday"
+            value={String(chatsStarted.yesterday)}
+            trend={null}
+            spark={[]}
+            compact
+            icon={NavInboxIcon}
+          />
+          <StatCard
+            label="Last 7 days"
+            value={String(chatsStarted.last7Days)}
+            trend={null}
+            spark={[]}
+            compact
+            icon={NavInboxIcon}
+          />
+          <StatCard
+            label="Last 30 days"
+            value={String(chatsStarted.last30Days)}
+            trend={null}
+            spark={[]}
+            compact
+            icon={NavInboxIcon}
+          />
+        </div>
       </div>
 
       <BotsPanel
