@@ -43,7 +43,7 @@ export function StatCard({ label, value, trend, spark, compact = false, caption,
           </em>
         )}
       </div>
-      <Sparkline values={spark} className="mt-3 h-[30px] w-full" />
+      {spark.length > 0 && <Sparkline values={spark} className="mt-3 h-[30px] w-full" />}
       {caption && <div className="mt-2 text-[11px] text-muted">{caption}</div>}
     </div>
   );
