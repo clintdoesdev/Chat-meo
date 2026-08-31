@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, type PanGesture } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 import { NodeInspector } from "@/components/studio/node-inspector";
@@ -234,6 +234,7 @@ export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function
               <FlowNodeBox
                 key={node.id}
                 node={node}
+                canvasPanGesture={panGesture}
                 onDragStart={handleNodeDragStart}
                 onDragUpdate={handleNodeDragUpdate}
                 onDragEnd={handleNodeDragEnd}
@@ -314,11 +315,13 @@ function NodeKindPicker({
 
 function FlowNodeBox({
   node,
+  canvasPanGesture,
   onDragStart,
   onDragUpdate,
   onDragEnd,
 }: {
   node: FlowNode;
+  canvasPanGesture: PanGesture;
   onDragStart: (id: string) => void;
   onDragUpdate: (id: string, dx: number, dy: number) => void;
   onDragEnd: (id: string, dx: number, dy: number) => void;
@@ -330,6 +333,13 @@ function FlowNodeBox({
       Gesture.Pan()
         .minPointers(1)
         .maxPointers(1)
+        // Without this, this node's GestureDetector and the canvas's underlying pan GestureDetector
+        // both see the same touch (the node sits inside the canvas's content) and can both go
+        // ACTIVE at once — dragging a node also panned the whole canvas underneath it, adding the
+        // two deltas together into a jittery, wrong-feeling drag. This makes the canvas pan wait
+        // for this node's own pan to fail (i.e. not be a drag starting on a node) before it's
+        // allowed to start.
+        .blocksExternalGesture(canvasPanGesture)
         .onStart(() => {
           // These handlers run as worklets on the UI thread by default — runOnJS hops back to the
           // JS thread, since onDragStart/onDragUpdate/onDragEnd ultimately call setState.
@@ -341,7 +351,7 @@ function FlowNodeBox({
         .onEnd((e) => {
           runOnJS(onDragEnd)(node.id, e.translationX, e.translationY);
         }),
-    [node.id, onDragStart, onDragUpdate, onDragEnd],
+    [node.id, canvasPanGesture, onDragStart, onDragUpdate, onDragEnd],
   );
 
   return (

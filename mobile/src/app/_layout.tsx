@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { OfflineBanner } from "@/components/offline-banner";
 import { registerForPushNotifications } from "@/lib/push/notifications";
 import { colors } from "@/theme/tokens";
 import { useAppFonts } from "@/theme/fonts";
@@ -56,6 +57,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar style="light" />
+        <OfflineBanner />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
           <Stack.Protected guard={!token}>
             <Stack.Screen name="login" />
