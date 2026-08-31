@@ -5,51 +5,22 @@ import { BotsPanel } from "@/components/app/bots-panel";
 import { StatCard } from "@/components/app/stat-card";
 import { WhatsAppConnectRedirectHandler } from "@/components/app/whatsapp-connect-redirect-handler";
 import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
-import { startOfCurrentMonth } from "@/lib/date-utils";
 import { prisma } from "@/lib/prisma";
-import { bucketByDay, chatsStartedBuckets, weekOverWeekTrend } from "@/lib/stats";
+import { getOverviewStatsForUser } from "@/lib/stats-queries";
 
 export default async function OverviewPage() {
   const session = await auth();
   if (!session?.user) redirect("/signin");
   const userId = session.user.id;
 
-  const bots = await prisma.bot.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { conversations: true } } },
-  });
-
-  const botIds = bots.map((bot) => bot.id);
-  const monthStart = startOfCurrentMonth();
-
-  const [conversations, messages, messagesThisMonth] = botIds.length
-    ? await Promise.all([
-        prisma.conversation.findMany({
-          where: { botId: { in: botIds } },
-          select: { createdAt: true, status: true },
-        }),
-        prisma.message.findMany({
-          where: { conversation: { botId: { in: botIds } } },
-          select: { createdAt: true },
-        }),
-        prisma.message.count({
-          where: { role: "USER", conversation: { botId: { in: botIds } }, createdAt: { gte: monthStart } },
-        }),
-      ])
-    : [[], [], 0];
-
-  const resolvedConversations = conversations.filter((c) => c.status === "RESOLVED");
-  const resolutionRate =
-    conversations.length === 0
-      ? null
-      : Math.round((resolvedConversations.length / conversations.length) * 100);
-
-  const botDates = bots.map((bot) => bot.createdAt);
-  const conversationDates = conversations.map((c) => c.createdAt);
-  const resolvedDates = resolvedConversations.map((c) => c.createdAt);
-  const messageDates = messages.map((m) => m.createdAt);
-  const chatsStarted = chatsStartedBuckets(conversationDates);
+  const [bots, stats] = await Promise.all([
+    prisma.bot.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { conversations: true } } },
+    }),
+    getOverviewStatsForUser(userId),
+  ]);
 
   return (
     <div>
@@ -67,31 +38,31 @@ export default async function OverviewPage() {
       <div className="mb-3.5 grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
         <StatCard
           label="Bots"
-          value={String(bots.length)}
-          trend={weekOverWeekTrend(botDates)}
-          spark={bucketByDay(botDates, 7)}
+          value={String(stats.botsCount)}
+          trend={stats.botsTrend}
+          spark={stats.botsSpark}
           icon={NavBotsIcon}
         />
         <StatCard
           label="Conversations"
-          value={String(conversations.length)}
-          trend={weekOverWeekTrend(conversationDates)}
-          spark={bucketByDay(conversationDates, 7)}
+          value={String(stats.conversationsCount)}
+          trend={stats.conversationsTrend}
+          spark={stats.conversationsSpark}
           icon={NavInboxIcon}
         />
         <StatCard
           label="Resolution rate"
-          value={resolutionRate === null ? "—" : `${resolutionRate}%`}
-          trend={weekOverWeekTrend(resolvedDates)}
-          spark={bucketByDay(resolvedDates, 7)}
+          value={stats.resolutionRate === null ? "—" : `${stats.resolutionRate}%`}
+          trend={stats.resolutionTrend}
+          spark={stats.resolutionSpark}
           icon={StatusSuccessIcon}
         />
         <StatCard
           label="Messages"
-          value={String(messages.length)}
-          trend={weekOverWeekTrend(messageDates)}
-          spark={bucketByDay(messageDates, 7)}
-          caption={`${messagesThisMonth} this month`}
+          value={String(stats.messagesCount)}
+          trend={stats.messagesTrend}
+          spark={stats.messagesSpark}
+          caption={`${stats.messagesThisMonth} this month`}
           icon={NodesMessageIcon}
         />
       </div>
@@ -99,10 +70,10 @@ export default async function OverviewPage() {
       <div className="mb-3.5">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Chats started</h2>
         <div className="grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
-          <StatCard label="Today" value={String(chatsStarted.today)} trend={null} spark={[]} compact icon={NavInboxIcon} />
+          <StatCard label="Today" value={String(stats.chatsStarted.today)} trend={null} spark={[]} compact icon={NavInboxIcon} />
           <StatCard
             label="Yesterday"
-            value={String(chatsStarted.yesterday)}
+            value={String(stats.chatsStarted.yesterday)}
             trend={null}
             spark={[]}
             compact
@@ -110,7 +81,7 @@ export default async function OverviewPage() {
           />
           <StatCard
             label="Last 7 days"
-            value={String(chatsStarted.last7Days)}
+            value={String(stats.chatsStarted.last7Days)}
             trend={null}
             spark={[]}
             compact
@@ -118,7 +89,7 @@ export default async function OverviewPage() {
           />
           <StatCard
             label="Last 30 days"
-            value={String(chatsStarted.last30Days)}
+            value={String(stats.chatsStarted.last30Days)}
             trend={null}
             spark={[]}
             compact

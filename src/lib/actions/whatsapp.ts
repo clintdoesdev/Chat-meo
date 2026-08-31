@@ -4,11 +4,16 @@ import { auth } from "@/auth";
 import { decrypt } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
 import {
-  getMetaAppConfig,
+  disconnectWhatsAppForUser,
+  getWhatsAppConnectConfigForUser,
+  setWhatsAppActiveForUser,
+  type WhatsAppConnectConfig,
+  type WhatsAppConnectionInfo,
+} from "@/lib/whatsapp-queries";
+import {
   getWhatsAppBusinessProfile,
   MetaGraphError,
   requestWhatsAppDisplayNameChange,
-  unsubscribeAppFromWaba,
   updateWhatsAppProfilePicture,
 } from "@/lib/whatsapp/meta-graph";
 
@@ -22,46 +27,16 @@ async function requireBotOwnership(botId: string) {
   return bot;
 }
 
-export type WhatsAppConnectionInfo = {
-  status: "CONNECTED" | "DISCONNECTED" | "TOKEN_EXPIRED" | "BANNED";
-  isActive: boolean;
-  displayPhoneNumber: string;
-  connectedAt: string;
-};
-
-export type WhatsAppConnectConfig = {
-  /** False when META_APP_ID/META_APP_SECRET/META_CONFIG_ID aren't all set on this deployment —
-   * the connect button shows a "not configured" state instead of a link to a redirect that would
-   * just fail. The client never needs the values themselves: /api/whatsapp/connect/start builds
-   * Meta's redirect URL server-side, so nothing Meta-specific has to reach the browser at all. */
-  configured: boolean;
-  connection: WhatsAppConnectionInfo | null;
-};
+export type { WhatsAppConnectConfig, WhatsAppConnectionInfo };
 
 /** Everything the "WhatsApp" card needs to render: whether Embedded Signup is even configured on
  * this deployment, and this bot's current connection (if any). Read-only — connecting happens
  * through the /api/whatsapp/connect/start → Meta → /api/whatsapp/connect/callback redirect
  * chain, not here. */
 export async function getWhatsAppConnectConfig(botId: string): Promise<WhatsAppConnectConfig | { error: string }> {
-  const bot = await requireBotOwnership(botId);
-  if (!bot) return { error: "Bot not found." };
-
-  const connection = await prisma.whatsAppConnection.findUnique({
-    where: { botId },
-    select: { status: true, isActive: true, displayPhoneNumber: true, connectedAt: true },
-  });
-
-  return {
-    configured: getMetaAppConfig() !== null,
-    connection: connection
-      ? {
-          status: connection.status,
-          isActive: connection.isActive,
-          displayPhoneNumber: connection.displayPhoneNumber,
-          connectedAt: connection.connectedAt.toISOString(),
-        }
-      : null,
-  };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in." };
+  return getWhatsAppConnectConfigForUser(session.user.id, botId);
 }
 
 /** The seller's own pause/live toggle (not Meta's connection health) — while paused, the webhook
@@ -69,16 +44,9 @@ export async function getWhatsAppConnectConfig(botId: string): Promise<WhatsAppC
  * gets sent back. Meta's subscription is untouched: this is reversible with one click, unlike
  * disconnectWhatsApp below. */
 export async function setWhatsAppActive(botId: string, isActive: boolean): Promise<{ error: string | null }> {
-  const bot = await requireBotOwnership(botId);
-  if (!bot) return { error: "Bot not found." };
-
-  const connection = await prisma.whatsAppConnection.findUnique({ where: { botId }, select: { status: true } });
-  if (!connection || connection.status === "DISCONNECTED") {
-    return { error: "This bot isn't connected to WhatsApp." };
-  }
-
-  await prisma.whatsAppConnection.update({ where: { botId }, data: { isActive } });
-  return { error: null };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in." };
+  return setWhatsAppActiveForUser(session.user.id, botId, isActive);
 }
 
 /**
@@ -90,33 +58,9 @@ export async function setWhatsAppActive(botId: string, isActive: boolean): Promi
  * nothing left to reconnect with short of redoing Embedded Signup from scratch.
  */
 export async function disconnectWhatsApp(botId: string): Promise<{ error: string | null }> {
-  const bot = await requireBotOwnership(botId);
-  if (!bot) return { error: "Bot not found." };
-
-  const connection = await prisma.whatsAppConnection.findUnique({
-    where: { botId },
-    select: { wabaId: true, accessToken: true, status: true },
-  });
-  if (!connection || connection.status === "DISCONNECTED") {
-    return { error: null };
-  }
-
-  if (connection.accessToken) {
-    try {
-      await unsubscribeAppFromWaba(connection.wabaId, decrypt(connection.accessToken));
-    } catch (error) {
-      console.warn("[whatsapp] failed to unsubscribe from Meta during disconnect — proceeding anyway", {
-        botId,
-        error,
-      });
-    }
-  }
-
-  await prisma.whatsAppConnection.update({
-    where: { botId },
-    data: { status: "DISCONNECTED", isActive: false, accessToken: null },
-  });
-  return { error: null };
+  const session = await auth();
+  if (!session?.user) return { error: "Not signed in." };
+  return disconnectWhatsAppForUser(session.user.id, botId);
 }
 
 /** Shared guard for the profile actions below — all three need a live, usable access token, not
