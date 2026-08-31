@@ -132,14 +132,11 @@ export type ChatsStartedBuckets = { today: number; yesterday: number; last7Days:
 
 export type OverviewStatsResponse = {
   botsCount: number;
-  botsTrend: Trend | null;
-  botsSpark: number[];
   conversationsCount: number;
   conversationsTrend: Trend | null;
   conversationsSpark: number[];
   resolutionRate: number | null;
   resolutionTrend: Trend | null;
-  resolutionSpark: number[];
   messagesCount: number;
   messagesThisMonth: number;
   messagesTrend: Trend | null;

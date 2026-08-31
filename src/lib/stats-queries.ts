@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   bucketByDay,
   chatsStartedBuckets,
+  weekOverWeekRateTrend,
   weekOverWeekTrend,
   type ChatsStartedBuckets,
   type Trend,
@@ -10,14 +11,11 @@ import {
 
 export type OverviewStats = {
   botsCount: number;
-  botsTrend: Trend | null;
-  botsSpark: number[];
   conversationsCount: number;
   conversationsTrend: Trend | null;
   conversationsSpark: number[];
   resolutionRate: number | null;
   resolutionTrend: Trend | null;
-  resolutionSpark: number[];
   messagesCount: number;
   messagesThisMonth: number;
   messagesTrend: Trend | null;
@@ -53,21 +51,22 @@ export async function getOverviewStatsForUser(userId: string): Promise<OverviewS
   const resolutionRate =
     conversations.length === 0 ? null : Math.round((resolvedConversations.length / conversations.length) * 100);
 
-  const botDates = bots.map((bot) => bot.createdAt);
   const conversationDates = conversations.map((c) => c.createdAt);
   const resolvedDates = resolvedConversations.map((c) => c.createdAt);
   const messageDates = messages.map((m) => m.createdAt);
 
   return {
     botsCount: bots.length,
-    botsTrend: weekOverWeekTrend(botDates),
-    botsSpark: bucketByDay(botDates, 7),
     conversationsCount: conversations.length,
     conversationsTrend: weekOverWeekTrend(conversationDates),
     conversationsSpark: bucketByDay(conversationDates, 7),
     resolutionRate,
-    resolutionTrend: weekOverWeekTrend(resolvedDates),
-    resolutionSpark: bucketByDay(resolvedDates, 7),
+    // Trend of the *rate* (resolved / total, per week) rather than weekOverWeekTrend(resolvedDates)
+    // — that would report how the raw count of resolved conversations moved, a different quantity
+    // that can (and did) show something like "down 100%" right next to a rate that didn't actually
+    // fall to 0%, since a quieter week resolves fewer conversations in absolute terms even at an
+    // unchanged or rising rate.
+    resolutionTrend: weekOverWeekRateTrend(resolvedDates, conversationDates),
     messagesCount: messages.length,
     messagesThisMonth,
     messagesTrend: weekOverWeekTrend(messageDates),

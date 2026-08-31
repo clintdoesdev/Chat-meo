@@ -1,6 +1,5 @@
-import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Avatar } from "@/components/avatar";
 import { StatCard } from "@/components/stat-card";
@@ -10,11 +9,14 @@ import type { BotDto, OverviewStatsResponse } from "@/lib/api/types";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
+function formatCount(count: number): string {
+  return count.toLocaleString();
+}
+
 /** Mobile counterpart to the web Overview page (src/app/(main)/app/page.tsx) — same stat cards
  * (via GET /api/v1/stats/overview, backed by the same getOverviewStatsForUser query) plus a bots
  * list, so the two dashboards always show the same numbers. */
 export default function OverviewScreen() {
-  const router = useRouter();
   const [bots, setBots] = useState<BotDto[]>([]);
   const [stats, setStats] = useState<OverviewStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,10 +68,12 @@ export default function OverviewScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.orange2} />}
         >
           <View style={styles.grid}>
-            <StatCard label="Bots" value={String(stats.botsCount)} trend={stats.botsTrend} spark={stats.botsSpark} />
+            {/* No trend/spark: a bot count is a static total, not a time series — a flat, empty
+             * chart under it looked broken rather than merely uneventful. */}
+            <StatCard label="Bots" value={formatCount(stats.botsCount)} />
             <StatCard
               label="Conversations"
-              value={String(stats.conversationsCount)}
+              value={formatCount(stats.conversationsCount)}
               trend={stats.conversationsTrend}
               spark={stats.conversationsSpark}
             />
@@ -77,23 +81,22 @@ export default function OverviewScreen() {
               label="Resolution rate"
               value={stats.resolutionRate === null ? "—" : `${stats.resolutionRate}%`}
               trend={stats.resolutionTrend}
-              spark={stats.resolutionSpark}
             />
             <StatCard
               label="Messages"
-              value={String(stats.messagesCount)}
+              value={formatCount(stats.messagesCount)}
               trend={stats.messagesTrend}
               spark={stats.messagesSpark}
-              caption={`${stats.messagesThisMonth} this month`}
+              caption={`${formatCount(stats.messagesThisMonth)} this month`}
             />
           </View>
 
           <Text style={styles.sectionTitle}>Chats started</Text>
           <View style={styles.grid}>
-            <StatCard label="Today" value={String(stats.chatsStarted.today)} trend={null} spark={[]} compact />
-            <StatCard label="Yesterday" value={String(stats.chatsStarted.yesterday)} trend={null} spark={[]} compact />
-            <StatCard label="Last 7 days" value={String(stats.chatsStarted.last7Days)} trend={null} spark={[]} compact />
-            <StatCard label="Last 30 days" value={String(stats.chatsStarted.last30Days)} trend={null} spark={[]} compact />
+            <StatCard label="Today" value={formatCount(stats.chatsStarted.today)} compact />
+            <StatCard label="Yesterday" value={formatCount(stats.chatsStarted.yesterday)} compact />
+            <StatCard label="Last 7 days" value={formatCount(stats.chatsStarted.last7Days)} compact />
+            <StatCard label="Last 30 days" value={formatCount(stats.chatsStarted.last30Days)} compact />
           </View>
 
           <Text style={styles.sectionTitle}>Your bots</Text>
@@ -102,7 +105,7 @@ export default function OverviewScreen() {
           ) : (
             <View style={styles.botsList}>
               {bots.map((bot) => (
-                <Pressable key={bot.id} style={styles.botRow} onPress={() => router.push(`/studio/${bot.id}`)}>
+                <View key={bot.id} style={styles.botRow}>
                   <Avatar label={bot.name} size={36} />
                   <View style={styles.botRowBody}>
                     <Text style={styles.botRowTitle} numberOfLines={1}>
@@ -117,7 +120,7 @@ export default function OverviewScreen() {
                       {bot.status === "LIVE" ? "Live" : "Draft"}
                     </Text>
                   </View>
-                </Pressable>
+                </View>
               ))}
             </View>
           )}

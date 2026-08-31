@@ -1,5 +1,6 @@
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Avatar } from "@/components/avatar";
@@ -71,6 +72,15 @@ function NotificationsCard() {
     loading: false,
     text: null,
   });
+  // "New messages will alert this device." only earns its green for the moment right after the
+  // user actually flips the switch — the rest of the time it's just describing the current state,
+  // not confirming a change, so it stays neutral gray like copy.tone === "neutral" already does.
+  const [justToggled, setJustToggled] = useState(false);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+  }, []);
 
   const check = useCallback(() => {
     setState({ loading: true, result: null });
@@ -84,6 +94,10 @@ function NotificationsCard() {
 
   function handleToggle(value: boolean) {
     if (state.loading) return;
+    setJustToggled(true);
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setJustToggled(false), 2500);
+
     if (value) {
       check();
       return;
@@ -109,6 +123,7 @@ function NotificationsCard() {
   }
 
   const copy = state.result ? STATUS_COPY[state.result.state] : null;
+  const labelColor = copy ? (copy.tone === "ok" && !justToggled ? colors.muted : TONE_COLOR[copy.tone]) : colors.muted;
   const errorDetail =
     state.result && (state.result.state === "token-failed" || state.result.state === "register-failed")
       ? state.result.message
@@ -132,7 +147,7 @@ function NotificationsCard() {
       </View>
       {!state.loading && copy ? (
         <>
-          <Text style={[styles.rowText, { color: TONE_COLOR[copy.tone] }]}>{copy.label}</Text>
+          <Text style={[styles.rowText, { color: labelColor }]}>{copy.label}</Text>
           {errorDetail ? <Text style={styles.errorDetail}>{errorDetail}</Text> : null}
         </>
       ) : null}
@@ -157,36 +172,40 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <Text style={styles.title}>Settings</Text>
       <View style={styles.body}>
-        {user && (
-          <View style={styles.accountCard}>
-            <Avatar label={user.name || user.email} size={44} />
-            <View style={styles.accountText}>
-              <Text style={styles.accountName} numberOfLines={1}>
-                {user.name || "Your account"}
-              </Text>
-              <Text style={styles.accountEmail} numberOfLines={1}>
-                {user.email}
-              </Text>
+        <View style={styles.topSection}>
+          {user && (
+            <View style={styles.accountCard}>
+              <Avatar label={user.name || user.email} size={44} />
+              <View style={styles.accountText}>
+                <Text style={styles.accountName} numberOfLines={1}>
+                  {user.name || "Your account"}
+                </Text>
+                <Text style={styles.accountEmail} numberOfLines={1}>
+                  {user.email}
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
-        <NotificationsCard />
+          <NotificationsCard />
 
-        <Pressable style={styles.linkCard} onPress={() => router.push("/settings/whatsapp")}>
-          <View style={styles.linkIconBadge}>
-            <ChannelsWhatsappIcon size={16} color="#25D366" />
-          </View>
-          <View style={styles.linkTextWrap}>
-            <Text style={styles.linkTitle}>WhatsApp channels</Text>
-            <Text style={styles.linkSubtitle}>Connect, pause, or disconnect a bot&apos;s WhatsApp number</Text>
-          </View>
-          <Text style={styles.linkChevron}>›</Text>
-        </Pressable>
+          <Pressable style={styles.linkCard} onPress={() => router.push("/settings/whatsapp")}>
+            <View style={styles.linkIconBadge}>
+              <ChannelsWhatsappIcon size={16} color="#25D366" />
+            </View>
+            <View style={styles.linkTextWrap}>
+              <Text style={styles.linkTitle}>WhatsApp channels</Text>
+              <Text style={styles.linkSubtitle}>Connect, pause, or disconnect a bot&apos;s WhatsApp number</Text>
+            </View>
+            <Text style={styles.linkChevron}>›</Text>
+          </Pressable>
 
-        <Pressable style={styles.signOutButton} onPress={() => setConfirmVisible(true)}>
-          <Text style={styles.signOutText}>Sign out</Text>
-        </Pressable>
+          <Pressable style={styles.signOutButton} onPress={() => setConfirmVisible(true)}>
+            <Text style={styles.signOutText}>Sign out</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.versionText}>Chatmeo {Constants.expoConfig?.version ?? ""}</Text>
       </View>
 
       <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
@@ -230,8 +249,18 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  topSection: {
     gap: spacing.lg,
+  },
+  versionText: {
+    color: colors.muted,
+    fontFamily: fontFamily.regular,
+    fontSize: 11.5,
+    textAlign: "center",
   },
   card: {
     backgroundColor: colors.card,

@@ -36,16 +36,11 @@ export default async function OverviewPage() {
       </div>
 
       <div className="mb-3.5 grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
-        <StatCard
-          label="Bots"
-          value={String(stats.botsCount)}
-          trend={stats.botsTrend}
-          spark={stats.botsSpark}
-          icon={NavBotsIcon}
-        />
+        {/* No trend/spark: a bot count is a static total, not a time series. */}
+        <StatCard label="Bots" value={stats.botsCount.toLocaleString()} icon={NavBotsIcon} />
         <StatCard
           label="Conversations"
-          value={String(stats.conversationsCount)}
+          value={stats.conversationsCount.toLocaleString()}
           trend={stats.conversationsTrend}
           spark={stats.conversationsSpark}
           icon={NavInboxIcon}
@@ -54,15 +49,14 @@ export default async function OverviewPage() {
           label="Resolution rate"
           value={stats.resolutionRate === null ? "—" : `${stats.resolutionRate}%`}
           trend={stats.resolutionTrend}
-          spark={stats.resolutionSpark}
           icon={StatusSuccessIcon}
         />
         <StatCard
           label="Messages"
-          value={String(stats.messagesCount)}
+          value={stats.messagesCount.toLocaleString()}
           trend={stats.messagesTrend}
           spark={stats.messagesSpark}
-          caption={`${stats.messagesThisMonth} this month`}
+          caption={`${stats.messagesThisMonth.toLocaleString()} this month`}
           icon={NodesMessageIcon}
         />
       </div>
@@ -70,28 +64,22 @@ export default async function OverviewPage() {
       <div className="mb-3.5">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Chats started</h2>
         <div className="grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
-          <StatCard label="Today" value={String(stats.chatsStarted.today)} trend={null} spark={[]} compact icon={NavInboxIcon} />
+          <StatCard label="Today" value={stats.chatsStarted.today.toLocaleString()} compact icon={NavInboxIcon} />
           <StatCard
             label="Yesterday"
-            value={String(stats.chatsStarted.yesterday)}
-            trend={null}
-            spark={[]}
+            value={stats.chatsStarted.yesterday.toLocaleString()}
             compact
             icon={NavInboxIcon}
           />
           <StatCard
             label="Last 7 days"
-            value={String(stats.chatsStarted.last7Days)}
-            trend={null}
-            spark={[]}
+            value={stats.chatsStarted.last7Days.toLocaleString()}
             compact
             icon={NavInboxIcon}
           />
           <StatCard
             label="Last 30 days"
-            value={String(stats.chatsStarted.last30Days)}
-            trend={null}
-            spark={[]}
+            value={stats.chatsStarted.last30Days.toLocaleString()}
             compact
             icon={NavInboxIcon}
           />
