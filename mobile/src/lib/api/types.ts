@@ -58,15 +58,32 @@ export type ConversationsResponse = {
   conversations: ConversationDto[];
 };
 
+export type MessageContentTypeDto = "TEXT" | "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO";
+
+export type QuotedMessageDto = {
+  id: string;
+  role: "BOT" | "USER" | "AGENT";
+  content: string;
+  contentType: MessageContentTypeDto;
+  caption?: string | null;
+  fileName?: string | null;
+};
+
 export type MessageDto = {
   id: string;
   role: "BOT" | "USER" | "AGENT";
   content: string;
-  contentType: "TEXT" | "IMAGE";
+  contentType: MessageContentTypeDto;
   caption?: string | null;
+  // Only ever set for a DOCUMENT message — see Message.fileName's schema doc comment (web repo).
+  fileName?: string | null;
   createdAt: string;
   starred: boolean;
   replyToId?: string | null;
+  // A snapshot of the quoted message, for rendering the quote inline — null unless this message
+  // is a reply to another one still around (see ConversationDetail["messages"][number].replyTo's
+  // doc comment on the web side).
+  replyTo?: QuotedMessageDto | null;
   customerReaction?: string | null;
   agentReaction?: string | null;
   deliveryStatus?: string | null;
