@@ -1,9 +1,17 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
-import { NODE_KIND_META, type FlowEdge, type FlowNode } from "@/lib/flow/types";
+import { NodeInspector } from "@/components/studio/node-inspector";
+import {
+  NODE_KIND_META,
+  NODE_KINDS,
+  type FlowEdge,
+  type FlowNode,
+  type FlowNodeData,
+  type FlowNodeKind,
+} from "@/lib/flow/types";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
@@ -12,6 +20,9 @@ export const NODE_HEIGHT = 60;
 
 const MIN_SCALE = 0.35;
 const MAX_SCALE = 2.5;
+// A finger moving less than this many graph-space units between a node's pan gesture starting
+// and ending counts as a tap (opens the inspector) rather than a drag.
+const TAP_THRESHOLD = 6;
 // Half-extent of the SVG's coordinate space, centered on graph-space (0, 0) — matches the
 // modest x/y ranges defaultFlowGraph() and the web Studio editor actually produce (typically a
 // few hundred to a couple thousand units). An edge whose endpoints land outside this box simply
@@ -19,30 +30,42 @@ const MAX_SCALE = 2.5;
 const SVG_EXTENT = 4000;
 
 export type FlowCanvasHandle = {
-  /** Current node positions (and everything else about each node), for the screen's Save button
-   * to read on demand — see saveFlowForUser's graph shape in src/lib/flow-queries.ts. Deliberately
-   * pull-based rather than lifting position state up on every drag frame, so dragging a node
-   * doesn't also re-render the screen that owns the Save button. */
+  /** Current nodes and edges, for the screen's Save button to read on demand — see
+   * saveFlowForUser's graph shape in src/lib/flow-queries.ts. Deliberately pull-based rather than
+   * lifting this state up on every drag frame or keystroke, so editing a node doesn't also
+   * re-render the screen that owns the Save button. */
   getNodes: () => FlowNode[];
+  getEdges: () => FlowEdge[];
 };
 
 type FlowCanvasProps = {
   initialNodes: FlowNode[];
-  edges: FlowEdge[];
+  initialEdges: FlowEdge[];
 };
 
-/** A pan/pinch-zoomable, drag-to-reposition canvas for a bot's flow graph — the mobile
- * counterpart to the web Studio's @xyflow/react-based editor (src/components/studio/
- * studio-editor.tsx). This first pass covers viewing the graph and repositioning nodes; adding,
- * deleting, or rewiring nodes/edges and the per-node-kind inspector panel are deliberately left
- * for later follow-ups (per the user's explicit "full editable canvas" scope, built incrementally
- * rather than as one unreviewable change). */
+let nodeIdCounter = 0;
+function nextNodeId(kind: FlowNodeKind): string {
+  nodeIdCounter += 1;
+  return `${kind}-${Date.now()}-${nodeIdCounter}`;
+}
+
+/** A pan/pinch-zoomable, drag-to-reposition, tap-to-edit canvas for a bot's flow graph — the
+ * mobile counterpart to the web Studio's @xyflow/react-based editor (src/components/studio/
+ * studio-editor.tsx). Covers viewing the graph, repositioning/editing/adding/deleting nodes via
+ * NodeInspector. Rewiring connections (dragging a new edge between nodes, or deleting one) still
+ * needs to happen on the web for now — that interaction needs more room to design well on a
+ * touchscreen than this pass had time for, so it's a deliberate, called-out gap rather than a
+ * silent one. */
 export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function FlowCanvas(
-  { initialNodes, edges },
+  { initialNodes, initialEdges },
   ref,
 ) {
   const [nodes, setNodes] = useState(initialNodes);
-  useImperativeHandle(ref, () => ({ getNodes: () => nodes }), [nodes]);
+  const [edges, setEdges] = useState(initialEdges);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+
+  useImperativeHandle(ref, () => ({ getNodes: () => nodes, getEdges: () => edges }), [nodes, edges]);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -76,8 +99,35 @@ export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function
     );
   }, []);
 
-  const handleNodeDragEnd = useCallback(() => {
+  const handleNodeDragEnd = useCallback((id: string, dx: number, dy: number) => {
     dragOriginRef.current = null;
+    if (Math.hypot(dx, dy) < TAP_THRESHOLD) setSelectedNodeId(id);
+  }, []);
+
+  const handleNodeDataChange = useCallback((id: string, patch: Partial<FlowNodeData>) => {
+    setNodes((current) => current.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)));
+  }, []);
+
+  const handleNodeDelete = useCallback((id: string) => {
+    setNodes((current) => current.filter((n) => n.id !== id));
+    setEdges((current) => current.filter((e) => e.source !== id && e.target !== id));
+    setSelectedNodeId(null);
+  }, []);
+
+  const handleAddNode = useCallback((kind: FlowNodeKind) => {
+    const meta = NODE_KIND_META[kind];
+    const id = nextNodeId(kind);
+    setNodes((current) => [
+      ...current,
+      {
+        id,
+        type: kind,
+        position: { x: 60 + (current.length % 4) * 40, y: 120 + current.length * 130 },
+        data: structuredCloneData(meta.defaultData),
+      },
+    ]);
+    setPickerVisible(false);
+    setSelectedNodeId(id);
   }, []);
 
   const syncScaleRef = useCallback((value: number) => {
@@ -163,6 +213,8 @@ export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function
       .filter((p): p is { id: string; d: string } => p !== null);
   }, [edges, nodesById]);
 
+  const selectedNode = selectedNodeId ? (nodesById.get(selectedNodeId) ?? null) : null;
+
   return (
     <View style={styles.viewport}>
       <GestureDetector gesture={composedGesture}>
@@ -191,6 +243,12 @@ export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function
         </View>
       </GestureDetector>
 
+      <View style={styles.fabRow}>
+        <Pressable style={styles.fab} onPress={() => setPickerVisible(true)}>
+          <Text style={styles.fabText}>+ Add node</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.zoomControls}>
         <Pressable style={styles.zoomButton} onPress={() => zoomBy(1.25)}>
           <Text style={styles.zoomButtonText}>+</Text>
@@ -202,9 +260,57 @@ export const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function
           <Text style={styles.zoomButtonTextSmall}>Fit</Text>
         </Pressable>
       </View>
+
+      <NodeInspector
+        node={selectedNode}
+        onClose={() => setSelectedNodeId(null)}
+        onSave={handleNodeDataChange}
+        onDelete={handleNodeDelete}
+      />
+
+      <NodeKindPicker visible={pickerVisible} onClose={() => setPickerVisible(false)} onPick={handleAddNode} />
     </View>
   );
 });
+
+function structuredCloneData(data: FlowNodeData): FlowNodeData {
+  return JSON.parse(JSON.stringify(data)) as FlowNodeData;
+}
+
+function NodeKindPicker({
+  visible,
+  onClose,
+  onPick,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (kind: FlowNodeKind) => void;
+}) {
+  const paletteKinds = NODE_KINDS.filter((meta) => meta.inPalette);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.pickerOverlay}>
+        <Pressable style={styles.pickerBackdrop} onPress={onClose} />
+        <View style={styles.pickerSheet}>
+          <Text style={styles.pickerTitle}>Add a node</Text>
+          <ScrollView contentContainerStyle={styles.pickerList}>
+            {paletteKinds.map((meta) => (
+              <Pressable key={meta.kind} style={styles.pickerRow} onPress={() => onPick(meta.kind)}>
+                <View style={[styles.pickerDot, { backgroundColor: meta.color }]} />
+                <View style={styles.pickerRowText}>
+                  <Text style={styles.pickerRowTitle}>{meta.label}</Text>
+                  <Text style={styles.pickerRowDescription} numberOfLines={2}>
+                    {meta.description}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function FlowNodeBox({
   node,
@@ -215,7 +321,7 @@ function FlowNodeBox({
   node: FlowNode;
   onDragStart: (id: string) => void;
   onDragUpdate: (id: string, dx: number, dy: number) => void;
-  onDragEnd: (id: string) => void;
+  onDragEnd: (id: string, dx: number, dy: number) => void;
 }) {
   const meta = NODE_KIND_META[node.type];
 
@@ -232,8 +338,8 @@ function FlowNodeBox({
         .onUpdate((e) => {
           runOnJS(onDragUpdate)(node.id, e.translationX, e.translationY);
         })
-        .onEnd(() => {
-          runOnJS(onDragEnd)(node.id);
+        .onEnd((e) => {
+          runOnJS(onDragEnd)(node.id, e.translationX, e.translationY);
         }),
     [node.id, onDragStart, onDragUpdate, onDragEnd],
   );
@@ -300,6 +406,24 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: 13,
   },
+  fabRow: {
+    position: "absolute",
+    left: spacing.lg,
+    bottom: spacing.xl,
+  },
+  fab: {
+    paddingHorizontal: spacing.md,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.orange,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fabText: {
+    color: colors.white,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 13,
+  },
   zoomControls: {
     position: "absolute",
     right: spacing.lg,
@@ -326,5 +450,65 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fontFamily.medium,
     fontSize: 10.5,
+  },
+  pickerOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  pickerBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  pickerSheet: {
+    maxHeight: "70%",
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.lg,
+  },
+  pickerTitle: {
+    color: colors.text,
+    fontFamily: fontFamily.bold,
+    fontSize: 16,
+    marginBottom: spacing.md,
+  },
+  pickerList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.cardSm,
+    backgroundColor: colors.card2,
+  },
+  pickerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  pickerRowText: {
+    flex: 1,
+    gap: 2,
+  },
+  pickerRowTitle: {
+    color: colors.text,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 13.5,
+  },
+  pickerRowDescription: {
+    color: colors.muted,
+    fontFamily: fontFamily.regular,
+    fontSize: 11.5,
+    lineHeight: 15,
   },
 });

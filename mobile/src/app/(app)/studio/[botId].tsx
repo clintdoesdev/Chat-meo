@@ -47,7 +47,8 @@ export default function FlowStudioScreen() {
   async function handleSave() {
     if (!flowId || !graph || saving) return;
     const nodes = canvasRef.current?.getNodes() ?? graph.nodes;
-    const nextGraph: FlowGraph = { nodes, edges: graph.edges };
+    const edges = canvasRef.current?.getEdges() ?? graph.edges;
+    const nextGraph: FlowGraph = { nodes, edges };
     setSaving(true);
     setSavedJustNow(false);
     try {
@@ -97,9 +98,9 @@ export default function FlowStudioScreen() {
         </View>
       ) : graph ? (
         <>
-          <Text style={styles.hint}>Drag a node to move it · pinch to zoom · Save when you&apos;re done</Text>
+          <Text style={styles.hint}>Tap a node to edit · drag to move · pinch to zoom · Save when done</Text>
           {error ? <Text style={styles.inlineError}>{error}</Text> : null}
-          <FlowCanvas ref={canvasRef} initialNodes={graph.nodes} edges={graph.edges} />
+          <FlowCanvas ref={canvasRef} initialNodes={graph.nodes} initialEdges={graph.edges} />
         </>
       ) : null}
     </SafeAreaView>
