@@ -1,6 +1,9 @@
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Avatar } from "@/components/avatar";
+import { ChannelsWhatsappIcon } from "@/components/icons";
 import { sendTestPush as sendTestPushRequest, type PushTestResult } from "@/lib/api/endpoints";
 import type { PushTestResponse } from "@/lib/api/types";
 import {
@@ -8,6 +11,7 @@ import {
   unregisterForPushNotifications,
   type PushRegistrationStatus,
 } from "@/lib/push/notifications";
+import { useAuthStore } from "@/store/auth";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
@@ -144,13 +148,69 @@ function NotificationsCard() {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <Text style={styles.title}>Settings</Text>
       <View style={styles.body}>
+        {user && (
+          <View style={styles.accountCard}>
+            <Avatar label={user.name || user.email} size={44} />
+            <View style={styles.accountText}>
+              <Text style={styles.accountName} numberOfLines={1}>
+                {user.name || "Your account"}
+              </Text>
+              <Text style={styles.accountEmail} numberOfLines={1}>
+                {user.email}
+              </Text>
+            </View>
+          </View>
+        )}
+
         <NotificationsCard />
-        <Text style={styles.note}>Account, WhatsApp channel management, and sign out are coming next.</Text>
+
+        <Pressable style={styles.linkCard} onPress={() => router.push("/settings/whatsapp")}>
+          <View style={styles.linkIconBadge}>
+            <ChannelsWhatsappIcon size={16} color="#25D366" />
+          </View>
+          <View style={styles.linkTextWrap}>
+            <Text style={styles.linkTitle}>WhatsApp channels</Text>
+            <Text style={styles.linkSubtitle}>Connect, pause, or disconnect a bot&apos;s WhatsApp number</Text>
+          </View>
+          <Text style={styles.linkChevron}>›</Text>
+        </Pressable>
+
+        <Pressable style={styles.signOutButton} onPress={() => setConfirmVisible(true)}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </Pressable>
       </View>
+
+      <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Sign out?</Text>
+            <Text style={styles.modalBody}>You&apos;ll need to sign in again to access your bots and inbox.</Text>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setConfirmVisible(false)} style={styles.modalCancel}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setConfirmVisible(false);
+                  logout();
+                }}
+                style={styles.modalConfirm}
+              >
+                <Text style={styles.modalConfirmText}>Sign out</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -225,10 +285,132 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: 13,
   },
-  note: {
+  accountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.lg,
+  },
+  accountText: {
+    flex: 1,
+    gap: 2,
+  },
+  accountName: {
+    color: colors.text,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 15,
+  },
+  accountEmail: {
     color: colors.muted,
     fontFamily: fontFamily.regular,
+    fontSize: 12.5,
+  },
+  linkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.lg,
+  },
+  linkIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(37,211,102,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  linkTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  linkTitle: {
+    color: colors.text,
+    fontFamily: fontFamily.semiBold,
     fontSize: 14,
-    textAlign: "center",
+  },
+  linkSubtitle: {
+    color: colors.muted,
+    fontFamily: fontFamily.regular,
+    fontSize: 11.5,
+    lineHeight: 15,
+  },
+  linkChevron: {
+    color: colors.muted,
+    fontSize: 20,
+  },
+  signOutButton: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: "rgba(255,87,87,0.3)",
+  },
+  signOutText: {
+    color: colors.bad,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  modalCard: {
+    width: "100%",
+    borderRadius: radius.card,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.lg,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontFamily: fontFamily.bold,
+    fontSize: 15,
+    marginBottom: spacing.sm,
+  },
+  modalBody: {
+    color: colors.muted,
+    fontFamily: fontFamily.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  modalCancel: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card2,
+  },
+  modalCancelText: {
+    color: colors.text,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 12.5,
+  },
+  modalConfirm: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bad,
+  },
+  modalConfirmText: {
+    color: colors.white,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 12.5,
   },
 });

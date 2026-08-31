@@ -9,8 +9,26 @@ export async function GET(request: NextRequest) {
   const bots = await prisma.bot.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, slug: true, status: true, avatarUrl: true, primaryColor: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      status: true,
+      avatarUrl: true,
+      primaryColor: true,
+      _count: { select: { conversations: true } },
+    },
   });
 
-  return NextResponse.json({ bots });
+  return NextResponse.json({
+    bots: bots.map((bot) => ({
+      id: bot.id,
+      name: bot.name,
+      slug: bot.slug,
+      status: bot.status,
+      avatarUrl: bot.avatarUrl,
+      primaryColor: bot.primaryColor,
+      conversationCount: bot._count.conversations,
+    })),
+  });
 }
