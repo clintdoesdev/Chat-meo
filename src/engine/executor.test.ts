@@ -721,6 +721,8 @@ describe("step: ai node maxReplies cap with an attached Logic node", () => {
     expect(turn2.replies).toEqual([]);
     expect(turn2.state.status).toBe("AWAITING_INPUT");
     expect(turn2.state.logicLocked).toEqual({ "ai-1": true });
+    // A human should get a chance to answer this one manually — see EngineOutput.unmatchedMessage.
+    expect(turn2.unmatchedMessage).toBe(true);
   });
 });
 
@@ -1303,7 +1305,12 @@ describe("step: logic node (standalone)", () => {
     expect(output.state.status).toBe("ENDED");
   });
 
-  it("ends as a dead end when no rule matches and there's no catch-all", async () => {
+  it("stays open and flags unmatchedMessage when no rule matches and there's no catch-all", async () => {
+    // Previously this silently marked the conversation RESOLVED — a customer's message that
+    // matches nothing gets no reply, but that's not the same as the conversation being over, and
+    // the seller was never told anything needed their attention. It now stays open (waiting on
+    // the same node, so a later message gets another chance to match) and flags the turn via
+    // unmatchedMessage so the caller can notify a human to step in.
     const noElseGraph: FlowGraph = {
       nodes: [
         {
@@ -1318,7 +1325,28 @@ describe("step: logic node (standalone)", () => {
     const output = await step(noElseGraph, state, "hello there", createDeps());
 
     expect(output.replies).toEqual([]);
-    expect(output.state.status).toBe("ENDED");
+    expect(output.unmatchedMessage).toBe(true);
+    expect(output.state.status).toBe("AWAITING_INPUT");
+    expect(output.state.currentNodeId).toBe("logic-1");
+  });
+
+  it("re-runs the same standalone Logic node on the visitor's next message after an unmatched one", async () => {
+    const noElseGraph: FlowGraph = {
+      nodes: [
+        {
+          id: "logic-1",
+          type: "logic",
+          data: { rules: [{ id: "rule-pay", label: "Payment", triggers: "payment", reply: "Sure!" }] },
+        },
+      ],
+      edges: [],
+    };
+    const first = await step(noElseGraph, { currentNodeId: "logic-1", variables: {}, status: "RUNNING" }, "hello there", createDeps());
+    expect(first.state.status).toBe("AWAITING_INPUT");
+
+    const second = await step(noElseGraph, first.state, "I need help with a payment", createDeps());
+    expect(second.replies).toEqual([{ content: "Sure!" }]);
+    expect(second.unmatchedMessage).toBeUndefined();
   });
 
   it("literal-matches a bare generic word ('done') that IS the customer's whole message, skipping the classifier", async () => {

@@ -54,6 +54,11 @@ export type RunWhatsAppTurnResult =
        * what Meta's send call returned for that reply (see processInboundMessage in
        * src/app/api/webhooks/whatsapp/route.ts). */
       replyMessageIds: string[];
+      /** Passed straight through from EngineOutput.unmatchedMessage (Flow graph path only — the
+       * Python Bot path has no Logic-node concept, so this is always false/absent there) — the
+       * webhook route notifies on this the same way it notifies on a HANDOFF status, just every
+       * time rather than once. */
+      unmatchedMessage?: boolean;
     };
 
 /**
@@ -255,7 +260,15 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
     withinWindow,
   });
 
-  return { kind: "success", conversationId: conversation.id, replies: output.replies, status: output.state.status, withinWindow, replyMessageIds };
+  return {
+    kind: "success",
+    conversationId: conversation.id,
+    replies: output.replies,
+    status: output.state.status,
+    withinWindow,
+    replyMessageIds,
+    unmatchedMessage: output.unmatchedMessage,
+  };
 }
 
 /** Shared by both the Flow graph path and the Python Bot path: persists a turn's outbound
