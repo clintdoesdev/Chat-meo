@@ -65,6 +65,17 @@ jobs:
         working-directory: mobile
         run: npx expo prebuild --platform android --no-install
 
+      - name: Raise Gradle/D8 heap
+        # A prior run failed mergeDexRelease with "OutOfMemoryError: Java heap space" — D8 dexing
+        # this many native modules' worth of classes (Reanimated + gesture-handler + svg +
+        # web-browser + everything else) needs more than the default worker heap on a stock
+        # ubuntu-latest runner. This is user-home-level Gradle config rather than something in
+        # mobile/android/gradle.properties, since expo prebuild regenerates that file fresh from
+        # app.json on every run and would just overwrite an in-repo edit.
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
+
       - name: Build release APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease --no-daemon
