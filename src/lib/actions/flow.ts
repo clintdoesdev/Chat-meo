@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
-import { FlowGraphSchema } from "@/lib/flow-schema";
+import { saveFlowForUser } from "@/lib/flow-queries";
 import { prisma } from "@/lib/prisma";
 
 /** Deliberately does NOT call revalidatePath for the Studio route itself: this fires on every
@@ -18,25 +18,8 @@ export async function saveFlow(
   const session = await auth();
   if (!session?.user) return { error: "Not signed in." };
 
-  const parsed = FlowGraphSchema.safeParse(graph);
-  if (!parsed.success) return { error: "Invalid flow data." };
-
   try {
-    const flow = await prisma.flow.findUnique({
-      where: { id: flowId },
-      select: { botId: true, bot: { select: { userId: true } } },
-    });
-
-    if (!flow || flow.botId !== botId || flow.bot.userId !== session.user.id) {
-      return { error: "Flow not found." };
-    }
-
-    await prisma.flow.update({
-      where: { id: flowId },
-      data: { graph: parsed.data as object },
-    });
-
-    return { error: null };
+    return await saveFlowForUser(session.user.id, botId, flowId, graph);
   } catch (error) {
     console.error("[actions/flow] saveFlow failed", error);
     return { error: "Couldn't save — a temporary connection issue. Your changes are still local." };
