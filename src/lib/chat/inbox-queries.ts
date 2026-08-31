@@ -1,30 +1,5 @@
+import { mediaPreview, type MessageContentTypeDto } from "@/lib/message-preview";
 import { prisma } from "@/lib/prisma";
-
-export type MessageContentTypeDto = "TEXT" | "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO";
-
-const MEDIA_PREVIEW_EMOJI: Record<Exclude<MessageContentTypeDto, "TEXT">, string> = {
-  IMAGE: "📷",
-  DOCUMENT: "📄",
-  VIDEO: "🎥",
-  AUDIO: "🎤",
-};
-
-const MEDIA_PREVIEW_LABEL: Record<Exclude<MessageContentTypeDto, "TEXT">, string> = {
-  IMAGE: "Photo",
-  DOCUMENT: "Document",
-  VIDEO: "Video",
-  AUDIO: "Audio",
-};
-
-/** A one-line, emoji-prefixed stand-in for a non-text message — used for a conversation's list
- * preview (below), the compose box's "replying to" bar, and anywhere else a message needs to
- * collapse to a single line (search results) without rendering the actual attachment. `caption`
- * (image/video/document only) takes priority over the generic label when present, e.g.
- * "📷 check this out" instead of "📷 Photo". */
-export function mediaPreview(contentType: MessageContentTypeDto, content: string, caption?: string | null): string {
-  if (contentType === "TEXT") return content;
-  return caption ? `${MEDIA_PREVIEW_EMOJI[contentType]} ${caption}` : `${MEDIA_PREVIEW_EMOJI[contentType]} ${MEDIA_PREVIEW_LABEL[contentType]}`;
-}
 
 export type ConversationSummary = {
   id: string;
