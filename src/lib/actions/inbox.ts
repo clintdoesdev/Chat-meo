@@ -416,17 +416,28 @@ function exportRoleLabel(role: "BOT" | "USER" | "AGENT", visitorId: string): str
   return "Bot";
 }
 
+const EXPORT_MEDIA_LABEL: Record<"IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO", string> = {
+  IMAGE: "Image",
+  DOCUMENT: "Document",
+  VIDEO: "Video",
+  AUDIO: "Audio",
+};
+
 function exportMessageLine(
   message: {
     role: "BOT" | "USER" | "AGENT";
     content: string;
-    contentType: "TEXT" | "IMAGE";
+    contentType: "TEXT" | "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO";
     caption: string | null;
+    fileName: string | null;
     createdAt: Date;
   },
   visitorId: string,
 ): string {
-  const body = message.contentType === "IMAGE" ? `[Image${message.caption ? `: ${message.caption}` : ""}]` : message.content;
+  const body =
+    message.contentType === "TEXT"
+      ? message.content
+      : `[${EXPORT_MEDIA_LABEL[message.contentType]}${message.fileName ? `: ${message.fileName}` : ""}${message.caption ? ` — ${message.caption}` : ""}]`;
   return `[${formatExportTimestamp(message.createdAt)}] ${exportRoleLabel(message.role, visitorId)}: ${body}`;
 }
 
@@ -459,7 +470,7 @@ export async function exportConversationsAsText(conversationIds?: string[]): Pro
       bot: { select: { name: true } },
       messages: {
         orderBy: { createdAt: "asc" },
-        select: { role: true, content: true, contentType: true, caption: true, createdAt: true },
+        select: { role: true, content: true, contentType: true, caption: true, fileName: true, createdAt: true },
       },
     },
   });

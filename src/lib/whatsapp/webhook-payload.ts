@@ -14,6 +14,15 @@ const WebhookMessageSchema = z.object({
   /// downloadWhatsAppMedia in meta-graph.ts), not a fetchable URL by itself. `caption` is the
   /// optional text WhatsApp lets a customer attach alongside a photo.
   image: z.object({ id: z.string().min(1), caption: z.string().optional() }).optional(),
+  /// Same shape as `image` above, plus the filename Meta reports (shown in the Inbox instead of a
+  /// generic label).
+  document: z
+    .object({ id: z.string().min(1), caption: z.string().optional(), filename: z.string().optional() })
+    .optional(),
+  /// Same shape as `image` above.
+  video: z.object({ id: z.string().min(1), caption: z.string().optional() }).optional(),
+  /// Voice notes and audio files never carry a caption on WhatsApp's side.
+  audio: z.object({ id: z.string().min(1) }).optional(),
   /// Present on a `type: "reaction"` message — the customer tapping an emoji onto an earlier
   /// message (which can be one of ours or one of theirs). `emoji` is omitted/empty when the
   /// customer removed their reaction rather than set one.
@@ -46,6 +55,23 @@ const WebhookPayloadSchema = z.object({
     .optional(),
 });
 
+/** Mirrors Message.contentType's non-TEXT values (prisma/schema.prisma) — kept as its own type
+ * here rather than importing the generated Prisma enum, same reasoning as everywhere else in this
+ * file: this module stays a pure payload parser with no Prisma/DB dependency. */
+export type InboundMediaKind = "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO";
+
+export type InboundWhatsAppMedia = {
+  kind: InboundMediaKind;
+  /** The Meta media id needed to actually download the bytes (see getWhatsAppMediaUrl/
+   * downloadWhatsAppMedia in meta-graph.ts) — not a fetchable URL by itself. */
+  mediaId: string;
+  /** The optional caption WhatsApp lets a customer attach to a photo, video, or document. Always
+   * null for AUDIO (voice notes/audio files never carry one on WhatsApp's side). */
+  caption: string | null;
+  /** The original filename Meta reports — only ever set for DOCUMENT. */
+  fileName: string | null;
+};
+
 export type InboundWhatsAppMessage = {
   /** Our WhatsApp Business number's phone_number_id — what WhatsAppConnection is looked up by,
    * not the customer's number. */
@@ -53,25 +79,41 @@ export type InboundWhatsAppMessage = {
   /** The customer's wa_id — used as this conversation's visitorId. */
   from: string;
   waMessageId: string;
-  /** True only for a plain "text" message with a body. Non-text types (image, audio, location,
-   * button replies, ...) still get a placeholder `content` so something sensible lands in the
-   * seller's inbox, but the engine is never run for them — the flow-walking engine only knows
-   * how to consume plain text input. */
+  /** True only for a plain "text" message with a body. Non-text types (image, document, video,
+   * audio, location, button replies, ...) still get a placeholder `content` so something sensible
+   * lands in the seller's inbox, but the engine is never run for them — the flow-walking engine
+   * only knows how to consume plain text input. */
   isText: boolean;
   content: string;
-  /** Set only for an inbound "image" message — the Meta media id needed to actually download the
-   * bytes (see getWhatsAppMediaUrl/downloadWhatsAppMedia in meta-graph.ts). Null for every other
-   * message type, including text. */
-  imageMediaId: string | null;
-  /** The optional caption WhatsApp lets a customer attach to a photo. Null unless imageMediaId is
-   * set and a caption was actually provided. */
-  caption: string | null;
+  /** Set for an inbound image/document/video/audio message — the Meta media id needed to
+   * actually download the bytes, plus its caption/filename if any. Null for every other message
+   * type, including text. */
+  media: InboundWhatsAppMedia | null;
   /** When the customer actually sent this, from Meta's own `timestamp` field — used (not our
    * processing time) to track the 24h service window (see service-window.ts), so a delayed or
    * replayed webhook delivery doesn't look freshly-within-window just because we happened to
    * process it moments ago. Falls back to now if Meta's timestamp is missing or unparseable. */
   receivedAt: Date;
 };
+
+/** Reads whichever of image/document/video/audio is present on a raw webhook message, if any —
+ * a message only ever carries one of these regardless of what `type` claims, so checking each
+ * field directly (rather than switching on `message.type`) is both simpler and more forgiving of
+ * any type/field mismatch Meta's payload might have. */
+function extractMedia(message: z.infer<typeof WebhookMessageSchema>): InboundWhatsAppMedia | null {
+  if (message.image) return { kind: "IMAGE", mediaId: message.image.id, caption: message.image.caption ?? null, fileName: null };
+  if (message.document) {
+    return {
+      kind: "DOCUMENT",
+      mediaId: message.document.id,
+      caption: message.document.caption ?? null,
+      fileName: message.document.filename ?? null,
+    };
+  }
+  if (message.video) return { kind: "VIDEO", mediaId: message.video.id, caption: message.video.caption ?? null, fileName: null };
+  if (message.audio) return { kind: "AUDIO", mediaId: message.audio.id, caption: null, fileName: null };
+  return null;
+}
 
 /** Pulls every actual inbound message out of one webhook delivery, ignoring anything that isn't
  * a "messages" change (status/receipt updates, etc.) or that fails the loose shape check above. */
@@ -92,7 +134,7 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
         // stored as a new row.
         if (message.type === "reaction") continue;
         const isText = message.type === "text" && Boolean(message.text?.body);
-        const imageMediaId = message.type === "image" ? (message.image?.id ?? null) : null;
+        const media = extractMedia(message);
         const timestampMs = message.timestamp && /^\d+$/.test(message.timestamp) ? Number(message.timestamp) * 1000 : NaN;
         out.push({
           phoneNumberId,
@@ -101,11 +143,10 @@ export function extractInboundMessages(payload: unknown): InboundWhatsAppMessage
           isText,
           content: isText
             ? message.text!.body
-            : imageMediaId
-              ? "[image]"
+            : media
+              ? `[${media.kind.toLowerCase()}]`
               : `[unsupported message type: ${message.type}]`,
-          imageMediaId,
-          caption: imageMediaId ? (message.image?.caption ?? null) : null,
+          media,
           receivedAt: Number.isFinite(timestampMs) ? new Date(timestampMs) : new Date(),
         });
       }

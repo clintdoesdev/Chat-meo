@@ -1,5 +1,31 @@
 import { prisma } from "@/lib/prisma";
 
+export type MessageContentTypeDto = "TEXT" | "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO";
+
+const MEDIA_PREVIEW_EMOJI: Record<Exclude<MessageContentTypeDto, "TEXT">, string> = {
+  IMAGE: "📷",
+  DOCUMENT: "📄",
+  VIDEO: "🎥",
+  AUDIO: "🎤",
+};
+
+const MEDIA_PREVIEW_LABEL: Record<Exclude<MessageContentTypeDto, "TEXT">, string> = {
+  IMAGE: "Photo",
+  DOCUMENT: "Document",
+  VIDEO: "Video",
+  AUDIO: "Audio",
+};
+
+/** A one-line, emoji-prefixed stand-in for a non-text message — used for a conversation's list
+ * preview (below), the compose box's "replying to" bar, and anywhere else a message needs to
+ * collapse to a single line (search results) without rendering the actual attachment. `caption`
+ * (image/video/document only) takes priority over the generic label when present, e.g.
+ * "📷 check this out" instead of "📷 Photo". */
+export function mediaPreview(contentType: MessageContentTypeDto, content: string, caption?: string | null): string {
+  if (contentType === "TEXT") return content;
+  return caption ? `${MEDIA_PREVIEW_EMOJI[contentType]} ${caption}` : `${MEDIA_PREVIEW_EMOJI[contentType]} ${MEDIA_PREVIEW_LABEL[contentType]}`;
+}
+
 export type ConversationSummary = {
   id: string;
   botName: string;
@@ -69,11 +95,7 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
         visitorId: conversation.visitorId,
         messageCount: conversation._count.messages,
         lastMessageAt: (lastMessage?.createdAt ?? conversation.createdAt).toISOString(),
-        lastMessagePreview: !lastMessage
-          ? "No messages yet"
-          : lastMessage.contentType === "IMAGE"
-            ? "📷 Photo"
-            : lastMessage.content,
+        lastMessagePreview: !lastMessage ? "No messages yet" : mediaPreview(lastMessage.contentType, lastMessage.content),
         lastMessageRole: lastMessage?.role ?? null,
         archived: conversation.archived,
         blocked: conversation.blocked,
@@ -99,8 +121,10 @@ export type ConversationDetail = {
     id: string;
     role: "BOT" | "USER" | "AGENT";
     content: string;
-    contentType: "TEXT" | "IMAGE";
+    contentType: MessageContentTypeDto;
     caption: string | null;
+    // Only set for a DOCUMENT message — see Message.fileName's schema doc comment.
+    fileName: string | null;
     createdAt: string;
     starred: boolean;
     replyToId: string | null;
@@ -112,8 +136,9 @@ export type ConversationDetail = {
       id: string;
       role: "BOT" | "USER" | "AGENT";
       content: string;
-      contentType: "TEXT" | "IMAGE";
+      contentType: MessageContentTypeDto;
       caption: string | null;
+      fileName: string | null;
     } | null;
     // Emoji each side reacted with — either can be null/absent. See Message.customerReaction and
     // .agentReaction's schema doc comments.
@@ -151,10 +176,11 @@ export async function getConversationMessagesForUser(userId: string, conversatio
           content: true,
           contentType: true,
           caption: true,
+          fileName: true,
           createdAt: true,
           starred: true,
           replyToId: true,
-          replyTo: { select: { id: true, role: true, content: true, contentType: true, caption: true } },
+          replyTo: { select: { id: true, role: true, content: true, contentType: true, caption: true, fileName: true } },
           customerReaction: true,
           agentReaction: true,
           deliveryStatus: true,
@@ -183,6 +209,7 @@ export async function getConversationMessagesForUser(userId: string, conversatio
       content: m.content,
       contentType: m.contentType,
       caption: m.caption,
+      fileName: m.fileName,
       createdAt: m.createdAt.toISOString(),
       starred: m.starred,
       replyToId: m.replyToId,

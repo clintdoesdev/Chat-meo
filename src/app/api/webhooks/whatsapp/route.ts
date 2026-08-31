@@ -19,6 +19,7 @@ import {
   extractInboundMessages,
   extractInboundReactions,
   extractStatusUpdates,
+  type InboundWhatsAppMedia,
   type InboundWhatsAppMessage,
   type InboundWhatsAppReaction,
   type WhatsAppAccountEvent,
@@ -49,10 +50,11 @@ export async function GET(request: NextRequest) {
   return new NextResponse(challenge, { status: 200 });
 }
 
-/** Resolves an inbound image message's media id to its actual bytes (see getWhatsAppMediaUrl/
- * downloadWhatsAppMedia in meta-graph.ts), for runWhatsAppTurn to persist directly. Best-effort:
- * a failure here (expired media, transient network) shouldn't drop the whole inbound message —
- * runWhatsAppTurn just falls back to storing the "[image]" placeholder text instead. */
+/** Resolves an inbound image/document/video/audio message's media id to its actual bytes (see
+ * getWhatsAppMediaUrl/downloadWhatsAppMedia in meta-graph.ts), for runWhatsAppTurn to persist
+ * directly. Best-effort: a failure here (expired media, transient network) shouldn't drop the
+ * whole inbound message — runWhatsAppTurn just falls back to storing the placeholder text
+ * (e.g. "[document]") instead. */
 
 /** Best-effort "needs a human" push — only called when runWhatsAppTurn reports a fresh
  * transition into HANDOFF (see the call sites below; a conversation already in HANDOFF never
@@ -67,19 +69,20 @@ async function notifyHandoff(userId: string, botName: string, visitorId: string)
   });
 }
 
-async function downloadInboundImage(
+async function downloadInboundMedia(
   message: InboundWhatsAppMessage,
   accessToken: string,
-): Promise<{ dataUri: string; caption: string | null } | undefined> {
-  if (!message.imageMediaId) return undefined;
+): Promise<{ dataUri: string; kind: InboundWhatsAppMedia["kind"]; caption: string | null; fileName: string | null } | undefined> {
+  if (!message.media) return undefined;
   try {
-    const mediaUrl = await getWhatsAppMediaUrl(message.imageMediaId, accessToken);
+    const mediaUrl = await getWhatsAppMediaUrl(message.media.mediaId, accessToken);
     const dataUri = await downloadWhatsAppMedia(mediaUrl, accessToken);
-    return { dataUri, caption: message.caption };
+    return { dataUri, kind: message.media.kind, caption: message.media.caption, fileName: message.media.fileName };
   } catch (error) {
-    console.error("[whatsapp webhook] failed to download inbound image", {
+    console.error("[whatsapp webhook] failed to download inbound media", {
       phoneNumberId: message.phoneNumberId,
       waMessageId: message.waMessageId,
+      kind: message.media.kind,
       error,
     });
     return undefined;
@@ -114,13 +117,14 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // both the "connection paused" and "active but non-text" branches below.
   const accessToken = connection.accessToken ? decrypt(connection.accessToken) : null;
 
-  // Paused connections and non-text message types (image, audio, location, button replies, ...)
-  // both land in the inbox without ever reaching the engine — the flow-walking engine only
-  // knows how to consume plain text input, so there's nothing sensible to feed it for the latter.
-  // Neither case can ever produce a HANDOFF transition (the engine never runs), so — same as the
-  // active+text path below — nothing to notify here; the message just waits in the inbox.
+  // Paused connections and non-text message types (image, document, video, audio, location,
+  // button replies, ...) both land in the inbox without ever reaching the engine — the
+  // flow-walking engine only knows how to consume plain text input, so there's nothing sensible
+  // to feed it for the latter. Neither case can ever produce a HANDOFF transition (the engine
+  // never runs), so — same as the active+text path below — nothing to notify here; the message
+  // just waits in the inbox.
   if (!connection.isActive || !message.isText) {
-    const image = message.imageMediaId && accessToken ? await downloadInboundImage(message, accessToken) : undefined;
+    const media = message.media && accessToken ? await downloadInboundMedia(message, accessToken) : undefined;
     await runWhatsAppTurn(
       {
         botId: connection.botId,
@@ -129,7 +133,7 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
         waMessageId: message.waMessageId,
         receivedAt: message.receivedAt,
         runEngine: false,
-        image,
+        media,
       },
       { llm: providerLlm, classify: classifierLlm },
     );
