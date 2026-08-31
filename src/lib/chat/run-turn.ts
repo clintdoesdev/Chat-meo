@@ -181,10 +181,14 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
 
   // Deferred via after() so a push service round trip never adds latency to the widget's own
   // reply — see the same pattern in the WhatsApp webhook (src/app/api/webhooks/whatsapp/route.ts).
-  // Only the HANDOFF transition notifies — an ordinary reply from the flow means nothing needs a
-  // human yet, so it doesn't page anyone. findFirst above only ever returns/creates an OPEN
-  // conversation, so reaching HANDOFF here is always a fresh transition, never a repeat
-  // notification for one already handed off.
+  // Two distinct "needs a human" signals, both worth a push: a HANDOFF transition (the flow
+  // itself routed here, or gave up after too many unanswered loops — permanent, the engine won't
+  // run on this conversation again) fires once, since findFirst above only ever returns/creates
+  // an OPEN conversation so reaching HANDOFF here is always a fresh transition; an
+  // unmatchedMessage (this one visitor message hit a Logic node and matched none of its rules,
+  // but the conversation stays open and keeps trying) fires every time it happens, since it's a
+  // per-message miss rather than a one-time state change. An ordinary reply from the flow means
+  // nothing needs a human, so neither case pages anyone then.
   if (output.state.status === "HANDOFF") {
     after(() =>
       sendPushToUser(apiKey.bot.userId, {
@@ -193,6 +197,17 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
         url: "/app/inbox",
         conversationId: conversation.id,
       }).catch((error) => console.error("[chat] failed to send handoff push", { conversationId: conversation.id, error })),
+    );
+  } else if (output.unmatchedMessage) {
+    after(() =>
+      sendPushToUser(apiKey.bot.userId, {
+        title: `${apiKey.bot.name} couldn't reply`,
+        body: `${params.visitorId} sent something no rule covers — reply manually?`,
+        url: "/app/inbox",
+        conversationId: conversation.id,
+      }).catch((error) =>
+        console.error("[chat] failed to send unmatched-message push", { conversationId: conversation.id, error }),
+      ),
     );
   }
 

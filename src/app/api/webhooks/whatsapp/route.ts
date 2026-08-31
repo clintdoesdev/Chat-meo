@@ -70,6 +70,20 @@ async function notifyHandoff(userId: string, botName: string, visitorId: string,
   });
 }
 
+/** Best-effort push for a single unanswered message — called every time runWhatsAppTurn reports
+ * result.unmatchedMessage, not just once, since the conversation stays open and can hit this
+ * again on a later message (unlike notifyHandoff's one-shot HANDOFF transition). */
+async function notifyUnmatchedMessage(userId: string, botName: string, visitorId: string, conversationId: string): Promise<void> {
+  await sendPushToUser(userId, {
+    title: `${botName} couldn't reply`,
+    body: `${visitorId} sent something no rule covers — reply manually?`,
+    url: "/app/inbox",
+    conversationId,
+  }).catch((error) => {
+    console.error("[whatsapp webhook] failed to send unmatched-message push", { error });
+  });
+}
+
 async function downloadInboundMedia(
   message: InboundWhatsAppMessage,
   accessToken: string,
@@ -161,6 +175,8 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   );
   if (result.kind === "success" && result.status === "HANDOFF") {
     await notifyHandoff(connection.bot.userId, connection.bot.name, message.from, result.conversationId);
+  } else if (result.kind === "success" && result.unmatchedMessage) {
+    await notifyUnmatchedMessage(connection.bot.userId, connection.bot.name, message.from, result.conversationId);
   }
   // Outside the 24h window, runWhatsAppTurn already persisted a warning in place of the reply
   // (see OUTSIDE_WINDOW_WARNING there) — Graph API would just reject a normal send anyway, so

@@ -352,6 +352,7 @@ type LogicAttachedResult = {
   status: EngineState["status"];
   walking: boolean;
   lastError?: string;
+  unmatchedMessage?: boolean;
 };
 
 /**
@@ -483,8 +484,10 @@ async function runLogicAttachedNode(
     // freelance a reply of its own that might contradict or duplicate it (e.g. inventing its own
     // payment link after a rule already sent the real one). Nothing matched this turn, so
     // there's nothing to say — stay open and wait for a message that actually matches one of the
-    // rules (a confirmation, a receipt mention, etc.).
-    return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false };
+    // rules (a confirmation, a receipt mention, etc.). Flagged via unmatchedMessage so the caller
+    // can tell the seller a human reply is needed for this specific message, every time it
+    // happens (not just the first) — a rules-only phase can hit this on any later message too.
+    return { currentNodeId: node.id, status: "AWAITING_INPUT", walking: false, unmatchedMessage: true };
   }
 
   const result = await generateReply();
@@ -581,14 +584,19 @@ export async function step(
   let currentNodeId = state.currentNodeId;
   let status: EngineState["status"] = "RUNNING";
   let lastError: string | undefined;
+  let unmatchedMessage = false;
 
   if (state.status === "AWAITING_INPUT") {
     const waitingNode = findNode(graph, currentNodeId);
-    // Capture nodes wait to store the answer into a variable and move on; AI and Reply nodes
-    // with nowhere to go next (see runLogicAttachedNode) wait to keep the conversation itself
-    // going — the visitor's next message just re-runs the same node with the reply already in
-    // history. Anything else waiting is unexpected persisted state; end rather than loop.
-    if (!waitingNode || (waitingNode.type !== "capture" && waitingNode.type !== "ai" && waitingNode.type !== "reply")) {
+    // Capture nodes wait to store the answer into a variable and move on; AI, Reply, and
+    // standalone Logic nodes with nowhere to go next (see runLogicAttachedNode and the "logic"
+    // case's own no-match branch) wait to keep the conversation itself going — the visitor's next
+    // message just re-runs the same node with the reply already in history. Anything else
+    // waiting is unexpected persisted state; end rather than loop.
+    if (
+      !waitingNode ||
+      (waitingNode.type !== "capture" && waitingNode.type !== "ai" && waitingNode.type !== "reply" && waitingNode.type !== "logic")
+    ) {
       return { replies: [], state: { ...state, status: "ENDED" } };
     }
     if (input === undefined) {
@@ -696,6 +704,7 @@ export async function step(
         status = result.status;
         walking = result.walking;
         if (result.lastError) lastError = result.lastError;
+        if (result.unmatchedMessage) unmatchedMessage = true;
         break;
       }
 
@@ -761,6 +770,7 @@ export async function step(
         currentNodeId = result.currentNodeId;
         status = result.status;
         walking = result.walking;
+        if (result.unmatchedMessage) unmatchedMessage = true;
         break;
       }
 
@@ -779,7 +789,18 @@ export async function step(
           const edge = edgeForBranch(graph, node.id, matched.id);
           currentNodeId = edge?.target ?? null;
           if (!edge) status = "ENDED";
+        } else if (input !== undefined) {
+          // A real visitor message reached this node and matched none of its rules (no
+          // catch-all either) — the bot has nothing to say, but that isn't the same as the
+          // conversation being resolved, so it stays open (same reasoning as the logicLocked
+          // "no match" branch above) and waits for a message that does match, rather than
+          // silently dead-ending as RESOLVED with the seller never told anything needed them.
+          status = "AWAITING_INPUT";
+          walking = false;
+          unmatchedMessage = true;
         } else {
+          // No visitor message to match against at all (an unprompted engine trigger) — nothing
+          // was actually left unmatched, so this is a genuine dead end, same as before.
           status = "ENDED";
           currentNodeId = null;
         }
@@ -866,6 +887,7 @@ export async function step(
 
   return {
     replies,
+    ...(unmatchedMessage ? { unmatchedMessage: true } : {}),
     state: {
       currentNodeId,
       variables,

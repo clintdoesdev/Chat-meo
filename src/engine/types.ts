@@ -226,6 +226,14 @@ export type Reply = {
 export type EngineOutput = {
   replies: Reply[];
   state: EngineState;
+  /** True when this turn's visitor message reached a Logic node (standalone, or attached to an
+   * AI/Reply node that's already in its rules-only "locked" phase — see EngineState.logicLocked)
+   * and matched none of its rules, so nothing got sent back. A per-turn signal, not persisted
+   * state — unlike a HANDOFF transition, the conversation stays open and the engine keeps trying
+   * on the visitor's next message, but the caller (run-turn.ts / run-whatsapp-turn.ts) still
+   * needs to know "the bot had nothing to say this turn" so it can notify the seller to reply
+   * manually, every time it happens rather than only once. */
+  unmatchedMessage?: boolean;
 };
 
 export type LlmChatMessage = { role: "user" | "assistant"; content: string };
