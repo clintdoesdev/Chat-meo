@@ -5,9 +5,11 @@ import type {
   ConversationDetailResponse,
   ConversationsResponse,
   ErrorResponse,
+  FlowResponse,
   LoginResponse,
   PushTestResponse,
 } from "@/lib/api/types";
+import type { FlowGraph } from "@/lib/flow/types";
 
 export function login(email: string, password: string, code?: string): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/api/v1/auth/login", {
@@ -43,6 +45,17 @@ export function setConversationArchived(conversationId: string, archived: boolea
   return apiFetch<ErrorResponse>(`/api/v1/conversations/${conversationId}`, {
     method: "PATCH",
     body: JSON.stringify({ archived }),
+  });
+}
+
+export function getFlow(botId: string): Promise<FlowResponse> {
+  return apiFetch<FlowResponse>(`/api/v1/bots/${botId}/flow`);
+}
+
+export function saveFlow(botId: string, flowId: string, graph: FlowGraph): Promise<ErrorResponse> {
+  return apiFetch<ErrorResponse>(`/api/v1/bots/${botId}/flow`, {
+    method: "PATCH",
+    body: JSON.stringify({ flowId, graph }),
   });
 }
 
