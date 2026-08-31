@@ -580,7 +580,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               reply helps it pick the right rule, not just the customer. A rule that has a reply
               and/or a route wins and skips the AI for that turn; a rule with no triggers matches
               anything, so it&apos;s a good catch-all — but leave both its reply and route blank
-              and it&apos;s a no-op, so the AI still handles that turn normally. In a reply, use{" "}
+              and it&apos;s a no-op, so the AI still handles that turn normally. A literal match
+              right next to a word like &quot;don&apos;t&quot; or &quot;not&quot; (e.g.
+              &quot;I don&apos;t want a payment&quot; against a trigger of
+              &quot;payment&quot;) doesn&apos;t count as confident either — that also falls
+              through to the AI, which actually understands what&apos;s being said instead of
+              just spotting the word. In a reply, use{" "}
               <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{variableName}}"}</code>{" "}
               to insert something a Capture node saved earlier — typed plainly in quotes, it&apos;s
               sent as literal text instead.
