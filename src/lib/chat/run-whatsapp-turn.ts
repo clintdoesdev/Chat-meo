@@ -33,11 +33,11 @@ export type RunWhatsAppTurnParams = {
   /** When the customer actually sent this, per Meta's own timestamp — see
    * InboundWhatsAppMessage.receivedAt. Defaults to now for callers that don't have one. */
   receivedAt?: Date;
-  /** Set only when the webhook already downloaded an inbound image (see downloadWhatsAppMedia in
-   * meta-graph.ts) — persisted as an IMAGE-content Message instead of `message`'s placeholder
-   * text. The flow-walking engine only understands text, so this is only ever passed alongside
-   * runEngine: false, same as any other non-text message type. */
-  image?: { dataUri: string; caption: string | null };
+  /** Set only when the webhook already downloaded an inbound image/document/video/audio (see
+   * downloadWhatsAppMedia in meta-graph.ts) — persisted as a Message with that contentType
+   * instead of `message`'s placeholder text. The flow-walking engine only understands text, so
+   * this is only ever passed alongside runEngine: false, same as any other non-text message type. */
+  media?: { dataUri: string; kind: "IMAGE" | "DOCUMENT" | "VIDEO" | "AUDIO"; caption: string | null; fileName: string | null };
 };
 
 export type RunWhatsAppTurnResult =
@@ -149,13 +149,14 @@ export async function runWhatsAppTurn(params: RunWhatsAppTurnParams, deps: RunTu
       : [];
 
   await prisma.message.create({
-    data: params.image
+    data: params.media
       ? {
           conversationId: conversation.id,
           role: "USER",
-          content: params.image.dataUri,
-          contentType: "IMAGE",
-          caption: params.image.caption,
+          content: params.media.dataUri,
+          contentType: params.media.kind,
+          caption: params.media.caption,
+          fileName: params.media.fileName,
           channel: "WHATSAPP",
           waMessageId: params.waMessageId,
         }

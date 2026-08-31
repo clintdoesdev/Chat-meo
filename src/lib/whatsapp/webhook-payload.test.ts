@@ -10,6 +10,9 @@ function textMessagePayload(overrides?: {
   type?: string;
   body?: string;
   image?: { id: string; caption?: string };
+  document?: { id: string; caption?: string; filename?: string };
+  video?: { id: string; caption?: string };
+  audio?: { id: string };
 }) {
   return {
     object: "whatsapp_business_account",
@@ -32,6 +35,9 @@ function textMessagePayload(overrides?: {
                     ? {}
                     : { text: { body: overrides?.body ?? "Hello there" } }),
                   ...(overrides?.image ? { image: overrides.image } : {}),
+                  ...(overrides?.document ? { document: overrides.document } : {}),
+                  ...(overrides?.video ? { video: overrides.video } : {}),
+                  ...(overrides?.audio ? { audio: overrides.audio } : {}),
                 },
               ],
             },
@@ -53,24 +59,22 @@ describe("extractInboundMessages", () => {
         waMessageId: "wamid.ABC",
         isText: true,
         content: "Hello there",
-        imageMediaId: null,
-        caption: null,
+        media: null,
         receivedAt: new Date(1700000000 * 1000),
       },
     ]);
   });
 
-  it("marks non-image, non-text message types with a placeholder and isText: false", () => {
-    const result = extractInboundMessages(textMessagePayload({ type: "audio" }));
+  it("marks a message type with no media field as unsupported, with a placeholder and isText: false", () => {
+    const result = extractInboundMessages(textMessagePayload({ type: "location" }));
     expect(result).toEqual([
       {
         phoneNumberId: "PHONE_ID_1",
         from: "CUSTOMER_1",
         waMessageId: "wamid.ABC",
         isText: false,
-        content: "[unsupported message type: audio]",
-        imageMediaId: null,
-        caption: null,
+        content: "[unsupported message type: location]",
+        media: null,
         receivedAt: new Date(1700000000 * 1000),
       },
     ]);
@@ -86,8 +90,7 @@ describe("extractInboundMessages", () => {
         waMessageId: "wamid.ABC",
         isText: false,
         content: "[image]",
-        imageMediaId: "MEDIA_ID_1",
-        caption: "check this out",
+        media: { kind: "IMAGE", mediaId: "MEDIA_ID_1", caption: "check this out", fileName: null },
         receivedAt: new Date(1700000000 * 1000),
       },
     ]);
@@ -96,7 +99,39 @@ describe("extractInboundMessages", () => {
   it("extracts an image message with no caption as null", () => {
     const payload = textMessagePayload({ type: "image", image: { id: "MEDIA_ID_1" } });
     const result = extractInboundMessages(payload);
-    expect(result[0].caption).toBeNull();
+    expect(result[0].media?.caption).toBeNull();
+  });
+
+  it("extracts a document message's media id, filename, and caption", () => {
+    const payload = textMessagePayload({
+      type: "document",
+      document: { id: "MEDIA_ID_2", filename: "invoice.pdf", caption: "here's the invoice" },
+    });
+    const result = extractInboundMessages(payload);
+    expect(result).toEqual([
+      {
+        phoneNumberId: "PHONE_ID_1",
+        from: "CUSTOMER_1",
+        waMessageId: "wamid.ABC",
+        isText: false,
+        content: "[document]",
+        media: { kind: "DOCUMENT", mediaId: "MEDIA_ID_2", caption: "here's the invoice", fileName: "invoice.pdf" },
+        receivedAt: new Date(1700000000 * 1000),
+      },
+    ]);
+  });
+
+  it("extracts a video message's media id and caption", () => {
+    const payload = textMessagePayload({ type: "video", video: { id: "MEDIA_ID_3", caption: "watch this" } });
+    const result = extractInboundMessages(payload);
+    expect(result[0].media).toEqual({ kind: "VIDEO", mediaId: "MEDIA_ID_3", caption: "watch this", fileName: null });
+  });
+
+  it("extracts an audio message's media id with no caption", () => {
+    const payload = textMessagePayload({ type: "audio", audio: { id: "MEDIA_ID_4" } });
+    const result = extractInboundMessages(payload);
+    expect(result[0].media).toEqual({ kind: "AUDIO", mediaId: "MEDIA_ID_4", caption: null, fileName: null });
+    expect(result[0].content).toBe("[audio]");
   });
 
   it("parses Meta's epoch-seconds timestamp into a real Date", () => {

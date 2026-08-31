@@ -48,6 +48,7 @@ import {
   type FolderSummary,
 } from "@/lib/actions/inbox";
 import { getLinkPreview, type LinkPreviewData } from "@/lib/actions/link-preview";
+import { mediaPreview, type MessageContentTypeDto } from "@/lib/chat/inbox-queries";
 import { timeAgo } from "@/lib/time";
 
 // WhatsApp's own quick-reaction set — matches what its picker offers, so the seller's reaction
@@ -103,11 +104,9 @@ function dayDividerLabel(iso: string): string {
 }
 
 // Short, sender-labeled preview of a quoted message — used both for the compose box's "replying
-// to" bar and the inline quote rendered inside a reply bubble. Mirrors ConversationSummary's own
-// image-preview convention (📷 Photo) rather than showing a raw data: URI.
-function quotePreviewText(message: { role: "BOT" | "USER" | "AGENT"; content: string; contentType: "TEXT" | "IMAGE"; caption: string | null }): string {
-  if (message.contentType === "IMAGE") return message.caption ? `📷 ${message.caption}` : "📷 Photo";
-  return message.content;
+// to" bar and the inline quote rendered inside a reply bubble.
+function quotePreviewText(message: { role: "BOT" | "USER" | "AGENT"; content: string; contentType: MessageContentTypeDto; caption: string | null }): string {
+  return mediaPreview(message.contentType, message.content, message.caption);
 }
 
 function quotePreviewLabel(role: "BOT" | "USER" | "AGENT", visitorId: string): string {
@@ -430,7 +429,7 @@ export function InboxView({
   }
 
   async function handleCopyMessage(message: DetailMessage) {
-    const text = message.contentType === "IMAGE" ? (message.caption ?? "") : message.content;
+    const text = message.contentType === "TEXT" ? message.content : (message.caption ?? "");
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -461,7 +460,7 @@ export function InboxView({
     const trimmed = query.trim().toLowerCase();
     if (!trimmed || !detail) return [];
     return detail.messages.filter((m) =>
-      (m.contentType === "IMAGE" ? (m.caption ?? "") : m.content).toLowerCase().includes(trimmed),
+      (m.contentType === "TEXT" ? m.content : (m.caption ?? "")).toLowerCase().includes(trimmed),
     );
   }
 
@@ -494,11 +493,19 @@ export function InboxView({
                 content: trimmed,
                 contentType: "TEXT",
                 caption: null,
+                fileName: null,
                 createdAt: new Date().toISOString(),
                 starred: false,
                 replyToId: quoting?.id ?? null,
                 replyTo: quoting
-                  ? { id: quoting.id, role: quoting.role, content: quoting.content, contentType: quoting.contentType, caption: quoting.caption }
+                  ? {
+                      id: quoting.id,
+                      role: quoting.role,
+                      content: quoting.content,
+                      contentType: quoting.contentType,
+                      caption: quoting.caption,
+                      fileName: quoting.fileName,
+                    }
                   : null,
                 customerReaction: null,
                 agentReaction: null,
@@ -1349,6 +1356,33 @@ function MessageRow({
                 <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
               )}
             </>
+          ) : message.contentType === "VIDEO" ? (
+            <>
+              <video src={message.content} controls className="block max-h-72 w-full" />
+              {message.caption && (
+                <p className="whitespace-pre-wrap break-words px-3.5 py-2.5">{message.caption}</p>
+              )}
+            </>
+          ) : message.contentType === "AUDIO" ? (
+            <div className="px-3.5 py-2.5">
+              <audio src={message.content} controls className="w-full" />
+            </div>
+          ) : message.contentType === "DOCUMENT" ? (
+            <a
+              href={message.content}
+              download={message.fileName ?? "document"}
+              className="flex items-center gap-2.5 px-3.5 py-2.5 transition hover:brightness-110"
+            >
+              <span
+                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${isMine ? "bg-black/15" : "bg-white/10"}`}
+              >
+                <ActionsDownloadIcon size={14} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{message.fileName ?? "Document"}</span>
+                {message.caption && <span className="block truncate text-[11.5px] opacity-80">{message.caption}</span>}
+              </span>
+            </a>
           ) : (
             <div className="whitespace-pre-wrap break-words px-3.5 py-2.5">
               {formatMessage(
