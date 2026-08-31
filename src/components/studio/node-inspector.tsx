@@ -80,6 +80,47 @@ function labelClass() {
   return "mb-1.5 block text-xs font-semibold text-muted";
 }
 
+/** Shared "delay before sending" control for every non-AI node kind that can send something to
+ * the visitor (Start/Message/Logic/Capture/Link/Handoff) — an AI node's own reply is never
+ * delayed this way since its content and timing already come from the model call itself, and a
+ * Reply node keeps its own copy of this field further down since its inspector panel already has
+ * a dedicated spot with a Reply-specific hint. Mirrors MAX_NODE_DELAY_SECONDS in
+ * engine/executor.ts. */
+function DelayField({
+  nodeId,
+  value,
+  onChange,
+  hint,
+}: {
+  nodeId: string;
+  value: number | undefined;
+  onChange: (id: string, patch: Partial<FlowNodeData>) => void;
+  hint: string;
+}) {
+  const fieldId = `field-${nodeId}-delay`;
+  return (
+    <div className="mb-3.5">
+      <label htmlFor={fieldId} className={labelClass()}>
+        Delay before sending (seconds)
+      </label>
+      <input
+        id={fieldId}
+        type="number"
+        min={0}
+        max={120}
+        value={value ?? ""}
+        onChange={(event) => {
+          const raw = event.target.value;
+          onChange(nodeId, { delaySeconds: raw === "" ? undefined : Math.max(0, Math.min(120, Number(raw))) });
+        }}
+        placeholder="Instant"
+        className={fieldClass()}
+      />
+      <p className="mt-1.5 text-[11px] text-muted">{hint}</p>
+    </div>
+  );
+}
+
 const sheetPositionClass =
   "fixed inset-x-0 bottom-0 z-[80] max-h-[65vh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)] " +
   "transition-transform duration-300 ease-out min-[1020px]:static min-[1020px]:z-auto min-[1020px]:max-h-none " +
@@ -198,6 +239,15 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               Typed plainly (like &quot;name&quot; in quotes) it&apos;s sent as literal text instead.
             </p>
           </div>
+        )}
+
+        {(node.type === "start" || node.type === "message") && (
+          <DelayField
+            nodeId={node.id}
+            value={data.delaySeconds}
+            onChange={onChange}
+            hint="Pauses this long, like a realistic typing delay, before this message goes out. Leave blank to send instantly."
+          />
         )}
 
         {node.type === "ai" && (
@@ -606,6 +656,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 <p className="text-[11.5px] text-muted">No rules yet — add one above.</p>
               )}
             </div>
+            <DelayField
+              nodeId={node.id}
+              value={data.delaySeconds}
+              onChange={onChange}
+              hint="Pauses this long before whichever rule's reply fires — applies whether this Logic node is wired directly into the flow or attached to an AI/Reply node."
+            />
           </>
         )}
 
@@ -713,6 +769,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 className={fieldClass()}
               />
             </div>
+            <DelayField
+              nodeId={node.id}
+              value={data.delaySeconds}
+              onChange={onChange}
+              hint="Pauses this long before asking this question. Leave blank to send instantly."
+            />
           </>
         )}
 
@@ -777,6 +839,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
                 className={fieldClass()}
               />
             </div>
+            <DelayField
+              nodeId={node.id}
+              value={data.delaySeconds}
+              onChange={onChange}
+              hint="Pauses this long before sending the link. Leave blank to send instantly."
+            />
           </>
         )}
 
@@ -798,6 +866,12 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               rows={3}
               placeholder="For your team only — why this conversation is being handed off."
               className={`${fieldClass()} resize-y leading-relaxed`}
+            />
+            <DelayField
+              nodeId={node.id}
+              value={data.delaySeconds}
+              onChange={onChange}
+              hint="Pauses this long before the handoff message goes out (web widget only — WhatsApp never shows one). Leave blank to send instantly."
             />
           </div>
         )}

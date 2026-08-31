@@ -73,9 +73,12 @@ export type FlowNodeData = {
   // copy-pasted broadcast; the content itself never changes. Off (undefined) means the reply
   // node makes zero LLM calls of its own — see ReplyNode.data in engine/types.ts.
   randomizeWording?: boolean;
-  // reply — pauses this node's own send by this many seconds (capped at
-  // MAX_REPLY_DELAY_SECONDS in engine/executor.ts), still triggered by the visitor's own
-  // message rather than a background scheduler. Never delays an attached Logic rule's reply.
+  // start / message / reply / logic / capture / link / handoff — pauses this node's own send by
+  // this many seconds (capped at MAX_NODE_DELAY_SECONDS in engine/executor.ts), still triggered
+  // by the visitor's own message rather than a background scheduler. Not applicable to ai
+  // (an AI call's own latency already paces it), condition, or webhook (nothing customer-facing
+  // to delay). On a Reply/AI node this only ever governs that node's own content — an attached
+  // Logic node's rule reply is paced by the Logic node's own delaySeconds instead.
   delaySeconds?: number;
   // reply — additional message wordings: when present, each send randomly picks ONE of `text`
   // above plus these instead of always sending `text` verbatim. Author-controlled alternative

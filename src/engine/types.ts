@@ -19,16 +19,19 @@ export type ReplyVariant = {
   text: string;
 };
 
+/** `delaySeconds` pauses this node's own send by that many seconds (visitor-message triggered,
+ * not a background scheduler — same as ReplyNode's own field below), capped at
+ * MAX_NODE_DELAY_SECONDS in executor.ts. */
 export type StartNode = {
   id: string;
   type: "start";
-  data: { text?: string };
+  data: { text?: string; delaySeconds?: number };
 };
 
 export type MessageNode = {
   id: string;
   type: "message";
-  data: { text: string };
+  data: { text: string; delaySeconds?: number };
 };
 
 export type AiNode = {
@@ -63,8 +66,9 @@ export type AiNode = {
  * said, and a failed rewording call just falls back to the literal text rather than surfacing an
  * error. `delaySeconds` pauses this node's own send by that many seconds (visitor-message
  * triggered, not a background scheduler — see runLogicAttachedNode's generateReply callback in
- * executor.ts), capped at MAX_REPLY_DELAY_SECONDS; it never delays an attached Logic rule's own
- * reply. `variants` are alternate wordings of `text`, author-written rather than AI-generated —
+ * executor.ts), capped at MAX_NODE_DELAY_SECONDS; it never delays an attached Logic rule's own
+ * reply — that rule's own delaySeconds (on the LogicNode itself) governs that instead.
+ * `variants` are alternate wordings of `text`, author-written rather than AI-generated —
  * when present, each send randomly picks one of `text` plus these instead of always sending
  * `text`; composes with randomizeWording (the picked variant still gets reworded on top).
  * model/provider are only consulted when randomizeWording is on, or when a Logic node is
@@ -99,13 +103,17 @@ export type ConditionNode = {
 export type LogicNode = {
   id: string;
   type: "logic";
-  data: { rules: LogicRule[] };
+  // delaySeconds pauses whichever rule's reply fires by this many seconds, capped at
+  // MAX_NODE_DELAY_SECONDS in executor.ts — applies the same way whether this node is wired
+  // directly into the flow (the "logic" case in executor.ts) or attached to an AI/Reply node's
+  // "logic" handle (runLogicAttachedNode).
+  data: { rules: LogicRule[]; delaySeconds?: number };
 };
 
 export type CaptureNode = {
   id: string;
   type: "capture";
-  data: { question: string; variableName: string };
+  data: { question: string; variableName: string; delaySeconds?: number };
 };
 
 export type WebhookNode = {
@@ -119,15 +127,16 @@ export type LinkNode = {
   type: "link";
   /** `linkText` is the label shown above the URL (e.g. "Book a call") — optional, since a bare
    * URL is still a valid reply. */
-  data: { url: string; linkText?: string };
+  data: { url: string; linkText?: string; delaySeconds?: number };
 };
 
 export type HandoffNode = {
   id: string;
   type: "handoff";
   /** `note` is an internal note for your team about why this handoff happened — it's never
-   * shown to the customer, who always sees the fixed handoff message (see executor.ts). */
-  data: { note?: string };
+   * shown to the customer, who always sees the fixed handoff message (see executor.ts).
+   * `delaySeconds` pauses that fixed message (web widget only — WhatsApp never shows one). */
+  data: { note?: string; delaySeconds?: number };
 };
 
 /** Same effect as HandoffNode (ends the bot's automated replies, marks the conversation as
