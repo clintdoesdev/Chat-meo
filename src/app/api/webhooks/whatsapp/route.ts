@@ -53,16 +53,6 @@ export async function GET(request: NextRequest) {
  * downloadWhatsAppMedia in meta-graph.ts), for runWhatsAppTurn to persist directly. Best-effort:
  * a failure here (expired media, transient network) shouldn't drop the whole inbound message —
  * runWhatsAppTurn just falls back to storing the "[image]" placeholder text instead. */
-const MESSAGE_PREVIEW_LENGTH = 140;
-
-/** Best-effort "new message" push to the bot's owner — called for every inbound message
- * regardless of whether the engine ran, same as the Message row itself is always persisted. */
-async function notifyNewInboxMessage(userId: string, botName: string, content: string): Promise<void> {
-  const body = content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
-  await sendPushToUser(userId, { title: `New message · ${botName}`, body, url: "/app/inbox" }).catch((error) => {
-    console.error("[whatsapp webhook] failed to send new-message push", { error });
-  });
-}
 
 /** Best-effort "needs a human" push — only called when runWhatsAppTurn reports a fresh
  * transition into HANDOFF (see the call sites below; a conversation already in HANDOFF never
@@ -127,9 +117,11 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
   // Paused connections and non-text message types (image, audio, location, button replies, ...)
   // both land in the inbox without ever reaching the engine — the flow-walking engine only
   // knows how to consume plain text input, so there's nothing sensible to feed it for the latter.
+  // Neither case can ever produce a HANDOFF transition (the engine never runs), so — same as the
+  // active+text path below — nothing to notify here; the message just waits in the inbox.
   if (!connection.isActive || !message.isText) {
     const image = message.imageMediaId && accessToken ? await downloadInboundImage(message, accessToken) : undefined;
-    const stored = await runWhatsAppTurn(
+    await runWhatsAppTurn(
       {
         botId: connection.botId,
         visitorId: message.from,
@@ -141,9 +133,6 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
       },
       { llm: providerLlm, classify: classifierLlm },
     );
-    if (!(stored.kind === "stored_only" && stored.blocked)) {
-      await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
-    }
     return;
   }
 
@@ -165,9 +154,6 @@ async function processInboundMessage(message: InboundWhatsAppMessage): Promise<v
     },
     { llm: providerLlm, classify: classifierLlm },
   );
-  if (!(result.kind === "stored_only" && result.blocked)) {
-    await notifyNewInboxMessage(connection.bot.userId, connection.bot.name, message.content);
-  }
   if (result.kind === "success" && result.status === "HANDOFF") {
     await notifyHandoff(connection.bot.userId, connection.bot.name, message.from);
   }

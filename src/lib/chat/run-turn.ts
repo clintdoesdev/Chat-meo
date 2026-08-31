@@ -10,12 +10,6 @@ import { prisma } from "@/lib/prisma";
 import { runPythonBotTurn } from "@/lib/python-bot/run-turn";
 import { sendPushToUser } from "@/lib/push/send";
 
-const MESSAGE_PREVIEW_LENGTH = 140;
-
-function previewOf(content: string): string {
-  return content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
-}
-
 const MAX_HISTORY_MESSAGES = 12;
 
 export type RunTurnParams = {
@@ -187,18 +181,10 @@ export async function runChatTurn(params: RunTurnParams, deps: RunTurnDeps): Pro
 
   // Deferred via after() so a push service round trip never adds latency to the widget's own
   // reply — see the same pattern in the WhatsApp webhook (src/app/api/webhooks/whatsapp/route.ts).
-  // findFirst above only ever returns/creates an OPEN conversation, so reaching HANDOFF here is
-  // always a fresh transition, never a repeat notification for one already handed off.
-  if (params.message) {
-    const preview = previewOf(params.message);
-    after(() =>
-      sendPushToUser(apiKey.bot.userId, {
-        title: `New message · ${apiKey.bot.name}`,
-        body: preview,
-        url: "/app/inbox",
-      }).catch((error) => console.error("[chat] failed to send new-message push", { conversationId: conversation.id, error })),
-    );
-  }
+  // Only the HANDOFF transition notifies — an ordinary reply from the flow means nothing needs a
+  // human yet, so it doesn't page anyone. findFirst above only ever returns/creates an OPEN
+  // conversation, so reaching HANDOFF here is always a fresh transition, never a repeat
+  // notification for one already handed off.
   if (output.state.status === "HANDOFF") {
     after(() =>
       sendPushToUser(apiKey.bot.userId, {
@@ -263,17 +249,8 @@ async function runPythonBotTurnFor(
   }
 
   // Deferred via after() so a push service round trip never adds latency to the widget's own
-  // reply — same pattern as runChatTurn above.
-  if (params.message) {
-    const preview = previewOf(params.message);
-    after(() =>
-      sendPushToUser(botUserId, {
-        title: `New message · ${botName}`,
-        body: preview,
-        url: "/app/inbox",
-      }).catch((error) => console.error("[chat] failed to send new-message push", { conversationId: conversation.id, error })),
-    );
-  }
+  // reply — same pattern as runChatTurn above. Only the handoff transition notifies, same
+  // reasoning as there.
   if (result.handoff) {
     after(() =>
       sendPushToUser(botUserId, {
