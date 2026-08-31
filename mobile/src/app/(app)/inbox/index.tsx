@@ -24,6 +24,7 @@ import { ApiError } from "@/lib/api/client";
 import { getConversations, setConversationArchived } from "@/lib/api/endpoints";
 import type { ConversationDto } from "@/lib/api/types";
 import { formatRelativeTime } from "@/lib/format-time";
+import { formatPhoneNumber } from "@/lib/format-phone";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
@@ -35,6 +36,24 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
   { key: "widget", label: "Widget" },
 ];
+
+// Known "status" circle emoji some flow templates use as a lightweight progress marker inside
+// message text (WhatsApp itself only renders real unicode emoji, so the sent message keeps it) —
+// swapped for a plain colored dot in the *preview list* only, for visual consistency with the
+// rest of this app's own icon language. The full conversation view still shows the raw message
+// text exactly as sent.
+const STATUS_DOT_COLORS: Record<string, string> = {
+  "🟡": colors.orange2,
+  "🟢": colors.ok,
+  "🔴": colors.bad,
+};
+const STATUS_DOT_PATTERN = /^(🟡|🟢|🔴)\s*/u;
+
+function extractStatusDot(text: string): { color: string | null; rest: string } {
+  const match = STATUS_DOT_PATTERN.exec(text);
+  if (!match) return { color: null, rest: text };
+  return { color: STATUS_DOT_COLORS[match[1]] ?? null, rest: text.slice(match[0].length) };
+}
 
 export default function InboxScreen() {
   const router = useRouter();
@@ -89,6 +108,10 @@ export default function InboxScreen() {
         );
       });
   }, [conversations, filter, query]);
+
+  // The "Vireon · " row prefix only earns its place when the list actually spans more than one
+  // bot — with a single bot it repeats the same word on every row for no added information.
+  const hasMultipleBots = useMemo(() => new Set(conversations.map((c) => c.botName)).size > 1, [conversations]);
 
   const handleArchive = useCallback(
     (id: string) => {
@@ -159,6 +182,7 @@ export default function InboxScreen() {
           renderItem={({ item }) => (
             <ConversationRow
               conversation={item}
+              showBotName={hasMultipleBots}
               onPress={() => router.push(`/inbox/${item.id}`)}
               onArchive={() => handleArchive(item.id)}
             />
@@ -171,15 +195,20 @@ export default function InboxScreen() {
 
 function ConversationRow({
   conversation,
+  showBotName,
   onPress,
   onArchive,
 }: {
   conversation: ConversationDto;
+  showBotName: boolean;
   onPress: () => void;
   onArchive: () => void;
 }) {
   const awaitingReply = conversation.lastMessageRole === "USER";
-  const ChannelIcon = conversation.channel === "WHATSAPP" ? ChannelsWhatsappIcon : ChannelsWidgetIcon;
+  const isWhatsApp = conversation.channel === "WHATSAPP";
+  const ChannelIcon = isWhatsApp ? ChannelsWhatsappIcon : ChannelsWidgetIcon;
+  const contact = isWhatsApp ? formatPhoneNumber(conversation.visitorId) : conversation.visitorId;
+  const { color: statusColor, rest: previewText } = extractStatusDot(conversation.lastMessagePreview);
 
   return (
     <Swipeable
@@ -190,18 +219,19 @@ function ConversationRow({
       )}
     >
       <Pressable onPress={onPress} style={styles.row}>
-        <Avatar label={conversation.visitorId} />
+        <Avatar label={contact} isPhoneNumber={isWhatsApp} />
         <View style={styles.rowBody}>
           <View style={styles.rowTopLine}>
             <Text style={styles.rowTitle} numberOfLines={1}>
-              {conversation.botName} · {conversation.visitorId}
+              {showBotName ? `${conversation.botName} · ${contact}` : contact}
             </Text>
             <Text style={styles.rowTime}>{formatRelativeTime(conversation.lastMessageAt)}</Text>
           </View>
           <View style={styles.rowBottomLine}>
             <ChannelIcon size={13} color={colors.muted} />
+            {statusColor && <View style={[styles.statusDot, { backgroundColor: statusColor }]} />}
             <Text style={styles.rowPreview} numberOfLines={1}>
-              {conversation.lastMessagePreview}
+              {previewText}
             </Text>
             {awaitingReply ? <View style={styles.unreadPillWrap}><UnreadPill /></View> : null}
           </View>
@@ -261,9 +291,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 2,
     borderRadius: radius.pill,
     backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line2,
   },
   filterPillActive: {
     backgroundColor: colors.card2,
+    borderColor: colors.orange2,
   },
   filterLabel: {
     color: colors.muted,
@@ -330,6 +363,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs + 2,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   rowPreview: {
     flex: 1,

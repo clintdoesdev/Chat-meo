@@ -6,14 +6,16 @@ import type { Trend } from "@/lib/stats";
 type StatCardProps = {
   label: string;
   value: string;
-  trend: Trend | null;
-  spark: number[];
+  trend?: Trend | null;
+  /** Omit entirely for a card whose value isn't genuinely time-series (a static count like "1
+   * bot") — an empty spark renders no chart at all rather than a flat, empty line. */
+  spark?: number[];
   compact?: boolean;
   caption?: string;
   icon?: ComponentType<{ size?: number; className?: string }>;
 };
 
-export function StatCard({ label, value, trend, spark, compact = false, caption, icon: Icon }: StatCardProps) {
+export function StatCard({ label, value, trend = null, spark, compact = false, caption, icon: Icon }: StatCardProps) {
   return (
     <div
       className={`min-w-0 rounded-[18px] border border-line bg-card transition hover:border-orange-2/30 ${compact ? "p-3.5" : "p-5"}`}
@@ -43,7 +45,7 @@ export function StatCard({ label, value, trend, spark, compact = false, caption,
           </em>
         )}
       </div>
-      {spark.length > 0 && <Sparkline values={spark} className="mt-3 h-[30px] w-full" />}
+      {spark && spark.length > 0 && <Sparkline values={spark} className="mt-3 h-[30px] w-full" />}
       {caption && <div className="mt-2 text-[11px] text-muted">{caption}</div>}
     </div>
   );

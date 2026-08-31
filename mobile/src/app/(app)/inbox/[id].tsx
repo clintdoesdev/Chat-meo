@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { NavBackIcon, CommsSendIcon } from "@/components/icons";
 import { ApiError } from "@/lib/api/client";
 import { getMessages, sendMessage } from "@/lib/api/endpoints";
@@ -66,6 +66,7 @@ export default function ConversationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const listRef = useRef<FlatList<MessageDto>>(null);
+  const insets = useSafeAreaInsets();
 
   const [conversation, setConversation] = useState<ConversationDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +74,10 @@ export default function ConversationDetailScreen() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageDto | null>(null);
+  // Measured rather than a guessed constant — headerHeight feeds iOS's KeyboardAvoidingView
+  // offset below, and a wrong hardcoded number is exactly the kind of thing that looks fine on
+  // one device and leaves a gap (or overlap) on any other.
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -115,7 +120,7 @@ export default function ConversationDetailScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.header}>
+      <View style={styles.header} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backButton}>
           <NavBackIcon size={18} color={colors.text} />
         </Pressable>
@@ -140,8 +145,14 @@ export default function ConversationDetailScreen() {
       ) : (
         <KeyboardAvoidingView
           style={styles.flex}
+          // iOS has no OS-level equivalent of Android's windowSoftInputMode, so it needs this
+          // explicit padding behavior; Android instead gets it for free from app.json's
+          // android.softwareKeyboardLayoutMode: "resize" (the RN equivalent of adjustResize) —
+          // the OS shrinks the whole window when the keyboard opens, so this flex column's
+          // bottom-pinned reply bar already ends up above the keyboard with no JS involved,
+          // and stacking KeyboardAvoidingView's own adjustment on top of that would double it up.
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+          keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
         >
           <FlatList
             ref={listRef}
@@ -175,7 +186,7 @@ export default function ConversationDetailScreen() {
             </View>
           )}
 
-          <View style={styles.replyBar}>
+          <View style={[styles.replyBar, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
             <TextInput
               value={draft}
               onChangeText={setDraft}

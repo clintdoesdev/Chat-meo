@@ -10,15 +10,18 @@ import { fontFamily } from "@/theme/fonts";
 export function StatCard({
   label,
   value,
-  trend,
+  trend = null,
   spark,
   compact = false,
   caption,
 }: {
   label: string;
   value: string;
-  trend: Trend | null;
-  spark: number[];
+  trend?: Trend | null;
+  /** Omit entirely for a card whose value isn't genuinely time-series (a static count like "1
+   * bot") — an empty/undefined spark renders no chart at all rather than a flat, empty line that
+   * looks broken. */
+  spark?: number[];
   compact?: boolean;
   caption?: string;
 }) {
@@ -33,7 +36,7 @@ export function StatCard({
           </Text>
         )}
       </View>
-      {spark.length > 0 && <Sparkline values={spark} />}
+      {spark && spark.length > 0 && <Sparkline values={spark} />}
       {caption && <Text style={styles.caption}>{caption}</Text>}
     </View>
   );

@@ -78,3 +78,36 @@ export function weekOverWeekTrend(dates: Date[]): Trend | null {
   if (percent === 0) return null;
   return { percent: Math.abs(percent), direction: percent > 0 ? "up" : "down" };
 }
+
+/** Week-over-week trend of a *rate* (numerator/denominator per week), not a raw count —
+ * weekOverWeekTrend(resolvedDates) alone would report how the count of resolved conversations
+ * changed, which can swing wildly (and in the opposite direction of the rate itself) independent
+ * of how the resolution RATE moved, since a busier week naturally resolves more conversations in
+ * absolute terms even at a flat or falling rate. Null whenever either week had no conversations
+ * to take a rate of, same "nothing to compare" convention as weekOverWeekTrend. */
+export function weekOverWeekRateTrend(numeratorDates: Date[], denominatorDates: Date[]): Trend | null {
+  const now = Date.now();
+  const week = 7 * DAY_MS;
+
+  const countInWindow = (dates: Date[], minAge: number, maxAge: number) =>
+    dates.filter((date) => {
+      const age = now - date.getTime();
+      return age > minAge && age <= maxAge;
+    }).length;
+
+  const currentTotal = countInWindow(denominatorDates, 0, week);
+  const previousTotal = countInWindow(denominatorDates, week, week * 2);
+  if (currentTotal === 0 || previousTotal === 0) return null;
+
+  const currentRate = countInWindow(numeratorDates, 0, week) / currentTotal;
+  const previousRate = countInWindow(numeratorDates, week, week * 2) / previousTotal;
+
+  if (previousRate === 0) {
+    if (currentRate === 0) return null;
+    return { percent: 100, direction: "up" };
+  }
+
+  const percent = Math.round(((currentRate - previousRate) / previousRate) * 100);
+  if (percent === 0) return null;
+  return { percent: Math.abs(percent), direction: percent > 0 ? "up" : "down" };
+}

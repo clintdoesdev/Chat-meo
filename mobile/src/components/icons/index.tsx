@@ -147,6 +147,18 @@ export function NavSettingsIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
   );
 }
 
+/** Not in the web icon set. The web app can show a saved contact's real name, but a WhatsApp
+ * conversation's visitorId is always just the customer's raw phone number — Avatar falls back to
+ * this generic contact silhouette instead of slicing that number into fake "initials" for it. */
+export function ActionsContactIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Circle cx={32} cy={22} r={12} fill={color} />
+      <Path fill={color} d="M10 56c0-13 10-21 22-21s22 8 22 21a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2Z" />
+    </Svg>
+  );
+}
+
 /** Not in the web icon set — the web app has no back button (browser chrome handles that), but
  * mobile screens need one. Drawn in the same minimal stroke style as the rest of this set rather
  * than reaching for a generic icon-library glyph. */
