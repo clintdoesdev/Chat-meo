@@ -3,6 +3,8 @@
  * backend adds later are simply ignored by TypeScript's structural typing — no ignoreUnknownKeys
  * flag needed like on the Kotlin side. */
 
+import type { FlowGraph } from "@/lib/flow/types";
+
 export type UserDto = {
   id: string;
   name: string;
@@ -99,4 +101,9 @@ export type FcmDiagnostics =
 export type PushTestResponse = {
   webPush: WebPushDiagnostics;
   fcm: FcmDiagnostics;
+};
+
+export type FlowResponse = {
+  flowId: string;
+  graph: FlowGraph;
 };
