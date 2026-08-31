@@ -1,7 +1,7 @@
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { registerPushToken } from "@/lib/api/endpoints";
+import { registerPushToken, unregisterPushToken } from "@/lib/api/endpoints";
 import { colors } from "@/theme/tokens";
 
 const CHANNEL_ID = "chatmeo_messages";
@@ -71,4 +71,32 @@ export async function registerForPushNotifications(): Promise<PushRegistrationSt
   }
 
   return { state: "registered" };
+}
+
+/** The user-facing "turn notifications off" side of the Settings toggle — mirrors sign-out's own
+ * unregister call, but user-initiated rather than tied to the account session ending. Best-effort
+ * like every other push call site: Android still issues this install a token either way, so a
+ * failed unregister just means the account keeps getting pushed to until the next successful
+ * attempt, not a broken app. */
+export async function unregisterForPushNotifications(): Promise<{ ok: boolean; message?: string }> {
+  if (!Device.isDevice) return { ok: true };
+
+  let token: string;
+  try {
+    token = (await Notifications.getDevicePushTokenAsync()).data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[push] failed to get device token for unregister", { error });
+    return { ok: false, message };
+  }
+
+  try {
+    await unregisterPushToken(token);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[push] failed to unregister token with server", { error });
+    return { ok: false, message };
+  }
+
+  return { ok: true };
 }

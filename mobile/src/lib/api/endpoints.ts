@@ -53,6 +53,13 @@ export function registerPushToken(token: string): Promise<ErrorResponse> {
   });
 }
 
+export function unregisterPushToken(token: string): Promise<ErrorResponse> {
+  return apiFetch<ErrorResponse>("/api/v1/push/register", {
+    method: "DELETE",
+    body: JSON.stringify({ token }),
+  });
+}
+
 export type PushTestResult =
   | { ok: true; result: PushTestResponse }
   | { ok: false; status: number; bodyText: string };

@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { sendTestPush as sendTestPushRequest, type PushTestResult } from "@/lib/api/endpoints";
 import type { PushTestResponse } from "@/lib/api/types";
-import { registerForPushNotifications, type PushRegistrationStatus } from "@/lib/push/notifications";
+import {
+  registerForPushNotifications,
+  unregisterForPushNotifications,
+  type PushRegistrationStatus,
+} from "@/lib/push/notifications";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
-type CardState = { loading: boolean; result: PushRegistrationStatus | null };
+type ToggleState = PushRegistrationStatus | { state: "disabled" };
+type CardState = { loading: boolean; result: ToggleState | null };
 
 function describeTestResult(result: PushTestResponse): string {
   const fcm = !result.fcm.configured
@@ -33,21 +38,29 @@ function describeTestResult(result: PushTestResponse): string {
   return `${fcm}\n${web}`;
 }
 
-const STATUS_COPY: Record<PushRegistrationStatus["state"], { label: string; ok: boolean }> = {
-  registered: { label: "Notifications are on — new messages will alert this device.", ok: true },
-  "not-a-device": { label: "Push tokens don't exist on emulators — this only works on a real phone.", ok: false },
+const STATUS_COPY: Record<ToggleState["state"], { label: string; tone: "ok" | "bad" | "neutral" }> = {
+  registered: { label: "New messages will alert this device.", tone: "ok" },
+  disabled: { label: "Notifications are off for this device.", tone: "neutral" },
+  "not-a-device": { label: "Push tokens don't exist on emulators — this only works on a real phone.", tone: "bad" },
   "permission-denied": {
     label: "Notification permission is off. Enable it for Chatmeo in your phone's system Settings, then try again.",
-    ok: false,
+    tone: "bad",
   },
-  "token-failed": { label: "Couldn't get a push token from this device.", ok: false },
-  "register-failed": { label: "Got a push token, but couldn't save it to your account.", ok: false },
+  "token-failed": { label: "Couldn't get a push token from this device.", tone: "bad" },
+  "register-failed": { label: "Got a push token, but couldn't save it to your account.", tone: "bad" },
+};
+
+const TONE_COLOR: Record<"ok" | "bad" | "neutral", string> = {
+  ok: colors.ok,
+  bad: colors.bad,
+  neutral: colors.muted,
 };
 
 /** A real, working piece of Settings landing ahead of the rest of the screen (#18) — pulled
  * forward because "notifications don't work" is undiagnosable from outside the device without it.
- * Every failure mode registerForPushNotifications can return gets its own plain-language line
- * plus the raw error text, so the next report is a specific error instead of "not working." */
+ * The switch is the user's own on/off control (mirrors the web app's bell-menu toggle) rather
+ * than the previous auto-register-only behavior; every failure mode still gets its own
+ * plain-language line plus the raw error text underneath. */
 function NotificationsCard() {
   const [state, setState] = useState<CardState>({ loading: true, result: null });
   const [testState, setTestState] = useState<{ loading: boolean; text: string | null }>({
@@ -64,6 +77,18 @@ function NotificationsCard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState only runs after check()'s internal await, same pattern as inbox/index.tsx's fetch-on-mount effect
     check();
   }, [check]);
+
+  function handleToggle(value: boolean) {
+    if (state.loading) return;
+    if (value) {
+      check();
+      return;
+    }
+    setState({ loading: true, result: null });
+    unregisterForPushNotifications().then((result) => {
+      setState({ loading: false, result: result.ok ? { state: "disabled" } : { state: "register-failed", message: result.message ?? "Couldn't turn off notifications." } });
+    });
+  }
 
   function runTest() {
     setTestState({ loading: true, text: null });
@@ -84,24 +109,29 @@ function NotificationsCard() {
     state.result && (state.result.state === "token-failed" || state.result.state === "register-failed")
       ? state.result.message
       : null;
+  const isOn = state.result?.state === "registered";
 
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Notifications</Text>
-      {state.loading ? (
-        <View style={styles.row}>
+      <View style={styles.headerRow}>
+        <Text style={styles.cardTitle}>Notifications</Text>
+        {state.loading ? (
           <ActivityIndicator color={colors.muted} size="small" />
-          <Text style={styles.rowText}>Checking…</Text>
-        </View>
-      ) : (
+        ) : (
+          <Switch
+            value={isOn}
+            onValueChange={handleToggle}
+            trackColor={{ false: colors.card2, true: colors.orange }}
+            thumbColor={colors.white}
+          />
+        )}
+      </View>
+      {!state.loading && copy ? (
         <>
-          <Text style={[styles.rowText, { color: copy?.ok ? colors.ok : colors.bad }]}>{copy?.label}</Text>
+          <Text style={[styles.rowText, { color: TONE_COLOR[copy.tone] }]}>{copy.label}</Text>
           {errorDetail ? <Text style={styles.errorDetail}>{errorDetail}</Text> : null}
-          <Pressable style={styles.retryButton} onPress={check}>
-            <Text style={styles.retryLabel}>Check again</Text>
-          </Pressable>
         </>
-      )}
+      ) : null}
 
       <View style={styles.divider} />
 
@@ -150,6 +180,11 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     padding: spacing.lg,
     gap: spacing.sm,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   cardTitle: {
     color: colors.text,
