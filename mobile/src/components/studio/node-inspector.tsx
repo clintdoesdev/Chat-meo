@@ -89,6 +89,14 @@ export function NodeInspector({
                 {node.type === "reply" && (
                   <>
                     <TextField label="Message" value={node.data.text ?? ""} onChange={(v) => patch({ text: v })} multiline />
+                    {(node.data.variants ?? []).some((variant) => variant.text.trim()) && (
+                      <Text style={styles.variantsWarning}>
+                        This node also has {(node.data.variants ?? []).length} alternate wording
+                        {(node.data.variants ?? []).length === 1 ? "" : "s"} below — each send
+                        randomly picks one of those instead of the message above, so an old
+                        wording left there will keep going out even after you update this one.
+                      </Text>
+                    )}
                     <ToggleField
                       label="Vary wording (AI paraphrase)"
                       value={node.data.randomizeWording ?? false}
@@ -430,6 +438,13 @@ const styles = StyleSheet.create({
   },
   field: {
     gap: spacing.xs,
+  },
+  variantsWarning: {
+    color: colors.orange2,
+    fontFamily: fontFamily.regular,
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: -spacing.xs,
   },
   fieldLabel: {
     color: colors.muted,

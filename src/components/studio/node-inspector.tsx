@@ -238,6 +238,15 @@ export function NodeInspector({ node, flowId, onChange, onClose, onRequestDelete
               &quot;name&quot; means <code className="rounded bg-white/[.06] px-1 py-0.5 text-[10.5px]">{"{{name}}"}</code> here.
               Typed plainly (like &quot;name&quot; in quotes) it&apos;s sent as literal text instead.
             </p>
+            {node.type === "reply" && (data.variants ?? []).some((variant) => variant.text.trim()) && (
+              <p className="mt-1.5 text-[11px] text-orange-2">
+                This node also has {(data.variants ?? []).length} alternate wording
+                {(data.variants ?? []).length === 1 ? "" : "s"} below (&quot;Extra message
+                variants&quot;) — each send randomly picks one of those instead of the message
+                above, so an old wording left there will keep going out even after you update
+                this one. Update or remove them too if you&apos;ve changed what this should say.
+              </p>
+            )}
           </div>
         )}
 
