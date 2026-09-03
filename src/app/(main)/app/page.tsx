@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { auth } from "@/auth";
@@ -7,11 +8,18 @@ import { WhatsAppConnectRedirectHandler } from "@/components/app/whatsapp-connec
 import { NavBotsIcon, NavInboxIcon, NodesMessageIcon, StatusSuccessIcon } from "@/components/icons";
 import { prisma } from "@/lib/prisma";
 import { getOverviewStatsForUser } from "@/lib/stats-queries";
+import { normalizeTimeZone } from "@/lib/timezone";
 
 export default async function OverviewPage() {
   const session = await auth();
   if (!session?.user) redirect("/signin");
   const userId = session.user.id;
+
+  // Set client-side by TimezoneSync (see (main)/layout.tsx) from the browser's own
+  // Intl.DateTimeFormat — absent only on a first-ever page load before that effect has run, or a
+  // client with cookies/JS disabled, in which case normalizeTimeZone falls back to UTC.
+  const cookieStore = await cookies();
+  const timeZone = normalizeTimeZone(cookieStore.get("tz")?.value);
 
   const [bots, stats] = await Promise.all([
     prisma.bot.findMany({
@@ -19,7 +27,7 @@ export default async function OverviewPage() {
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { conversations: true } } },
     }),
-    getOverviewStatsForUser(userId),
+    getOverviewStatsForUser(userId, timeZone),
   ]);
 
   return (

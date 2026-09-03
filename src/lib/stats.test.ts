@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatsStartedBuckets } from "./stats";
 
 const DAY_MS = 86_400_000;
@@ -35,5 +35,28 @@ describe("chatsStartedBuckets", () => {
     const result = chatsStartedBuckets([utcMidnight(7)]);
     expect(result.last7Days).toBe(0);
     expect(result.last30Days).toBe(1);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("counts 'today' against the given timezone's own midnight, not UTC's", () => {
+    // Pinned rather than derived from the real clock — this exact mismatch (a message sent in the
+    // first few hours of the UTC day is still "yesterday" evening in New York, UTC-4 in EDT) only
+    // exists for part of the real day, so an unpinned "now" made this test flaky depending on when
+    // the suite happened to run. Noon UTC keeps "now" itself unambiguously the same calendar day
+    // in both zones, isolating the one instant actually under test.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-03-15T12:00:00.000Z"));
+
+    const earlyUtcMorning = new Date("2024-03-15T01:00:00.000Z");
+
+    const utcResult = chatsStartedBuckets([earlyUtcMorning], "UTC");
+    expect(utcResult.today).toBe(1);
+
+    const nyResult = chatsStartedBuckets([earlyUtcMorning], "America/New_York");
+    expect(nyResult.today).toBe(0);
+    expect(nyResult.yesterday).toBe(1);
   });
 });
