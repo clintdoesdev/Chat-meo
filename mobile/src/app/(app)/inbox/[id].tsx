@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { useRef, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,11 +24,28 @@ import {
   NavBackIcon,
   CommsSendIcon,
 } from "@/components/icons";
-import { ApiError } from "@/lib/api/client";
 import { getMessages, sendMessage } from "@/lib/api/endpoints";
-import type { ConversationDetailDto, MessageDto, QuotedMessageDto } from "@/lib/api/types";
+import type { ConversationDetailResponse, MessageDto, QuotedMessageDto } from "@/lib/api/types";
+import { useCachedQuery } from "@/lib/cache/use-cached-query";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
+
+// New inbound messages should show up without the seller having to pull to refresh.
+const POLL_INTERVAL_MS = 5000;
+
+/** The customer's country, from their WhatsApp number — e.g. "Nigeria" for a +234 number. Intl's
+ * region-name support isn't guaranteed on every Hermes build this app might run on, so a missing
+ * or throwing DisplayNames falls back to the bare ISO code ("NG") rather than showing nothing. */
+function countryLabel(visitorId: string, channel: "WHATSAPP" | "WEB"): string | null {
+  if (channel !== "WHATSAPP") return null;
+  const parsed = parsePhoneNumberFromString(`+${visitorId.replace(/^\+/, "")}`);
+  if (!parsed?.country) return null;
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(parsed.country) ?? parsed.country;
+  } catch {
+    return parsed.country;
+  }
+}
 
 const READ_TICK_COLOR = "#4EC5D8";
 
@@ -93,53 +111,80 @@ async function openAttachment(dataUri: string) {
   Alert.alert("Can't open this file", "Your device doesn't support opening this attachment directly.");
 }
 
+const OPTIMISTIC_ID_PREFIX = "optimistic-";
+
 export default function ConversationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const listRef = useRef<FlatList<MessageDto>>(null);
   const insets = useSafeAreaInsets();
 
-  const [conversation, setConversation] = useState<ConversationDetailDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: response,
+    loading,
+    error,
+    refresh,
+    setData,
+  } = useCachedQuery<ConversationDetailResponse>(`inbox:conversation:${id}`, () => getMessages(id), {
+    refetchIntervalMs: POLL_INTERVAL_MS,
+  });
+  const conversation = response?.conversation ?? null;
+
+  const [sendError, setSendError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageDto | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const response = await getMessages(id);
-      setConversation(response.conversation);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Can't reach Chatmeo — check your connection.");
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    // Standard fetch-on-mount — load()'s setState calls only run after its internal `await`,
-    // not synchronously in this effect body, but the rule's static analysis can't see that far.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
-
   async function handleSend() {
     const content = draft.trim();
-    if (!content || sending) return;
+    if (!content || sending || !conversation) return;
     const quoting = replyingTo;
     setSending(true);
+    setSendError(null);
     setDraft("");
     setReplyingTo(null);
+
+    // Shows the seller's own message the instant they hit send, before the network round-trip
+    // even starts — replying should feel instant, not wait on a full reload to see what was just
+    // typed. Replaced by the real (server-persisted) message once refresh() below lands, since
+    // that response's messages never include this fake id.
+    const optimisticMessage: MessageDto = {
+      id: `${OPTIMISTIC_ID_PREFIX}${Date.now()}`,
+      role: "AGENT",
+      content,
+      contentType: "TEXT",
+      caption: null,
+      fileName: null,
+      createdAt: new Date().toISOString(),
+      starred: false,
+      replyToId: quoting?.id ?? null,
+      replyTo: quoting
+        ? { id: quoting.id, role: quoting.role, content: quoting.content, contentType: quoting.contentType, caption: quoting.caption, fileName: quoting.fileName }
+        : null,
+      customerReaction: null,
+      agentReaction: null,
+      deliveryStatus: null,
+      forwarded: false,
+    };
+    setData((current) => {
+      const base = current?.conversation ?? conversation;
+      return { conversation: { ...base, messages: [...base.messages, optimisticMessage] } };
+    });
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+
     try {
       await sendMessage(id, content, quoting?.id);
-      await load();
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't send — try again.");
+      setSendError(err instanceof Error ? err.message : "Couldn't send — try again.");
       setDraft(content);
       setReplyingTo(quoting);
+      // The optimistic bubble never actually sent — pull it back out rather than leaving a
+      // message in the thread that doesn't exist on the server.
+      setData((current) => {
+        const base = current?.conversation ?? conversation;
+        return { conversation: { ...base, messages: base.messages.filter((m) => m.id !== optimisticMessage.id) } };
+      });
     } finally {
       setSending(false);
     }
@@ -155,9 +200,18 @@ export default function ConversationDetailScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {conversation?.botName ?? "Conversation"}
           </Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {conversation?.visitorId ?? ""}
-          </Text>
+          <View style={styles.headerSubtitleRow}>
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {conversation?.visitorId ?? ""}
+            </Text>
+            {conversation && countryLabel(conversation.visitorId, conversation.channel) && (
+              <View style={styles.countryPill}>
+                <Text style={styles.countryPillText} numberOfLines={1}>
+                  {countryLabel(conversation.visitorId, conversation.channel)}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
@@ -198,7 +252,7 @@ export default function ConversationDetailScreen() {
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           />
 
-          {error ? <Text style={styles.sendError}>{error}</Text> : null}
+          {sendError ? <Text style={styles.sendError}>{sendError}</Text> : null}
 
           {replyingTo && (
             <View style={styles.replyingBar}>
@@ -355,10 +409,26 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: 15.5,
   },
+  headerSubtitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
   headerSubtitle: {
     color: colors.muted,
     fontFamily: fontFamily.regular,
     fontSize: 12,
+  },
+  countryPill: {
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card2,
+  },
+  countryPillText: {
+    color: colors.muted,
+    fontFamily: fontFamily.medium,
+    fontSize: 10,
   },
   centered: {
     flex: 1,

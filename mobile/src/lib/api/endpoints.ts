@@ -50,6 +50,12 @@ export function setConversationArchived(conversationId: string, archived: boolea
   });
 }
 
+/** Permanent — the API route (and the confirmation dialog in front of this call) is the only
+ * safety net, same as the web Inbox's own delete action. */
+export function deleteConversation(conversationId: string): Promise<ErrorResponse> {
+  return apiFetch<ErrorResponse>(`/api/v1/conversations/${conversationId}`, { method: "DELETE" });
+}
+
 export function getFlow(botId: string): Promise<FlowResponse> {
   return apiFetch<FlowResponse>(`/api/v1/bots/${botId}/flow`);
 }

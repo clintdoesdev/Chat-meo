@@ -284,6 +284,12 @@ model Conversation {
   /// vice versa) — a Bot only ever uses one or the other, decided by PythonBot.enabled at the
   /// moment each turn runs.
   pythonState   Json               @default("{}")
+  /// When the seller last opened this conversation in the Inbox (web or mobile) — see
+  /// getConversationMessagesForUser in src/lib/chat/inbox-queries.ts, the only place this is set.
+  /// Drives the Inbox's unread indicator (a customer message newer than this) independently of
+  /// `status`/HANDOFF, which is about whether the *bot* still needs to act, not whether a human
+  /// has looked at the thread yet.
+  lastReadAt    DateTime?
   createdAt     DateTime           @default(now())
 
   bot      Bot                 @relation(fields: [botId], references: [id], onDelete: Cascade)

@@ -6,6 +6,7 @@ import { createInitialState } from "@/engine/executor";
 import { Prisma } from "@/generated/prisma/client";
 import type { ConversationDetail, ConversationSummary } from "@/lib/chat/inbox-queries";
 import {
+  deleteConversationForUser,
   getConversationMessagesForUser,
   listConversationsForUser,
   setConversationArchivedForUser,
@@ -293,15 +294,7 @@ export async function restartBotForConversation(conversationId: string): Promise
 export async function deleteConversation(conversationId: string): Promise<{ error: string | null }> {
   const session = await auth();
   if (!session?.user?.id) return { error: "Not signed in." };
-
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: { bot: { select: { userId: true } } },
-  });
-  if (!conversation || conversation.bot.userId !== session.user.id) return { error: "Conversation not found." };
-
-  await prisma.conversation.delete({ where: { id: conversationId } });
-  return { error: null };
+  return deleteConversationForUser(session.user.id, conversationId);
 }
 
 /** Permanently deletes every conversation in `conversationIds` (and their transcripts) in one
