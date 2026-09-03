@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Avatar } from "@/components/avatar";
 import { StatCard } from "@/components/stat-card";
-import { ApiError } from "@/lib/api/client";
 import { getBots, getOverviewStats } from "@/lib/api/endpoints";
 import type { BotDto, OverviewStatsResponse } from "@/lib/api/types";
+import { useCachedQuery } from "@/lib/cache/use-cached-query";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { fontFamily } from "@/theme/fonts";
 
@@ -13,39 +12,25 @@ function formatCount(count: number): string {
   return count.toLocaleString();
 }
 
+type OverviewData = { bots: BotDto[]; stats: OverviewStatsResponse };
+
+async function fetchOverviewData(): Promise<OverviewData> {
+  const [botsResponse, statsResponse] = await Promise.all([getBots(), getOverviewStats()]);
+  return { bots: botsResponse.bots, stats: statsResponse };
+}
+
 /** Mobile counterpart to the web Overview page (src/app/(main)/app/page.tsx) — same stat cards
  * (via GET /api/v1/stats/overview, backed by the same getOverviewStatsForUser query) plus a bots
- * list, so the two dashboards always show the same numbers. */
+ * list, so the two dashboards always show the same numbers. Cached (see useCachedQuery) so
+ * reopening this tab shows the last-known numbers instantly instead of a blank spinner while a
+ * fresh fetch runs behind it. */
 export default function OverviewScreen() {
-  const [bots, setBots] = useState<BotDto[]>([]);
-  const [stats, setStats] = useState<OverviewStatsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [botsResponse, statsResponse] = await Promise.all([getBots(), getOverviewStats()]);
-      setBots(botsResponse.bots);
-      setStats(statsResponse);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Can't reach Chatmeo — check your connection.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, [load]);
+  const { data, loading, refreshing, error, refresh } = useCachedQuery<OverviewData>(
+    "overview:data",
+    fetchOverviewData,
+  );
+  const bots = data?.bots ?? [];
+  const stats = data?.stats ?? null;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -65,7 +50,7 @@ export default function OverviewScreen() {
       ) : stats ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.orange2} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.orange2} />}
         >
           <View style={styles.grid}>
             {/* No trend/spark: a bot count is a static total, not a time series — a flat, empty

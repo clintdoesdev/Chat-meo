@@ -46,6 +46,21 @@ export function ActionsArchiveIcon({ size = 16, color = "#f5f5f5" }: IconProps) 
   );
 }
 
+/** Same glyph as the web icon set's ActionsTrashIcon (src/components/icons/index.tsx). */
+export function ActionsTrashIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
+  return (
+    <Svg viewBox="0 0 64 64" width={size} height={size}>
+      <Rect x={24} y={5} width={16} height={7} rx={3.5} fill={color} />
+      <Rect x={9} y={12} width={46} height={8} rx={4} fill={color} />
+      <Path
+        fill={color}
+        fillRule="evenodd"
+        d="M13.5 24h37l-2.3 27.5A7 7 0 0 1 41.2 58H22.8a7 7 0 0 1-7-6.5L13.5 24Zm13 8a3 3 0 0 1 3 3v13a3 3 0 0 1-6 0V35a3 3 0 0 1 3-3Zm11 0a3 3 0 0 1 3 3v13a3 3 0 0 1-6 0V35a3 3 0 0 1 3-3Z"
+      />
+    </Svg>
+  );
+}
+
 export function ChannelsWhatsappIcon({ size = 16, color = "#f5f5f5" }: IconProps) {
   return (
     <Svg viewBox="0 0 64 64" width={size} height={size}>

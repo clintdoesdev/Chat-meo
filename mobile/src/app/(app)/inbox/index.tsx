@@ -1,7 +1,8 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -17,12 +18,13 @@ import { MeoMark } from "@/components/meo-mark";
 import {
   ActionsArchiveIcon,
   ActionsSearchIcon,
+  ActionsTrashIcon,
   ChannelsWhatsappIcon,
   ChannelsWidgetIcon,
 } from "@/components/icons";
-import { ApiError } from "@/lib/api/client";
-import { getConversations, setConversationArchived } from "@/lib/api/endpoints";
-import type { ConversationDto } from "@/lib/api/types";
+import { deleteConversation, getConversations, setConversationArchived } from "@/lib/api/endpoints";
+import type { ConversationDto, ConversationsResponse } from "@/lib/api/types";
+import { useCachedQuery } from "@/lib/cache/use-cached-query";
 import { formatRelativeTime } from "@/lib/format-time";
 import { formatPhoneNumber } from "@/lib/format-phone";
 import { colors, radius, spacing } from "@/theme/tokens";
@@ -37,47 +39,33 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "widget", label: "Widget" },
 ];
 
+// Short enough that a new inbound WhatsApp message shows up without a manual pull, cheap enough
+// (one lightweight list query) not to matter for battery/data while the Inbox is open.
+const POLL_INTERVAL_MS = 8000;
 
 export default function InboxScreen() {
   const router = useRouter();
-  const [conversations, setConversations] = useState<ConversationDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
 
-  const load = useCallback(async () => {
-    try {
-      const response = await getConversations();
-      setConversations(response.conversations);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Can't reach Chatmeo — check your connection.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Standard fetch-on-mount — load()'s setState calls only run after its internal `await`,
-    // not synchronously in this effect body, but the rule's static analysis can't see that far.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, [load]);
+  const {
+    data: response,
+    loading,
+    refreshing,
+    error,
+    refresh,
+    setData,
+  } = useCachedQuery<ConversationsResponse>("inbox:conversations", getConversations, {
+    refetchIntervalMs: POLL_INTERVAL_MS,
+  });
+  const conversations = useMemo(() => response?.conversations ?? [], [response]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return conversations
       .filter((c) => !c.archived)
       .filter((c) => {
-        if (filter === "unread") return c.lastMessageRole === "USER";
+        if (filter === "unread") return c.unread;
         if (filter === "whatsapp") return c.channel === "WHATSAPP";
         if (filter === "widget") return c.channel === "WEB";
         return true;
@@ -98,15 +86,33 @@ export default function InboxScreen() {
 
   const handleArchive = useCallback(
     (id: string) => {
-      const previous = conversations;
-      setConversations((current) => current.filter((c) => c.id !== id));
+      setData((current) => ({ conversations: (current?.conversations ?? []).filter((c) => c.id !== id) }));
       setConversationArchived(id, true).catch(() => {
-        // The backend mutation failed — restore the row rather than leaving the list quietly
-        // out of sync with what the server actually has archived.
-        setConversations(previous);
+        // The backend mutation failed — refresh from the server rather than leaving the list
+        // quietly out of sync with what's actually archived.
+        refresh();
       });
     },
-    [conversations],
+    [setData, refresh],
+  );
+
+  const handleDelete = useCallback(
+    (id: string) => {
+      Alert.alert("Delete this chat?", "This permanently deletes the conversation and its messages. This can't be undone.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setData((current) => ({ conversations: (current?.conversations ?? []).filter((c) => c.id !== id) }));
+            deleteConversation(id).catch(() => {
+              refresh();
+            });
+          },
+        },
+      ]);
+    },
+    [setData, refresh],
   );
 
   return (
@@ -161,13 +167,14 @@ export default function InboxScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.orange2} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.orange2} />}
           renderItem={({ item }) => (
             <ConversationRow
               conversation={item}
               showBotName={hasMultipleBots}
               onPress={() => router.push(`/inbox/${item.id}`)}
               onArchive={() => handleArchive(item.id)}
+              onDelete={() => handleDelete(item.id)}
             />
           )}
         />
@@ -181,13 +188,14 @@ function ConversationRow({
   showBotName,
   onPress,
   onArchive,
+  onDelete,
 }: {
   conversation: ConversationDto;
   showBotName: boolean;
   onPress: () => void;
   onArchive: () => void;
+  onDelete: () => void;
 }) {
-  const awaitingReply = conversation.lastMessageRole === "USER";
   const isWhatsApp = conversation.channel === "WHATSAPP";
   const ChannelIcon = isWhatsApp ? ChannelsWhatsappIcon : ChannelsWidgetIcon;
   const contact = isWhatsApp ? formatPhoneNumber(conversation.visitorId) : conversation.visitorId;
@@ -195,9 +203,14 @@ function ConversationRow({
   return (
     <Swipeable
       renderRightActions={() => (
-        <Pressable onPress={onArchive} style={styles.archiveAction}>
-          <ActionsArchiveIcon size={18} color={colors.white} />
-        </Pressable>
+        <View style={styles.swipeActions}>
+          <Pressable onPress={onArchive} style={[styles.swipeAction, styles.archiveAction]}>
+            <ActionsArchiveIcon size={18} color={colors.white} />
+          </Pressable>
+          <Pressable onPress={onDelete} style={[styles.swipeAction, styles.deleteAction]}>
+            <ActionsTrashIcon size={18} color={colors.white} />
+          </Pressable>
+        </View>
       )}
     >
       <Pressable onPress={onPress} style={styles.row}>
@@ -214,7 +227,7 @@ function ConversationRow({
             <Text style={styles.rowPreview} numberOfLines={1}>
               {conversation.lastMessagePreview}
             </Text>
-            {awaitingReply ? <View style={styles.unreadPillWrap}><UnreadPill /></View> : null}
+            {conversation.unread ? <View style={styles.unreadPillWrap}><UnreadPill /></View> : null}
           </View>
         </View>
       </Pressable>
@@ -371,12 +384,21 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     lineHeight: 12,
   },
-  archiveAction: {
-    width: 72,
+  swipeActions: {
+    flexDirection: "row",
+    gap: spacing.xs,
     marginBottom: spacing.sm,
+  },
+  swipeAction: {
+    width: 60,
     borderRadius: radius.card,
-    backgroundColor: colors.bad,
     alignItems: "center",
     justifyContent: "center",
+  },
+  archiveAction: {
+    backgroundColor: colors.muted,
+  },
+  deleteAction: {
+    backgroundColor: colors.bad,
   },
 });

@@ -52,6 +52,9 @@ export type ConversationDto = {
   blocked: boolean;
   folderId?: string | null;
   channel: "WHATSAPP" | "WEB";
+  // True when the last message is from the customer and the seller hasn't opened this
+  // conversation since — see Conversation.lastReadAt's schema doc comment on the server.
+  unread: boolean;
 };
 
 export type ConversationsResponse = {

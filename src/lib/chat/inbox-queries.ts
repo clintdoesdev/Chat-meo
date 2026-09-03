@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { mediaPreview, type MessageContentTypeDto } from "@/lib/message-preview";
 import { prisma } from "@/lib/prisma";
 
@@ -17,6 +18,10 @@ export type ConversationSummary = {
   // Same signal sendAgentReplyForUser already uses to route the reply — a widget conversation
   // never gets a WhatsApp webhook hit, so lastInboundAt stays null for it forever.
   channel: "WHATSAPP" | "WEB";
+  // True when the last message is from the customer and the seller hasn't opened this
+  // conversation since (see Conversation.lastReadAt's doc comment) — independent of `status`, so
+  // a HANDOFF conversation the seller has already looked at doesn't stay flagged forever.
+  unread: boolean;
 };
 
 const MAX_CONVERSATIONS = 200;
@@ -49,6 +54,7 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
       blocked: true,
       folderId: true,
       lastInboundAt: true,
+      lastReadAt: true,
       _count: { select: { messages: true } },
       messages: {
         orderBy: { createdAt: "desc" },
@@ -76,6 +82,9 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
         blocked: conversation.blocked,
         folderId: conversation.folderId,
         channel: conversation.lastInboundAt !== null ? "WHATSAPP" : "WEB",
+        unread:
+          lastMessage?.role === "USER" &&
+          (!conversation.lastReadAt || conversation.lastReadAt < lastMessage.createdAt),
       };
     })
     .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
@@ -167,6 +176,16 @@ export async function getConversationMessagesForUser(userId: string, conversatio
 
   if (!conversation || conversation.bot.userId !== userId) return null;
 
+  // Opening a conversation is what "read" means here. Deferred via after() (same pattern as the
+  // handoff push in the WhatsApp webhook) rather than awaited or fire-and-forget — a serverless
+  // function can freeze/tear down as soon as it returns its response, which would silently drop a
+  // bare unawaited promise before this write actually lands.
+  after(() =>
+    prisma.conversation
+      .update({ where: { id: conversationId }, data: { lastReadAt: new Date() } })
+      .catch((error) => console.error("[inbox] failed to mark conversation read", { conversationId, error })),
+  );
+
   return {
     id: conversation.id,
     status: conversation.status,
@@ -216,5 +235,23 @@ export async function setConversationArchivedForUser(
   if (!conversation || conversation.bot.userId !== userId) return { error: "Conversation not found." };
 
   await prisma.conversation.update({ where: { id: conversationId }, data: { archived } });
+  return { error: null };
+}
+
+/**
+ * Permanently deletes a conversation and its full transcript (Message rows cascade — see the
+ * schema). Unlike archiving, this can't be undone. Shared by src/lib/actions/inbox.ts's
+ * deleteConversation (the web Server Action) and the mobile REST API
+ * (src/app/api/v1/conversations/[id]/route.ts's DELETE handler), same split as every other query
+ * in this file.
+ */
+export async function deleteConversationForUser(userId: string, conversationId: string): Promise<{ error: string | null }> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { bot: { select: { userId: true } } },
+  });
+  if (!conversation || conversation.bot.userId !== userId) return { error: "Conversation not found." };
+
+  await prisma.conversation.delete({ where: { id: conversationId } });
   return { error: null };
 }
