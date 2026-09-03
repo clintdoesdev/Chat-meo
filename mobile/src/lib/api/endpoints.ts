@@ -62,7 +62,13 @@ export function saveFlow(botId: string, flowId: string, graph: FlowGraph): Promi
 }
 
 export function getOverviewStats(): Promise<OverviewStatsResponse> {
-  return apiFetch<OverviewStatsResponse>("/api/v1/stats/overview");
+  // The device's own IANA timezone (e.g. "Africa/Lagos") — so "Today"/"Yesterday" and the daily
+  // sparklines line up with this phone's own midnight, not the server's. Falls back to whatever
+  // the server itself defaults to (UTC) if Hermes can't resolve one, which normalizeTimeZone on
+  // the server side already handles for an empty/missing param.
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const query = timeZone ? `?tz=${encodeURIComponent(timeZone)}` : "";
+  return apiFetch<OverviewStatsResponse>(`/api/v1/stats/overview${query}`);
 }
 
 export function getWhatsAppConnection(botId: string): Promise<WhatsAppConnectConfigResponse> {

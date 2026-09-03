@@ -3,6 +3,7 @@ import { DM_Sans } from "next/font/google";
 import { ClickFeedback } from "@/components/click-feedback";
 import { SharedDefs } from "@/components/shared-defs";
 import { SmoothScroll } from "@/components/smooth-scroll";
+import { TimezoneSync } from "@/components/timezone-sync";
 import "../globals.css";
 
 const dmSans = DM_Sans({
@@ -27,6 +28,7 @@ export default function RootLayout({
       <body className="min-h-full bg-bg text-text antialiased">
         <SharedDefs />
         <SmoothScroll />
+        <TimezoneSync />
         {children}
         <ClickFeedback />
       </body>
